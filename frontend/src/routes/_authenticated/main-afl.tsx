@@ -43,7 +43,7 @@ const columns: ColumnDef<MainAflRow>[] = [
 
 function MainAflPage() {
   const { user } = useAuth();
-  const [tab, setTab] = useState<"add" | "list" | "settings">("add");
+  const [tab, setTab] = useState<"upload" | "add" | "list" | "settings">("add");
   const [params, setParams] = useState<MainAflParams>({ page: 1, per_page: 50 });
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [toast, setToast] = useState<string | null>(null);
@@ -120,20 +120,21 @@ function MainAflPage() {
       <div className="flex-shrink-0">
         <div className="card bg-base-100 shadow-sm rounded-md">
           <div className="flex border-b border-base-200">
-            {(["add", "list", "settings"] as const).map((t) => (
+            {(["upload", "add", "list", "settings"] as const).map((t) => (
               <button key={t} onClick={() => {
                 setTab(t);
                 if (t === "list") { loadReestrs(); setParams({ page: 1, per_page: 50, reestr: activeReestr || reestrs[0] || undefined }); }
-                if (t === "add") { setParams({ page: 1, per_page: 50, reestr: undefined }); }
+                if (t === "add" || t === "upload") { setParams({ page: 1, per_page: 50, reestr: undefined }); }
               }}
                 className={`px-4 py-2 text-sm font-medium border-b-2 transition-colors -mb-px
                   ${tab === t ? "border-accent text-accent" : "border-transparent text-base-content/50 hover:text-base-content"}`}>
-                {{ add: "Добавление", list: "Список", settings: "Настройка" }[t]}
+                {{ upload: "Загрузка", add: "Добавление", list: "Список", settings: "Настройка" }[t]}
               </button>
             ))}
           </div>
 
           <div className="py-2 px-3">
+            {tab === "upload" && <UploadTab />}
             {tab === "add" && <AddTab params={params} setParams={setParams} onReset={handleResetFilters} onCreate={handleCreateReestr} />}
             {tab === "list" && <ListTab reestrs={reestrs} activeReestr={activeReestr} setActiveReestr={setActiveReestr} emptyReestrs={emptyReestrs} toggleEmpty={toggleEmpty} onReset={handleResetReestr} onSelectReestr={handleSelectReestr} meta={reestrMeta} />}
             {tab === "settings" && <SettingsTab />}
@@ -141,18 +142,20 @@ function MainAflPage() {
         </div>
       </div>
 
-      <div className="min-h-0 flex-1 overflow-hidden">
-        {isLoading ? (
-          <div className="flex justify-center py-12"><span className="loading loading-spinner loading-lg text-accent" /></div>
-        ) : (
-          <DataTable columns={columns} data={rows} total={total}
-            page={params.page ?? 1} perPage={params.per_page ?? 50}
-            selectedIds={selected} onRowClick={toggleRow}
-            onSort={(sort, order) => setParams({ ...params, sort, order })}
-            onPage={(page) => setParams({ ...params, page })}
-            getId={getId} />
-        )}
-      </div>
+      {(tab === "add" || tab === "list") && (
+        <div className="min-h-0 flex-1 overflow-hidden">
+          {isLoading ? (
+            <div className="flex justify-center py-12"><span className="loading loading-spinner loading-lg text-accent" /></div>
+          ) : (
+            <DataTable columns={columns} data={rows} total={total}
+              page={params.page ?? 1} perPage={params.per_page ?? 50}
+              selectedIds={selected} onRowClick={toggleRow}
+              onSort={(sort, order) => setParams({ ...params, sort, order })}
+              onPage={(page) => setParams({ ...params, page })}
+              getId={getId} />
+          )}
+        </div>
+      )}
     </div>
   );
 
@@ -354,3 +357,73 @@ function SettingsTab() {
   );
 }
 
+
+
+function UploadTab() {
+  const [uploading, setUploading] = useState(false);
+  const [progress, setProgress] = useState<{ status: string; progress: number; message?: string; loaded?: number; total?: number } | null>(null);
+  const fileRef = useRef<HTMLInputElement>(null);
+
+  const handleFile = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    setUploading(true);
+    setProgress({ status: "starting", progress: 0 });
+
+    const form = new FormData();
+    form.append("data", file);
+
+    try {
+      const res = await fetch("/api/upload", { method: "POST", credentials: "include", body: form });
+      const { upload_id } = await res.json();
+
+      const poll = setInterval(async () => {
+        try {
+          const r = await fetch(`/api/upload/progress/${upload_id}`, { credentials: "include" });
+          const p = await r.json();
+          setProgress(p);
+          if (p.status === "complete" || p.status === "error") {
+            clearInterval(poll);
+            setUploading(false);
+          }
+        } catch { clearInterval(poll); setUploading(false); }
+      }, 500);
+    } catch {
+      setProgress({ status: "error", progress: 0, message: "Ошибка загрузки" });
+      setUploading(false);
+    }
+  };
+
+  return (
+    <div className="space-y-3">
+      <p className="text-xs text-base-content/50 leading-relaxed">
+        В «Отчете по заданиям ФЛ» выберите параметр отчета «Дата выполнения»,<br />
+        далее выберите «Дату выполнения» (в календаре слева — начало периода,<br />
+        в календаре справа — окончание периода).<br /><br />
+        !! Периоды разных отчётов могут накладываться друг на друга, — это не<br />
+        приведёт к задвоению строк в таблице реестров !!<br /><br />
+        Сформируйте отчёт, скачайте и сохраните файл на свой компьютер.
+      </p>
+      <div className="flex items-center gap-2">
+        <input ref={fileRef} type="file" accept=".xlsx" className="file-input file-input-bordered file-input-sm flex-1"
+          onChange={handleFile} disabled={uploading} />
+        <button className="btn btn-accent btn-sm" onClick={() => fileRef.current?.click()} disabled={uploading}>
+          {uploading ? "Загрузка..." : "Загрузить"}
+        </button>
+      </div>
+      {progress && (
+        <span className="text-xs text-base-content/50">
+          {progress.status === "loading" && "Загрузка в БД..."}
+          {progress.status === "loaded" && `Готово: ${progress.loaded} строк`}
+          {progress.status === "processing" && "Обработка..."}
+          {progress.status === "merging" && "Перенос в основную таблицу..."}
+          {progress.status === "complete" && <span className="text-success">{progress.message}</span>}
+          {progress.status === "error" && <span className="text-error">{progress.message}</span>}
+        </span>
+      )}
+      {progress && (
+        <progress className="progress progress-accent w-full" value={progress.progress} max="100" />
+      )}
+    </div>
+  );
+}
