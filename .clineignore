@@ -1,0 +1,16 @@
+# Python
+__pycache__/
+*.py[oc]
+build/
+dist/
+wheels/
+*.egg-info
+*.db
+.venv/
+
+# Node / React
+node_modules/
+frontend/dist/
+
+# Env
+.env
