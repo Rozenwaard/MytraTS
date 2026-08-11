@@ -80,7 +80,8 @@ function LoginPage() {
     try {
       await login(staffId, password);
       navigate({ to: "/main-afl" });
-    } catch {
+    } catch (err) {
+      console.error("Login error:", err);
       setError("Неверный логин или пароль");
     } finally {
       setLoading(false);
