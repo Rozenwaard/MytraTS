@@ -56,7 +56,7 @@ export function DataTable<TData>({
   const totalPages = Math.ceil(total / perPage);
 
   return (
-    <div className="card bg-base-100 shadow-sm flex flex-col h-full">
+    <div className="card bg-base-100 shadow-sm flex flex-col h-full rounded-md">
       <div className="overflow-x-auto flex-1">
         <table className="table table-sm table-zebra table-pin-rows">
           <thead>
@@ -73,7 +73,7 @@ export function DataTable<TData>({
                 {hg.headers.map((h) => (
                   <th
                     key={h.id}
-                    className="cursor-pointer select-none whitespace-nowrap"
+                    className="cursor-pointer select-none whitespace-nowrap text-center"
                     onClick={h.column.getToggleSortingHandler()}
                   >
                     <span className="inline-flex items-center gap-1">

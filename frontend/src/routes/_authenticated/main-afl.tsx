@@ -68,7 +68,7 @@ function MainAflPage() {
 
   return (
     <div className="flex flex-col h-[calc(100vh-68px)] p-3 gap-3">
-      <div className="card bg-base-100 shadow-sm flex-shrink-0">
+      <div className="card bg-base-100 shadow-sm rounded-md flex-shrink-0">
         <div className="card-body py-2 px-3">
           <div className="flex flex-wrap gap-2 items-center">
             <input

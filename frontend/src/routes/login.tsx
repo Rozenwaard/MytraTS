@@ -17,7 +17,7 @@ export const loginRoute = createRoute({
 });
 
 function LoginPage() {
-  const { user, login } = useAuth();
+  const { login } = useAuth();
   const navigate = useNavigate();
   const [surname, setSurname] = useState("");
   const [staffId, setStaffId] = useState("");
@@ -28,11 +28,6 @@ function LoginPage() {
   const [showSuggestions, setShowSuggestions] = useState(false);
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const formRef = useRef<HTMLFormElement>(null);
-
-  if (user) {
-    navigate({ to: "/main-afl" });
-    return null;
-  }
 
   const searchUsers = useCallback((q: string) => {
     if (debounceRef.current !== null) clearTimeout(debounceRef.current);
@@ -78,8 +73,8 @@ function LoginPage() {
     setLoading(true);
     setError("");
     try {
-      await login(staffId, password);
-      navigate({ to: "/main-afl" });
+      const result = await login(staffId, password);
+      navigate({ to: result.changePassword ? "/change-password" : "/main-afl" });
     } catch (err) {
       console.error("Login error:", err);
       setError("Неверный логин или пароль");
