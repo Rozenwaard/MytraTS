@@ -1,5 +1,6 @@
 import { createRootRoute, Link, Outlet } from "@tanstack/react-router";
 import { useAuth } from "../store/auth";
+import { Logo } from "../components/logo";
 
 export const rootRoute = createRootRoute({
   component: RootLayout,
@@ -21,7 +22,7 @@ function RootLayout() {
       <nav className="navbar bg-base-100 shadow-lg sticky top-0 z-50 px-4">
         <div className="navbar-start">
           <Link to={user ? "/main-afl" : "/login"} className="text-lg font-bold flex items-center gap-2">
-            <span className="w-8 h-8 bg-accent rounded-lg flex items-center justify-center text-base-100 text-sm">⚡</span>
+            <Logo />
             <span className="text-accent">MYTRA</span>
           </Link>
         </div>

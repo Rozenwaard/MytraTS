@@ -56,9 +56,9 @@ export function DataTable<TData>({
   const totalPages = Math.ceil(total / perPage);
 
   return (
-    <div className="card bg-base-100 shadow-sm">
-      <div className="overflow-x-auto">
-        <table className="table table-sm table-zebra">
+    <div className="card bg-base-100 shadow-sm flex flex-col h-full">
+      <div className="overflow-x-auto flex-1">
+        <table className="table table-sm table-zebra table-pin-rows">
           <thead>
             {table.getHeaderGroups().map((hg) => (
               <tr key={hg.id}>
@@ -110,7 +110,7 @@ export function DataTable<TData>({
         </table>
       </div>
 
-      <div className="flex items-center justify-between px-3 py-2 border-t border-base-300">
+      <div className="flex items-center justify-between px-3 py-2 border-t border-base-300 flex-shrink-0">
         <span className="text-sm text-base-content/60">Всего: {total}</span>
         <div className="join">
           <button className="join-item btn btn-xs" disabled={page <= 1} onClick={() => onPage(page - 1)}>

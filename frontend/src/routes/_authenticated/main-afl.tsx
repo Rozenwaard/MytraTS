@@ -15,14 +15,28 @@ export const mainAflRoute = createRoute({
 
 const columns: ColumnDef<MainAflRow>[] = [
   { accessorKey: "task_number", header: "№ задания" },
-  { accessorKey: "address", header: "Адрес" },
+  { accessorKey: "task_source", header: "Источник" },
+  { accessorKey: "task_type", header: "Вид задания" },
+  { accessorKey: "work_type_in_task", header: "Поручение" },
   { accessorKey: "personal_account", header: "Л/с" },
+  { accessorKey: "subscriber_name", header: "Потребитель" },
+  { accessorKey: "address", header: "Адрес" },
+  { accessorKey: "municipal_district", header: "Район" },
+  { accessorKey: "house_type", header: "Тип дома" },
+  { accessorKey: "service_object_type", header: "Объект" },
+  { accessorKey: "meter_installation_place", header: "Место ПУ" },
+  { accessorKey: "meter_status", header: "Статус" },
+  { accessorKey: "meter_ownership", header: "Принадлежность" },
+  { accessorKey: "violations", header: "Нарушения" },
+  { accessorKey: "comment", header: "Комментарий" },
   { accessorKey: "customer", header: "Заказчик" },
   { accessorKey: "executor", header: "Исполнитель" },
+  { accessorKey: "visit_reason", header: "Основание" },
+  { accessorKey: "task_output", header: "Результат" },
   { accessorKey: "task_report", header: "Отчёт" },
   { accessorKey: "grid", header: "Сеть" },
-  { accessorKey: "reestr_number", header: "Реестр" },
   { accessorKey: "done_day", header: "Дата" },
+  { accessorKey: "reestr_number", header: "Реестр" },
 ];
 
 function MainAflPage() {
@@ -53,8 +67,8 @@ function MainAflPage() {
   if (!user) return <p className="p-4">Доступ запрещён</p>;
 
   return (
-    <div className="p-3 space-y-3">
-      <div className="card bg-base-100 shadow-sm">
+    <div className="flex flex-col h-[calc(100vh-68px)] p-3 gap-3">
+      <div className="card bg-base-100 shadow-sm flex-shrink-0">
         <div className="card-body py-2 px-3">
           <div className="flex flex-wrap gap-2 items-center">
             <input
@@ -94,14 +108,16 @@ function MainAflPage() {
           <span className="loading loading-spinner loading-lg text-accent" />
         </div>
       ) : (
-        <DataTable
-          columns={columns} data={rows} total={total}
-          page={params.page ?? 1} perPage={params.per_page ?? 50}
-          selectedRows={selected} onSelectRow={toggleRow} onSelectAll={toggleAll}
-          onSort={(sort, order) => setParams({ ...params, sort, order })}
-          onPage={(page) => setParams({ ...params, page })}
-          getId={getId}
-        />
+        <div className="min-h-0 flex-1 overflow-hidden">
+          <DataTable
+            columns={columns} data={rows} total={total}
+            page={params.page ?? 1} perPage={params.per_page ?? 50}
+            selectedRows={selected} onSelectRow={toggleRow} onSelectAll={toggleAll}
+            onSort={(sort, order) => setParams({ ...params, sort, order })}
+            onPage={(page) => setParams({ ...params, page })}
+            getId={getId}
+          />
+        </div>
       )}
     </div>
   );
