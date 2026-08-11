@@ -105,6 +105,33 @@ async def api_change_password(
     await db_session.commit()
     return Response(content=json.dumps({"ok": True}), media_type="application/json")
 
+
+# ─── User Settings ─────────────────────────────────────────────
+
+@get("/api/user/settings", guards=[require_auth])
+async def api_get_settings(request: Request, db_session: AsyncSession) -> Response:
+    user = await get_current_user(request, db_session)
+    if not user:
+        return Response(content=json.dumps({"settings": None}), media_type="application/json")
+    return Response(content=json.dumps({"settings": json.loads(user.settings) if user.settings else None}, ensure_ascii=False), media_type="application/json")
+
+
+@post("/api/user/settings", guards=[require_auth])
+async def api_save_settings(
+    request: Request,
+    db_session: AsyncSession,
+    data: dict = Body(media_type=RequestEncodingType.JSON),
+) -> Response:
+    user = await get_current_user(request, db_session)
+    if not user:
+        return Response(content=json.dumps({"ok": False}), media_type="application/json", status_code=401)
+    settings_json = json.dumps(data.get("settings", {}), ensure_ascii=False)
+    await db_session.execute(
+        text("UPDATE users SET settings = :s WHERE id = :id"),
+        {"s": settings_json, "id": user.id})
+    await db_session.commit()
+    return Response(content=json.dumps({"ok": True}), media_type="application/json")
+
 # ─── Users & Upload ────────────────────────────────────────────
 
 @get("/api/users/search")
@@ -181,6 +208,7 @@ async def api_main_afl(
     order: str = "asc", customer: str = "", task_report: str = "",
     executor_org: str = "", executor_filter: str = "",
     only_completed: bool = False, only_without_reestr: bool = False,
+    reestr: str = "", task_type: str = "",
 ) -> Response:
     user = await get_current_user(request, db_session)
     clauses = ["1=1"]
@@ -206,6 +234,12 @@ async def api_main_afl(
         clauses.append("task_report IS NOT NULL AND task_report NOT IN ('Дубли', 'Ручная проверка')")
     if only_without_reestr:
         clauses.append("reestr_number IS NULL")
+    if reestr:
+        clauses.append("reestr_number = :reestr")
+        params["reestr"] = reestr
+    if task_type:
+        clauses.append("task_type = :task_type")
+        params["task_type"] = task_type
     if executor_org:
         clauses.append("executor_organization = :executor_org")
         params["executor_org"] = executor_org
@@ -501,6 +535,61 @@ async def api_reject_story(
     await db_session.commit()
     return Response(content=json.dumps({"success": True, "updated": result.rowcount}), media_type="application/json")
 
+
+# ─── Stats ─────────────────────────────────────────────────────
+
+@get("/api/main-afl/stats", guards=[require_auth])
+async def api_main_afl_stats(request: Request, db_session: AsyncSession) -> Response:
+    user = await get_current_user(request, db_session)
+    base_where = "1=1"
+    params = {}
+
+    if user.role == "оператор":
+        base_where += " AND executor IN (SELECT full_name FROM users WHERE locale = :locale)"
+        params["locale"] = user.locale
+    elif user.role == "менеджер":
+        base_where += " AND executor_organization = :dept"
+        params["dept"] = user.dept
+
+    cust_result = await db_session.execute(
+        text(f"SELECT customer, COUNT(*) FROM main_afl WHERE {base_where} GROUP BY customer"), params)
+    customers = {row[0] or "(пусто)": row[1] for row in cust_result}
+
+    plan_result = await db_session.execute(
+        text(f"SELECT task_type, COUNT(*) FROM main_afl WHERE {base_where} AND task_type IN ('Плановый', 'Внеплановый') GROUP BY task_type"), params)
+    plan_counts = {row[0]: row[1] for row in plan_result}
+
+    with_r = await db_session.execute(
+        text(f"SELECT COUNT(*) FROM main_afl WHERE {base_where} AND reestr_number IS NOT NULL AND reestr_number != 'Отклонён'"), params)
+    without_r = await db_session.execute(
+        text(f"SELECT COUNT(*) FROM main_afl WHERE {base_where} AND reestr_number IS NULL"), params)
+
+    completed = await db_session.execute(
+        text(f"SELECT COUNT(*) FROM main_afl WHERE {base_where} AND task_report IS NOT NULL AND task_report NOT IN ('Дубли', 'Ручная проверка')"), params)
+    uncompleted = await db_session.execute(
+        text(f"SELECT COUNT(*) FROM main_afl WHERE {base_where} AND (task_report IS NULL OR task_report = '')"), params)
+
+    tr_result = await db_session.execute(
+        text(f"SELECT COALESCE(task_report, 'Не выполнено'), COUNT(*) FROM main_afl WHERE {base_where} GROUP BY task_report ORDER BY COUNT(*) DESC"), params)
+    task_reports = [{"label": row[0], "count": row[1]} for row in tr_result]
+
+    ex_result = await db_session.execute(
+        text(f"SELECT executor, COUNT(*) FROM main_afl WHERE {base_where} AND executor IS NOT NULL GROUP BY executor ORDER BY COUNT(*) DESC LIMIT 15"), params)
+    executors = [{"label": row[0], "count": row[1]} for row in ex_result]
+
+    return Response(content=json.dumps({
+        "customers": customers,
+        "plan": plan_counts.get("Плановый", 0),
+        "unplan": plan_counts.get("Внеплановый", 0),
+        "with_reestr": with_r.scalar(),
+        "without_reestr": without_r.scalar(),
+        "completed": completed.scalar(),
+        "uncompleted": uncompleted.scalar(),
+        "task_reports": task_reports,
+        "executors": executors,
+    }, ensure_ascii=False), media_type="application/json")
+
+
 # ─── Lookups ───────────────────────────────────────────────────
 
 @get("/api/reestr-list", guards=[require_auth])
@@ -514,10 +603,17 @@ async def api_reestr_list(request: Request, db_session: AsyncSession) -> Respons
     elif user.role == "менеджер":
         query += " AND executor_organization = :dept"
         params["dept"] = user.dept
-    query += " ORDER BY reestr_number"
+    query += " ORDER BY CAST(substr(reestr_number, 1, instr(reestr_number, '-') - 1) AS INTEGER)"
     result = await db_session.execute(text(query), params)
+    reestrs_raw = await db_session.execute(
+        text("SELECT DISTINCT reestr_number, task_report, customer FROM main_afl WHERE reestr_number IS NOT NULL AND reestr_number != 'Отклонён'"),
+        params)
+    reestr_meta = {}
+    for row in reestrs_raw:
+        if row[0] not in reestr_meta:
+            reestr_meta[row[0]] = {"task_report": row[1], "customer": row[2]}
     reestrs = [row[0] for row in result]
-    return Response(content=json.dumps(reestrs, ensure_ascii=False), media_type="application/json")
+    return Response(content=json.dumps({"reestrs": reestrs, "meta": reestr_meta}, ensure_ascii=False), media_type="application/json")
 
 
 @get("/api/executor-organizations", guards=[require_auth])
@@ -571,10 +667,10 @@ cors_config = CORSConfig(allow_origins=["http://localhost:5173"], allow_credenti
 
 app = Litestar(
     route_handlers=[
-        api_login, api_me, api_logout, api_change_password,
+        api_login, api_me, api_logout, api_change_password, api_get_settings, api_save_settings,
         api_search_users,
         api_upload, api_upload_progress,
-        api_main_afl,
+        api_main_afl, api_main_afl_stats,
         api_reestr, api_download_reestr, api_reset_reestr,
         api_update_task_report,
         api_report, api_download_report,

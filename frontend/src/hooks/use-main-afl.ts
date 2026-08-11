@@ -1,6 +1,6 @@
 import { useQuery } from "@tanstack/react-query";
 import { api } from "../api/client";
-import type { MainAflParams, MainAflResponse } from "../api/main-afl";
+import type { MainAflParams, MainAflResponse, MainAflStats } from "../api/main-afl";
 
 function buildQuery(params: MainAflParams): string {
   const q = new URLSearchParams();
@@ -15,6 +15,10 @@ function buildQuery(params: MainAflParams): string {
   if (params.executor_filter) q.set("executor_filter", params.executor_filter);
   if (params.only_completed) q.set("only_completed", "1");
   if (params.only_without_reestr) q.set("only_without_reestr", "1");
+  if (params.done_day) q.set("done_day", params.done_day);
+  if (params.reestr) q.set("reestr", params.reestr);
+  if (params.task_type) q.set("task_type", params.task_type);
+  if ((params as Record<string, unknown>).only_uncompleted) q.set("only_uncompleted", "1");
   return q.toString();
 }
 
@@ -23,5 +27,13 @@ export function useMainAfl(params: MainAflParams) {
     queryKey: ["main-afl", params],
     queryFn: () => api<MainAflResponse>(`/api/main-afl?${buildQuery(params)}`),
     placeholderData: (prev) => prev,
+  });
+}
+
+export function useMainAflStats() {
+  return useQuery({
+    queryKey: ["main-afl-stats"],
+    queryFn: () => api<MainAflStats>("/api/main-afl/stats"),
+    staleTime: 60_000,
   });
 }

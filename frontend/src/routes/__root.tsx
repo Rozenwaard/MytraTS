@@ -1,4 +1,4 @@
-import { createRootRoute, Link, Outlet } from "@tanstack/react-router";
+import { createRootRoute, Link, Outlet, useNavigate } from "@tanstack/react-router";
 import { useAuth } from "../store/auth";
 import { Logo } from "../components/logo";
 
@@ -8,6 +8,7 @@ export const rootRoute = createRootRoute({
 
 function RootLayout() {
   const { user, loading, logout } = useAuth();
+  const navigate = useNavigate();
 
   if (loading) {
     return (
@@ -42,7 +43,7 @@ function RootLayout() {
           {user ? (
             <>
               <span className="text-sm text-base-content/70 hidden sm:inline">{user.full_name}</span>
-              <button onClick={logout} className="btn btn-ghost btn-sm">
+              <button onClick={async () => { await logout(); navigate({ to: "/login" }); }} className="btn btn-ghost btn-sm">
                 Выйти
               </button>
             </>

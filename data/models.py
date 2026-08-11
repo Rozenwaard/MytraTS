@@ -418,6 +418,7 @@ class User(Base):
     staff_id: Mapped[str] = mapped_column(Text)
     password_hash: Mapped[Optional[str]] = mapped_column(Text)
     last_seen: Mapped[str] = mapped_column(Text)
+    settings: Mapped[Optional[str]] = mapped_column(Text)
 
     @property
     def role(self):

@@ -14,9 +14,8 @@ interface DataTableProps<TData> {
   total: number;
   page: number;
   perPage: number;
-  selectedRows: Set<string>;
-  onSelectRow: (id: string) => void;
-  onSelectAll: () => void;
+  selectedIds: Set<string>;
+  onRowClick: (id: string) => void;
   onSort: (sort: string, order: string) => void;
   onPage: (page: number) => void;
   getId: (row: TData) => string;
@@ -28,9 +27,8 @@ export function DataTable<TData>({
   total,
   page,
   perPage,
-  selectedRows,
-  onSelectRow,
-  onSelectAll,
+  selectedIds,
+  onRowClick,
   onSort,
   onPage,
   getId,
@@ -44,9 +42,7 @@ export function DataTable<TData>({
     onSortingChange: (updater) => {
       const next = typeof updater === "function" ? updater(sorting) : updater;
       setSorting(next);
-      if (next.length > 0) {
-        onSort(next[0].id, next[0].desc ? "desc" : "asc");
-      }
+      if (next.length > 0) onSort(next[0].id, next[0].desc ? "desc" : "asc");
     },
     getSortedRowModel: getSortedRowModel(),
     getCoreRowModel: getCoreRowModel(),
@@ -62,14 +58,6 @@ export function DataTable<TData>({
           <thead>
             {table.getHeaderGroups().map((hg) => (
               <tr key={hg.id}>
-                <th className="w-8">
-                  <input
-                    type="checkbox"
-                    className="checkbox checkbox-sm"
-                    checked={selectedRows.size === data.length && data.length > 0}
-                    onChange={onSelectAll}
-                  />
-                </th>
                 {hg.headers.map((h) => (
                   <th
                     key={h.id}
@@ -89,15 +77,11 @@ export function DataTable<TData>({
             {table.getRowModel().rows.map((row) => {
               const id = getId(row.original);
               return (
-                <tr key={id} className={selectedRows.has(id) ? "bg-accent/10" : ""}>
-                  <td>
-                    <input
-                      type="checkbox"
-                      className="checkbox checkbox-sm"
-                      checked={selectedRows.has(id)}
-                      onChange={() => onSelectRow(id)}
-                    />
-                  </td>
+                <tr
+                  key={id}
+                  className={`cursor-pointer ${selectedIds.has(id) ? "bg-accent/15 hover:bg-accent/20" : "hover:bg-base-200"}`}
+                  onClick={() => onRowClick(id)}
+                >
                   {row.getVisibleCells().map((cell) => (
                     <td key={cell.id} className="whitespace-nowrap text-sm">
                       {flexRender(cell.column.columnDef.cell, cell.getContext())}
@@ -113,24 +97,14 @@ export function DataTable<TData>({
       <div className="flex items-center justify-between px-3 py-2 border-t border-base-300 flex-shrink-0">
         <span className="text-sm text-base-content/60">Всего: {total}</span>
         <div className="join">
-          <button className="join-item btn btn-xs" disabled={page <= 1} onClick={() => onPage(page - 1)}>
-            «
-          </button>
+          <button className="join-item btn btn-xs" disabled={page <= 1} onClick={() => onPage(page - 1)}>«</button>
           {Array.from({ length: Math.min(totalPages, 7) }, (_, i) => {
             const p = i + Math.max(1, page - 3);
             return p <= totalPages ? (
-              <button
-                key={p}
-                className={`join-item btn btn-xs ${p === page ? "btn-active" : ""}`}
-                onClick={() => onPage(p)}
-              >
-                {p}
-              </button>
+              <button key={p} className={`join-item btn btn-xs ${p === page ? "btn-active" : ""}`} onClick={() => onPage(p)}>{p}</button>
             ) : null;
           })}
-          <button className="join-item btn btn-xs" disabled={page >= totalPages} onClick={() => onPage(page + 1)}>
-            »
-          </button>
+          <button className="join-item btn btn-xs" disabled={page >= totalPages} onClick={() => onPage(page + 1)}>»</button>
         </div>
       </div>
     </div>

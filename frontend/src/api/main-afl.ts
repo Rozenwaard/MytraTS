@@ -44,4 +44,64 @@ export interface MainAflParams {
   executor_filter?: string;
   only_completed?: boolean;
   only_without_reestr?: boolean;
+  done_day?: string;
+  only_uncompleted?: boolean;
+  reestr?: string;
+  task_type?: string;
+}
+
+
+
+export interface ReestrResult {
+  task_report: string;
+  reestr_number: string;
+  count: number;
+  skipped: number;
+  rejected: number;
+}
+
+export async function createReestr(taskNumbers: string[]) {
+  const res = await fetch("/api/reestr", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    credentials: "include",
+    body: JSON.stringify({ task_numbers: taskNumbers }),
+  });
+  if (!res.ok) throw new Error("Ошибка создания реестра");
+  return res.json() as Promise<{ success: boolean; reestrs: ReestrResult[]; reestr_date: string }>;
+}
+
+export async function resetReestr(taskNumbers: string[]) {
+  const res = await fetch("/api/reestr/reset", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    credentials: "include",
+    body: JSON.stringify({ task_numbers: taskNumbers }),
+  });
+  if (!res.ok) throw new Error("Ошибка сброса реестра");
+  return res.json() as Promise<{ success: boolean; cleared: number }>;
+}
+
+export async function fetchReestrList(): Promise<{ reestrs: string[]; meta: Record<string, { task_report: string | null; customer: string | null }> }> {
+  const res = await fetch("/api/reestr-list", { credentials: "include" });
+  if (!res.ok) return { reestrs: [], meta: {} };
+  return res.json();
+}
+
+export function downloadReestrUrl(rn: string) {
+  return `/api/download-reestr/${encodeURIComponent(rn)}`;
+}
+
+
+
+export interface MainAflStats {
+  customers: Record<string, number>;
+  plan: number;
+  unplan: number;
+  with_reestr: number;
+  without_reestr: number;
+  completed: number;
+  uncompleted: number;
+  task_reports: { label: string; count: number }[];
+  executors: { label: string; count: number }[];
 }
