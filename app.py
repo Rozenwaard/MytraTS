@@ -66,13 +66,13 @@ async def api_login(
         if password != user.staff_id:
             return Response(content=json.dumps({"ok": False, "error": "Неверный логин или пароль"}, ensure_ascii=False), media_type="application/json", status_code=401)
         request.session["user_id"] = user.id
-        return Response(content=json.dumps({"ok": True, "change_password": True, "full_name": user.full_name, "role": user.role}, ensure_ascii=False), media_type="application/json")
+        return Response(content=json.dumps({"ok": True, "change_password": True, "full_name": user.full_name, "role": user.effective_role}, ensure_ascii=False), media_type="application/json")
 
     if user.password_hash != hashlib.sha256(password.encode()).hexdigest():
         return Response(content=json.dumps({"ok": False, "error": "Неверный логин или пароль"}, ensure_ascii=False), media_type="application/json", status_code=401)
 
     request.session["user_id"] = user.id
-    return Response(content=json.dumps({"ok": True, "change_password": False, "full_name": user.full_name, "role": user.role}, ensure_ascii=False), media_type="application/json")
+    return Response(content=json.dumps({"ok": True, "change_password": False, "full_name": user.full_name, "role": user.effective_role}, ensure_ascii=False), media_type="application/json")
 
 
 @get("/api/me", guards=[require_auth])
@@ -80,7 +80,7 @@ async def api_me(request: Request, db_session: AsyncSession) -> Response:
     user = await get_current_user(request, db_session)
     if not user:
         return Response(content=json.dumps({"user": None}, ensure_ascii=False), media_type="application/json", status_code=401)
-    return Response(content=json.dumps({"user": {"id": user.id, "full_name": user.full_name, "dept": user.dept, "locale": user.locale, "position": user.position, "staff_id": user.staff_id, "role": user.role}}, ensure_ascii=False), media_type="application/json")
+    return Response(content=json.dumps({"user": {"id": user.id, "full_name": user.full_name, "dept": user.dept, "locale": user.locale, "position": user.position, "staff_id": user.staff_id, "role": user.effective_role}}, ensure_ascii=False), media_type="application/json")
 
 
 @post("/api/logout")
@@ -183,7 +183,7 @@ async def _run_pipeline(upload_id: str, content: bytes):
                 return
             upload_progress[upload_id] = {"status": "merging", "progress": 90, "total": total_rows}
             inserted, updated = await merge_to_main(db_session, upload_progress, upload_id, total_rows)
-            upload_progress[upload_id] = {"status": "complete", "progress": 100, "total": total_rows, "inserted": inserted, "updated": updated, "message": f"Загружено: {total_rows} строк | Новых: {inserted} | Обновлено: {updated}"}
+            upload_progress[upload_id] = {"status": "complete", "progress": 100, "total": total_rows, "inserted": inserted, "updated": updated, "message": f"Загружено: {total_rows} строк | Новых: {inserted}"}
         except Exception as e:
             await db_session.rollback()
             upload_progress[upload_id] = {"status": "error", "progress": 0, "total": 0, "message": str(e)}
@@ -214,10 +214,10 @@ async def api_main_afl(
     clauses = ["1=1"]
     params: dict = {}
 
-    if user.role == "оператор":
+    if user.effective_role in ("оператор", "работник"):
         clauses.append("executor IN (SELECT full_name FROM users WHERE locale = :locale)")
         params["locale"] = user.locale
-    elif user.role == "менеджер":
+    elif user.effective_role == "менеджер":
         clauses.append("executor_organization = :dept")
         params["dept"] = user.dept
 
@@ -390,7 +390,7 @@ async def api_update_task_report(
     data: dict = Body(media_type=RequestEncodingType.JSON),
 ) -> Response:
     user = await get_current_user(request, db_session)
-    if user.role not in ('администратор', 'специалист'):
+    if user.effective_role not in ('администратор', 'специалист'):
         return Response(content=json.dumps({"success": False, "error": "Нет прав"}), media_type="application/json")
     task_numbers = data.get("task_numbers", [])
     task_report = data.get("task_report", "")
@@ -411,7 +411,7 @@ async def api_report(
     data: dict = Body(media_type=RequestEncodingType.JSON),
 ) -> Response:
     user = await get_current_user(request, db_session)
-    if user.role not in ('администратор', 'специалист'):
+    if user.effective_role not in ('администратор', 'специалист'):
         return Response(content=json.dumps({"success": False, "error": "Нет прав"}), media_type="application/json")
     month = data.get("month")
     year = data.get("year")
@@ -524,7 +524,7 @@ async def api_reject_story(
     data: dict = Body(media_type=RequestEncodingType.JSON),
 ) -> Response:
     user = await get_current_user(request, db_session)
-    if user.role not in ('администратор', 'специалист'):
+    if user.effective_role not in ('администратор', 'специалист'):
         return Response(content=json.dumps({"success": False, "error": "Нет прав"}), media_type="application/json")
     task_numbers = data.get("task_numbers", [])
     if not task_numbers:
@@ -544,10 +544,10 @@ async def api_main_afl_stats(request: Request, db_session: AsyncSession) -> Resp
     base_where = "1=1"
     params = {}
 
-    if user.role == "оператор":
+    if user.effective_role in ("оператор", "работник"):
         base_where += " AND executor IN (SELECT full_name FROM users WHERE locale = :locale)"
         params["locale"] = user.locale
-    elif user.role == "менеджер":
+    elif user.effective_role == "менеджер":
         base_where += " AND executor_organization = :dept"
         params["dept"] = user.dept
 
@@ -567,15 +567,19 @@ async def api_main_afl_stats(request: Request, db_session: AsyncSession) -> Resp
     completed = await db_session.execute(
         text(f"SELECT COUNT(*) FROM main_afl WHERE {base_where} AND task_report IS NOT NULL AND task_report NOT IN ('Дубли', 'Ручная проверка')"), params)
     uncompleted = await db_session.execute(
-        text(f"SELECT COUNT(*) FROM main_afl WHERE {base_where} AND (task_report IS NULL OR task_report = '')"), params)
+        text(f"SELECT COUNT(*) FROM main_afl WHERE {base_where} AND (task_report IS NULL OR task_report = '' OR task_report IN ('Дубли', 'Ручная проверка'))"), params)
 
     tr_result = await db_session.execute(
         text(f"SELECT COALESCE(task_report, 'Не выполнено'), COUNT(*) FROM main_afl WHERE {base_where} GROUP BY task_report ORDER BY COUNT(*) DESC"), params)
     task_reports = [{"label": row[0], "count": row[1]} for row in tr_result]
 
     ex_result = await db_session.execute(
-        text(f"SELECT executor, COUNT(*) FROM main_afl WHERE {base_where} AND executor IS NOT NULL GROUP BY executor ORDER BY COUNT(*) DESC LIMIT 15"), params)
-    executors = [{"label": row[0], "count": row[1]} for row in ex_result]
+        text(f"""SELECT m.executor, m.cnt, u.locale
+                 FROM (SELECT executor, COUNT(*) as cnt FROM main_afl
+                       WHERE {base_where} AND executor IS NOT NULL GROUP BY executor) m
+                 LEFT JOIN users u ON u.full_name = m.executor
+                 ORDER BY m.executor"""), params)
+    executors = [{"label": row[0], "count": row[1], "locale": row[2]} for row in ex_result]
 
     return Response(content=json.dumps({
         "customers": customers,
@@ -597,10 +601,10 @@ async def api_reestr_list(request: Request, db_session: AsyncSession) -> Respons
     user = await get_current_user(request, db_session)
     query = "SELECT DISTINCT reestr_number FROM main_afl WHERE reestr_number IS NOT NULL AND reestr_number != 'Отклонён'"
     params = {}
-    if user.role == "оператор":
+    if user.effective_role in ("оператор", "работник"):
         query += " AND executor IN (SELECT full_name FROM users WHERE locale = :locale)"
         params["locale"] = user.locale
-    elif user.role == "менеджер":
+    elif user.effective_role == "менеджер":
         query += " AND executor_organization = :dept"
         params["dept"] = user.dept
     query += " ORDER BY CAST(substr(reestr_number, 1, instr(reestr_number, '-') - 1) AS INTEGER)"
@@ -627,11 +631,11 @@ async def api_executor_organizations(db_session: AsyncSession) -> Response:
 @get("/api/executors", guards=[require_auth])
 async def api_executors(request: Request, db_session: AsyncSession) -> Response:
     user = await get_current_user(request, db_session)
-    if user.role == "оператор":
+    if user.effective_role in ("оператор", "работник"):
         result = await db_session.execute(text(
             "SELECT DISTINCT executor FROM main_afl WHERE executor IN (SELECT full_name FROM users WHERE locale = :locale) AND executor IS NOT NULL ORDER BY executor"),
             {"locale": user.locale})
-    elif user.role == "менеджер":
+    elif user.effective_role == "менеджер":
         result = await db_session.execute(text(
             "SELECT DISTINCT executor FROM main_afl WHERE executor_organization = :dept AND executor IS NOT NULL ORDER BY executor"),
             {"dept": user.dept})
@@ -648,10 +652,10 @@ async def api_task_reports(request: Request, db_session: AsyncSession) -> Respon
     query = """SELECT DISTINCT task_report FROM main_afl WHERE task_report IS NOT NULL
             AND task_report NOT IN ('Диспетчеризация', 'Дубли', 'Ручная проверка')"""
     params = {}
-    if user.role == "оператор":
+    if user.effective_role in ("оператор", "работник"):
         query += " AND executor IN (SELECT full_name FROM users WHERE locale = :locale)"
         params["locale"] = user.locale
-    elif user.role == "менеджер":
+    elif user.effective_role == "менеджер":
         query += " AND executor_organization = :dept"
         params["dept"] = user.dept
     query += " ORDER BY task_report"

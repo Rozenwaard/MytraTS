@@ -2,6 +2,10 @@ from typing import Optional
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
 from sqlalchemy import Float, Text, Integer
 
+ROLES = ("администратор", "специалист", "менеджер", "оператор", "работник")
+FIELD_ROLES = ("оператор", "работник")
+ADMIN_ROLES = ("администратор", "специалист")
+
 
 class Base(DeclarativeBase):
     pass
@@ -419,9 +423,10 @@ class User(Base):
     password_hash: Mapped[Optional[str]] = mapped_column(Text)
     last_seen: Mapped[str] = mapped_column(Text)
     settings: Mapped[Optional[str]] = mapped_column(Text)
+    role: Mapped[Optional[str]] = mapped_column(Text)
 
     @property
-    def role(self):
+    def derived_role(self) -> str:
         if self.dept == "Отдел организации" and self.position == "Директор":
             return "администратор"
         elif self.dept == "Отдел организации":
@@ -430,3 +435,7 @@ class User(Base):
             return "менеджер"
         else:
             return "оператор"
+
+    @property
+    def effective_role(self) -> str:
+        return self.role or self.derived_role

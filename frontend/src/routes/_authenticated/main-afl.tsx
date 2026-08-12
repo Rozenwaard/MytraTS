@@ -34,7 +34,7 @@ const columns: ColumnDef<MainAflRow>[] = [
   { accessorKey: "executor", header: "Исполнитель" },
   { accessorKey: "visit_reason", header: "Основание" },
   { accessorKey: "task_output", header: "Результат" },
-  { accessorKey: "task_report", header: "Отчёт" },
+  { accessorKey: "task_report", header: "Вид работ" },
   { accessorKey: "grid", header: "Сеть" },
   { accessorKey: "done_day", header: "Дата" },
   { accessorKey: "reestr_number", header: "Реестр" },
@@ -51,6 +51,8 @@ function MainAflPage() {
   const [reestrMeta, setReestrMeta] = useState<Record<string, { task_report: string | null; customer: string | null }>>({});
   const [activeReestr, setActiveReestr] = useState<string>("");
   const [emptyReestrs, setEmptyReestrs] = useState<Set<string>>(new Set());
+  const [reportOptions, setReportOptions] = useState<string[]>([]);
+  const [selectedReport, setSelectedReport] = useState("");
   const toastTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const { data, isLoading, refetch } = useMainAfl(params);
@@ -79,6 +81,25 @@ function MainAflPage() {
   };
 
   useEffect(() => { loadReestrs(); }, []);
+
+  useEffect(() => {
+    fetch("/api/task-reports", { credentials: "include" })
+      .then((r) => r.json()).then(setReportOptions).catch(() => {});
+  }, []);
+
+  const handleChangeReport = async () => {
+    if (selected.size !== 1) { showToast("Выберите ровно одну строку"); return; }
+    try {
+      await fetch("/api/main-afl/task-report", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        credentials: "include",
+        body: JSON.stringify({ task_numbers: [...selected], task_report: selectedReport }),
+      });
+      showToast("Вид работ изменён");
+      setSelected(new Set()); refetch();
+    } catch { showToast("Ошибка изменения"); }
+  };
 
   const handleCreateReestr = async () => {
     if (selected.size === 0) { showToast("Не выбраны строки"); return; }
@@ -113,6 +134,8 @@ function MainAflPage() {
 
   if (!user) return null;
 
+  const isAdmin = user?.role === "администратор";
+
   return (
     <div className="flex flex-col h-[calc(100vh-68px)] p-3 gap-3">
       {toast && <div className="fixed top-16 right-4 z-50 alert alert-success shadow-lg w-auto max-w-lg py-2 px-4 text-sm"><span>{toast}</span></div>}
@@ -120,7 +143,7 @@ function MainAflPage() {
       <div className="flex-shrink-0">
         <div className="card bg-base-100 shadow-sm rounded-md">
           <div className="flex border-b border-base-200">
-            {(["upload", "add", "list", "settings"] as const).map((t) => (
+            {(["upload", "add", "list", "settings"] as const).filter((t) => !(t === "list" && isAdmin)).map((t) => (
               <button key={t} onClick={() => {
                 setTab(t);
                 if (t === "list") { loadReestrs(); setParams({ page: 1, per_page: 50, reestr: activeReestr || reestrs[0] || undefined }); }
@@ -128,14 +151,14 @@ function MainAflPage() {
               }}
                 className={`px-4 py-2 text-sm font-medium border-b-2 transition-colors -mb-px
                   ${tab === t ? "border-accent text-accent" : "border-transparent text-base-content/50 hover:text-base-content"}`}>
-                {{ upload: "Загрузка", add: "Добавление", list: "Список", settings: "Настройка" }[t]}
+                {{ upload: "Загрузка", add: "Обзор", list: "Список", settings: "Настройка" }[t]}
               </button>
             ))}
           </div>
 
           <div className="py-2 px-3">
             {tab === "upload" && <UploadTab />}
-            {tab === "add" && <AddTab params={params} setParams={setParams} onReset={handleResetFilters} onCreate={handleCreateReestr} />}
+            {tab === "add" && <AddTab params={params} setParams={setParams} onReset={handleResetFilters} onCreate={handleCreateReestr} isAdmin={isAdmin} onChangeReport={handleChangeReport} reportOptions={reportOptions} selectedReport={selectedReport} setSelectedReport={setSelectedReport} />}
             {tab === "list" && <ListTab reestrs={reestrs} activeReestr={activeReestr} setActiveReestr={setActiveReestr} emptyReestrs={emptyReestrs} toggleEmpty={toggleEmpty} onReset={handleResetReestr} onSelectReestr={handleSelectReestr} meta={reestrMeta} />}
             {tab === "settings" && <SettingsTab />}
           </div>
@@ -159,24 +182,53 @@ function MainAflPage() {
     </div>
   );
 
-function AddTab({ params, setParams, onReset, onCreate }: {
+function AddTab({ params, setParams, onReset, onCreate, isAdmin, onChangeReport, reportOptions, selectedReport, setSelectedReport }: {
   params: MainAflParams; setParams: (p: MainAflParams) => void;
-  onReset: () => void; onCreate: () => void;
+  onReset: () => void; onCreate: () => void; isAdmin: boolean; onChangeReport: () => void;
+  reportOptions: string[]; selectedReport: string; setSelectedReport: (v: string) => void;
 }) {
   const { data: stats } = useMainAflStats();
+  const executors = stats?.executors ?? [];
+  const chunk = 12;
+  const executorCols: typeof executors[] = [];
+  for (let i = 0; i < executors.length; i += chunk) executorCols.push(executors.slice(i, i + chunk));
+
+  const ExecutorCol = ({ list }: { list: typeof executors }) => (
+    <div className="flex flex-col gap-y-0.5 text-xs min-w-[220px]">
+      {list.map((ex) => (
+        <button key={ex.label} className="text-left cursor-pointer hover:underline flex gap-2"
+          onClick={() => setParams({ ...params, executor_filter: params.executor_filter === ex.label ? undefined : ex.label, page: 1 })}>
+          <span className="text-base-content/70 truncate">{ex.label}</span>
+          {ex.locale && <span className="text-secondary/80 text-[10px] self-center whitespace-nowrap">·{ex.locale}</span>}
+          <span className="font-semibold tabular-nums ml-auto">{ex.count.toLocaleString()}</span>
+        </button>
+      ))}
+    </div>
+  );
 
   return (
     <div className="space-y-2">
       <div className="flex flex-wrap gap-2 items-center">
         <input type="text" placeholder="Поиск по адресу, № задания или л/с" className="input input-bordered input-sm flex-1 min-w-[220px]"
           value={params.search ?? ""} onChange={(e) => setParams({ ...params, search: e.target.value || undefined, page: 1 })} />
-        <input type="text" placeholder="Дата работ" className="input input-bordered input-sm w-[140px]"
+        <input type="date" className="input input-bordered input-sm w-[150px]"
           value={(params as Record<string, string>).done_day ?? ""} onChange={(e) => setParams({ ...params, done_day: e.target.value || undefined } as MainAflParams)} />
         <button className="btn btn-ghost btn-sm" onClick={onReset}>Сброс фильтров</button>
-        <button className="btn btn-accent btn-sm" onClick={onCreate}>В реестр</button>
+        {isAdmin ? (
+          <>
+            <select className="select select-bordered select-sm w-[240px]" value={selectedReport} onChange={(e) => setSelectedReport(e.target.value)}>
+              <option value="" disabled>Выберите вид работ</option>
+              <option value="">Не выполнено</option>
+              {reportOptions.map((r) => <option key={r} value={r}>{r}</option>)}
+            </select>
+            <button className="btn btn-accent btn-sm" onClick={onChangeReport}>Поменять работу</button>
+          </>
+        ) : (
+          <button className="btn btn-accent btn-sm" onClick={onCreate}>В реестр</button>
+        )}
       </div>
       <div className="border-t border-base-200" />
-      <div className="grid grid-cols-3 gap-6 text-sm">
+      <div className="grid grid-cols-4 gap-4 text-sm">
         <div>
           <div className="text-xs text-base-content/40 mb-1.5 font-medium">Статистика</div>
           <div className="flex flex-col gap-y-0.5 text-xs">
@@ -208,7 +260,7 @@ function AddTab({ params, setParams, onReset, onCreate }: {
           </div>
         </div>
         <div>
-          <div className="text-xs text-base-content/40 mb-1.5 font-medium">По видам работ</div>
+          <div className="text-xs text-base-content/40 mb-1.5 font-medium">Вид работ</div>
           <div className="flex flex-col gap-y-0.5 text-xs">
             {stats?.task_reports?.map((tr) => (
               <button key={tr.label} className="text-left cursor-pointer hover:underline flex gap-1"
@@ -219,16 +271,10 @@ function AddTab({ params, setParams, onReset, onCreate }: {
             )) ?? <span className="text-base-content/50">—</span>}
           </div>
         </div>
-        <div>
-          <div className="text-xs text-base-content/40 mb-1.5 font-medium">По исполнителям</div>
-          <div className="flex flex-col gap-y-0.5 text-xs">
-            {stats?.executors?.map((ex) => (
-              <button key={ex.label} className="text-left cursor-pointer hover:underline flex gap-1.5"
-                onClick={() => setParams({ ...params, executor_filter: params.executor_filter === ex.label ? undefined : ex.label, page: 1 })}>
-                <span className="text-base-content/70 truncate">{ex.label}</span>
-                <span className="font-semibold tabular-nums ml-auto">{ex.count.toLocaleString()}</span>
-              </button>
-            )) ?? <span className="text-base-content/50">—</span>}
+        <div className="col-span-2">
+          <div className="text-xs text-base-content/40 mb-1.5 font-medium">Исполнители</div>
+          <div className="flex gap-6 overflow-x-auto">
+            {executorCols.map((col, i) => <ExecutorCol key={i} list={col} />)}
           </div>
         </div>
       </div>

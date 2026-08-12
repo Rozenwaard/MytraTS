@@ -103,5 +103,5 @@ export interface MainAflStats {
   completed: number;
   uncompleted: number;
   task_reports: { label: string; count: number }[];
-  executors: { label: string; count: number }[];
+  executors: { label: string; count: number; locale: string | null }[];
 }
