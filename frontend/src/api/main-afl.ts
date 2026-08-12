@@ -104,4 +104,6 @@ export interface MainAflStats {
   uncompleted: number;
   task_reports: { label: string; count: number }[];
   executors: { label: string; count: number; locale: string | null }[];
+  depts: { label: string; count: number }[];
+  done_days: string[];
 }

@@ -94,7 +94,7 @@ function MainAflPage() {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
         credentials: "include",
-        body: JSON.stringify({ task_numbers: [...selected], task_report: selectedReport }),
+        body: JSON.stringify({ task_numbers: [...selected], task_report: selectedReport === "__none__" ? "" : selectedReport }),
       });
       showToast("Вид работ изменён");
       setSelected(new Set()); refetch();
@@ -135,6 +135,8 @@ function MainAflPage() {
   if (!user) return null;
 
   const isAdmin = user?.role === "администратор";
+  const isSpecialist = user?.role === "специалист";
+  const hideListTab = isAdmin || isSpecialist;
 
   return (
     <div className="flex flex-col h-[calc(100vh-68px)] p-3 gap-3">
@@ -143,7 +145,7 @@ function MainAflPage() {
       <div className="flex-shrink-0">
         <div className="card bg-base-100 shadow-sm rounded-md">
           <div className="flex border-b border-base-200">
-            {(["upload", "add", "list", "settings"] as const).filter((t) => !(t === "list" && isAdmin)).map((t) => (
+            {(["upload", "add", "list", "settings"] as const).filter((t) => !(t === "list" && hideListTab)).map((t) => (
               <button key={t} onClick={() => {
                 setTab(t);
                 if (t === "list") { loadReestrs(); setParams({ page: 1, per_page: 50, reestr: activeReestr || reestrs[0] || undefined }); }
@@ -158,7 +160,7 @@ function MainAflPage() {
 
           <div className="py-2 px-3">
             {tab === "upload" && <UploadTab />}
-            {tab === "add" && <AddTab params={params} setParams={setParams} onReset={handleResetFilters} onCreate={handleCreateReestr} isAdmin={isAdmin} onChangeReport={handleChangeReport} reportOptions={reportOptions} selectedReport={selectedReport} setSelectedReport={setSelectedReport} />}
+            {tab === "add" && <AddTab params={params} setParams={setParams} onReset={handleResetFilters} onCreate={handleCreateReestr} role={user.role} onChangeReport={handleChangeReport} reportOptions={reportOptions} selectedReport={selectedReport} setSelectedReport={setSelectedReport} />}
             {tab === "list" && <ListTab reestrs={reestrs} activeReestr={activeReestr} setActiveReestr={setActiveReestr} emptyReestrs={emptyReestrs} toggleEmpty={toggleEmpty} onReset={handleResetReestr} onSelectReestr={handleSelectReestr} meta={reestrMeta} />}
             {tab === "settings" && <SettingsTab />}
           </div>
@@ -182,16 +184,22 @@ function MainAflPage() {
     </div>
   );
 
-function AddTab({ params, setParams, onReset, onCreate, isAdmin, onChangeReport, reportOptions, selectedReport, setSelectedReport }: {
+function AddTab({ params, setParams, onReset, onCreate, role, onChangeReport, reportOptions, selectedReport, setSelectedReport }: {
   params: MainAflParams; setParams: (p: MainAflParams) => void;
-  onReset: () => void; onCreate: () => void; isAdmin: boolean; onChangeReport: () => void;
+  onReset: () => void; onCreate: () => void; role: string; onChangeReport: () => void;
   reportOptions: string[]; selectedReport: string; setSelectedReport: (v: string) => void;
 }) {
   const { data: stats } = useMainAflStats();
+  const isAdmin = role === "администратор";
+  const isSpecialist = role === "специалист";
+  const showDepts = isAdmin || isSpecialist;
+  const showExecutorScroll = isAdmin || isSpecialist;
+
   const executors = stats?.executors ?? [];
   const chunk = 12;
   const executorCols: typeof executors[] = [];
   for (let i = 0; i < executors.length; i += chunk) executorCols.push(executors.slice(i, i + chunk));
+  const deptLabel = (d: string) => d.replace(/ отделение$/, "");
 
   const ExecutorCol = ({ list }: { list: typeof executors }) => (
     <div className="flex flex-col gap-y-0.5 text-xs min-w-[220px]">
@@ -211,24 +219,27 @@ function AddTab({ params, setParams, onReset, onCreate, isAdmin, onChangeReport,
       <div className="flex flex-wrap gap-2 items-center">
         <input type="text" placeholder="Поиск по адресу, № задания или л/с" className="input input-bordered input-sm flex-1 min-w-[220px]"
           value={params.search ?? ""} onChange={(e) => setParams({ ...params, search: e.target.value || undefined, page: 1 })} />
-        <input type="date" className="input input-bordered input-sm w-[150px]"
-          value={(params as Record<string, string>).done_day ?? ""} onChange={(e) => setParams({ ...params, done_day: e.target.value || undefined } as MainAflParams)} />
+        <select className={`select select-bordered select-sm w-[150px] ${!((params as Record<string, string>).done_day) ? "text-base-content/50" : ""}`} value={(params as Record<string, string>).done_day ?? ""}
+          onChange={(e) => setParams({ ...params, done_day: e.target.value || undefined } as MainAflParams)}>
+          <option value="">Выберите дату</option>
+          {stats?.done_days?.map((d) => <option key={d} value={d}>{d}</option>)}
+        </select>
         <button className="btn btn-ghost btn-sm" onClick={onReset}>Сброс фильтров</button>
         {isAdmin ? (
           <>
-            <select className="select select-bordered select-sm w-[240px]" value={selectedReport} onChange={(e) => setSelectedReport(e.target.value)}>
+            <select className={`select select-bordered select-sm w-[240px] ${!selectedReport ? "text-base-content/50" : ""}`} value={selectedReport} onChange={(e) => setSelectedReport(e.target.value)}>
               <option value="" disabled>Выберите вид работ</option>
-              <option value="">Не выполнено</option>
+              <option value="__none__">Не выполнено</option>
               {reportOptions.map((r) => <option key={r} value={r}>{r}</option>)}
             </select>
             <button className="btn btn-accent btn-sm" onClick={onChangeReport}>Поменять работу</button>
           </>
-        ) : (
+        ) : isSpecialist ? null : (
           <button className="btn btn-accent btn-sm" onClick={onCreate}>В реестр</button>
         )}
       </div>
       <div className="border-t border-base-200" />
-      <div className="grid grid-cols-4 gap-4 text-sm">
+      <div className={`grid ${showDepts ? "grid-cols-[240px_240px_240px_1fr]" : "grid-cols-[240px_240px_1fr]"} gap-6 text-sm`}>
         <div>
           <div className="text-xs text-base-content/40 mb-1.5 font-medium">Статистика</div>
           <div className="flex flex-col gap-y-0.5 text-xs">
@@ -271,11 +282,29 @@ function AddTab({ params, setParams, onReset, onCreate, isAdmin, onChangeReport,
             )) ?? <span className="text-base-content/50">—</span>}
           </div>
         </div>
-        <div className="col-span-2">
-          <div className="text-xs text-base-content/40 mb-1.5 font-medium">Исполнители</div>
-          <div className="flex gap-6 overflow-x-auto">
-            {executorCols.map((col, i) => <ExecutorCol key={i} list={col} />)}
+        {showDepts && (
+          <div>
+            <div className="text-xs text-base-content/40 mb-1.5 font-medium">Отделения</div>
+            <div className="flex flex-col gap-y-0.5 text-xs">
+              {stats?.depts?.map((d) => (
+                <button key={d.label} className="text-left cursor-pointer hover:underline flex gap-1"
+                  onClick={() => setParams({ ...params, executor_org: params.executor_org === d.label ? undefined : d.label, page: 1 })}>
+                  <span className="text-base-content/70">{deptLabel(d.label)}</span>
+                  <span className="font-semibold tabular-nums ml-auto">{d.count.toLocaleString()}</span>
+                </button>
+              )) ?? <span className="text-base-content/50">—</span>}
+            </div>
           </div>
+        )}
+        <div className="min-w-0">
+          <div className="text-xs text-base-content/40 mb-1.5 font-medium">Исполнители</div>
+          {showExecutorScroll ? (
+            <div className="flex gap-6 overflow-x-auto">
+              {executorCols.map((col, i) => <ExecutorCol key={i} list={col} />)}
+            </div>
+          ) : (
+            <ExecutorCol list={executors} />
+          )}
         </div>
       </div>
     </div>

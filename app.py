@@ -208,7 +208,7 @@ async def api_main_afl(
     order: str = "asc", customer: str = "", task_report: str = "",
     executor_org: str = "", executor_filter: str = "",
     only_completed: bool = False, only_without_reestr: bool = False,
-    reestr: str = "", task_type: str = "",
+    reestr: str = "", task_type: str = "", done_day: str = "",
 ) -> Response:
     user = await get_current_user(request, db_session)
     clauses = ["1=1"]
@@ -240,6 +240,9 @@ async def api_main_afl(
     if task_type:
         clauses.append("task_type = :task_type")
         params["task_type"] = task_type
+    if done_day:
+        clauses.append("done_day = :done_day")
+        params["done_day"] = done_day
     if executor_org:
         clauses.append("executor_organization = :executor_org")
         params["executor_org"] = executor_org
@@ -581,6 +584,14 @@ async def api_main_afl_stats(request: Request, db_session: AsyncSession) -> Resp
                  ORDER BY m.executor"""), params)
     executors = [{"label": row[0], "count": row[1], "locale": row[2]} for row in ex_result]
 
+    dept_result = await db_session.execute(
+        text(f"SELECT executor_organization, COUNT(*) FROM main_afl WHERE {base_where} AND executor_organization IS NOT NULL GROUP BY executor_organization ORDER BY executor_organization"), params)
+    depts = [{"label": row[0], "count": row[1]} for row in dept_result]
+
+    dd_result = await db_session.execute(
+        text(f"SELECT DISTINCT done_day FROM main_afl WHERE {base_where} AND done_day IS NOT NULL ORDER BY done_day ASC"), params)
+    done_days = [row[0] for row in dd_result]
+
     return Response(content=json.dumps({
         "customers": customers,
         "plan": plan_counts.get("Плановый", 0),
@@ -591,6 +602,8 @@ async def api_main_afl_stats(request: Request, db_session: AsyncSession) -> Resp
         "uncompleted": uncompleted.scalar(),
         "task_reports": task_reports,
         "executors": executors,
+        "depts": depts,
+        "done_days": done_days,
     }, ensure_ascii=False), media_type="application/json")
 
 
