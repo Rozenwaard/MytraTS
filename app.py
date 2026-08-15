@@ -3,6 +3,7 @@ import hashlib
 import json
 import traceback
 import uuid
+from collections import Counter
 from datetime import date
 from typing import Any
 from urllib.parse import quote
@@ -27,7 +28,8 @@ from services.merger import merge_to_main
 from services.processor import process_raw_afl
 from services.reestr import DEPT_PREFIXES, LOCALE_SUFFIXES, generate_reestr_xlsx_bytes, generate_report_xlsx_bytes
 from services.uploader import load_xlsx_to_raw
-from services.report_check import check_row, is_stop_blocked, recompute_errors
+from services.report_check import is_stop_blocked, recompute_errors, split_errors
+from services.dashboard import build_scope, generate_errors_xlsx, generate_balance_xlsx, pick_pu_type
 
 load_dotenv()
 upload_progress: dict[str, dict] = {}
@@ -683,35 +685,61 @@ async def api_task_reports(request: Request, db_session: AsyncSession) -> Respon
     return Response(content=json.dumps(reports, ensure_ascii=False), media_type="application/json")
 
 
-@get("/api/report/check", guards=[require_auth])
-async def api_report_check(db_session: AsyncSession) -> Response:
-    result = await db_session.execute(text("SELECT * FROM main_afl WHERE customer = :c"), {"c": "ПСК"})
-    rows = [dict(r) for r in result.mappings()]
+@get("/api/dashboard/summary", guards=[require_auth])
+async def api_dashboard_summary(request: Request, db_session: AsyncSession) -> Response:
+    user = await get_current_user(request, db_session)
+    clauses, params = build_scope(user)
+    where = " AND ".join(clauses)
 
-    checked = []
-    for row in rows:
-        errors = check_row(row)
-        checked.append({
-            "task_number": row.get("task_number"),
-            "address": row.get("address"),
-            "subscriber_name": row.get("subscriber_name"),
-            "meter_serial_number": row.get("meter_serial_number"),
-            "work_type": row.get("work_type"),
-            "work_result": row.get("work_result"),
-            "executor": row.get("executor"),
-            "done_day": row.get("done_day"),
-            "errors": errors,
-            "error_count": len(errors),
-        })
+    result = await db_session.execute(text(f"SELECT errors FROM main_afl WHERE {where}"), params)
+    counter = Counter()
+    total_with_errors = 0
+    for (errors_text,) in result:
+        if errors_text:
+            total_with_errors += 1
+            for e in split_errors(errors_text):
+                counter[e] += 1
 
-    with_errors = sum(1 for c in checked if c["error_count"] > 0)
-    checked.sort(key=lambda c: (-c["error_count"], c["task_number"] or ""))
-
+    errors_list = [{"label": label, "count": count} for label, count in counter.most_common()]
     return Response(content=json.dumps({
-        "total": len(checked),
-        "with_errors": with_errors,
-        "rows": checked,
+        "total_with_errors": total_with_errors,
+        "total_errors": sum(counter.values()),
+        "errors": errors_list,
     }, ensure_ascii=False), media_type="application/json")
+
+
+@get("/api/dashboard/errors-report", guards=[require_auth])
+async def api_dashboard_errors_report(request: Request, db_session: AsyncSession) -> Response:
+    user = await get_current_user(request, db_session)
+    clauses, params = build_scope(user)
+    where = " AND ".join(clauses)
+
+    result = await db_session.execute(
+        text(f"SELECT task_number, errors FROM main_afl WHERE {where} ORDER BY task_number"), params)
+    rows = [(r[0], r[1]) for r in result]
+
+    output = generate_errors_xlsx(rows)
+    filename = "Отчёт_об_ошибках.xlsx"
+    return Response(content=output, media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                    headers={"Content-Disposition": f"attachment; filename*=UTF-8''{quote(filename)}"})
+
+
+@get("/api/dashboard/balance-report", guards=[require_auth])
+async def api_dashboard_balance_report(request: Request, db_session: AsyncSession) -> Response:
+    user = await get_current_user(request, db_session)
+    clauses, params = build_scope(user)
+    clauses.append("errors LIKE :be")
+    params["be"] = "%Балансовая принадлежность%"
+    where = " AND ".join(clauses)
+
+    result = await db_session.execute(
+        text(f"SELECT task_number, meter_type_2, meter_type_1, meter_type FROM main_afl WHERE {where} ORDER BY task_number"), params)
+    rows = [(r[0], pick_pu_type(r[1], r[2], r[3])) for r in result]
+
+    output = generate_balance_xlsx(rows)
+    filename = "Балансовая_принадлежность.xlsx"
+    return Response(content=output, media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                    headers={"Content-Disposition": f"attachment; filename*=UTF-8''{quote(filename)}"})
 
 
 # ─── App Init ─────────────────────────────────────────────────
@@ -727,7 +755,8 @@ app = Litestar(
         api_main_afl, api_main_afl_stats,
         api_reestr, api_download_reestr, api_reset_reestr,
         api_update_task_report,
-        api_report, api_download_report, api_report_check,
+        api_report, api_download_report,
+        api_dashboard_summary, api_dashboard_errors_report, api_dashboard_balance_report,
         api_story_afl, api_reject_story,
         api_executor_organizations, api_reestr_list,
         api_executors, api_task_reports,
