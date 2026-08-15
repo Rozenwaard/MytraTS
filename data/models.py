@@ -264,6 +264,7 @@ class MainAfl(Base):
     reestr_number: Mapped[Optional[str]] = mapped_column(Text)
     reestr_date: Mapped[Optional[str]] = mapped_column(Text)
     report: Mapped[Optional[str]] = mapped_column(Text)
+    errors: Mapped[Optional[str]] = mapped_column(Text)
 
 
 class StoryAfl(Base):

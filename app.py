@@ -27,6 +27,7 @@ from services.merger import merge_to_main
 from services.processor import process_raw_afl
 from services.reestr import DEPT_PREFIXES, LOCALE_SUFFIXES, generate_reestr_xlsx_bytes, generate_report_xlsx_bytes
 from services.uploader import load_xlsx_to_raw
+from services.report_check import check_row, is_stop_blocked, recompute_errors
 
 load_dotenv()
 upload_progress: dict[str, dict] = {}
@@ -182,8 +183,9 @@ async def _run_pipeline(upload_id: str, content: bytes):
             if not success:
                 return
             upload_progress[upload_id] = {"status": "merging", "progress": 90, "total": total_rows}
-            inserted, updated = await merge_to_main(db_session, upload_progress, upload_id, total_rows)
-            upload_progress[upload_id] = {"status": "complete", "progress": 100, "total": total_rows, "inserted": inserted, "updated": updated, "message": f"Загружено: {total_rows} строк | Новых: {inserted}"}
+            inserted, updated, affected = await merge_to_main(db_session, upload_progress, upload_id, total_rows)
+            await recompute_errors(db_session, affected)
+            upload_progress[upload_id] = {"status": "complete", "progress": 100, "total": total_rows, "inserted": inserted, "updated": updated, "message": f"Загружено: {total_rows} строк | Новых: {inserted} | Обновлено: {updated}"}
         except Exception as e:
             await db_session.rollback()
             upload_progress[upload_id] = {"status": "error", "progress": 0, "total": 0, "message": str(e)}
@@ -197,7 +199,7 @@ MAIN_AFL_DISPLAY_COLUMNS = [
     "service_object_type", "subscriber_name", "meter_installation_place",
     "meter_status", "meter_ownership", "violations", "comment",
     "executor", "visit_reason", "customer", "task_output", "task_report",
-    "grid", "done_day", "reestr_number", "reestr_date"
+    "grid", "done_day", "reestr_number", "reestr_date", "errors"
 ]
 
 
@@ -288,10 +290,14 @@ async def api_reestr(
     names, bind_params = _build_in_clause("tn", task_numbers)
 
     result = await db_session.execute(
-        text(f"SELECT task_number, task_report, executor_organization, customer, grid, reestr_number, "
+        text(f"SELECT task_number, task_report, executor_organization, customer, grid, reestr_number, errors, region, municipal_district, "
              f"(SELECT locale FROM users WHERE users.full_name = main_afl.executor LIMIT 1) as locale "
              f"FROM main_afl WHERE task_number IN ({names})"), bind_params)
-    rows = [dict(row._mapping) for row in result]
+    all_rows = [dict(row._mapping) for row in result]
+
+    blocked_set = {r["task_number"] for r in all_rows if is_stop_blocked(r)}
+    rows = [r for r in all_rows if r["task_number"] not in blocked_set]
+    blocked = sorted(blocked_set)
 
     groups: dict = {}
     existing_map: dict = {}
@@ -350,7 +356,7 @@ async def api_reestr(
                        "count": len(new_tasks), "skipped": len(already), "rejected": 0})
 
     await db_session.commit()
-    return Response(content=json.dumps({"success": True, "reestrs": reestrs, "reestr_date": reestr_date}, ensure_ascii=False), media_type="application/json")
+    return Response(content=json.dumps({"success": True, "reestrs": reestrs, "reestr_date": reestr_date, "blocked": blocked}, ensure_ascii=False), media_type="application/json")
 
 
 @get("/api/download-reestr/{reestr_number:str}", guards=[require_auth])
@@ -677,6 +683,37 @@ async def api_task_reports(request: Request, db_session: AsyncSession) -> Respon
     return Response(content=json.dumps(reports, ensure_ascii=False), media_type="application/json")
 
 
+@get("/api/report/check", guards=[require_auth])
+async def api_report_check(db_session: AsyncSession) -> Response:
+    result = await db_session.execute(text("SELECT * FROM main_afl WHERE customer = :c"), {"c": "ПСК"})
+    rows = [dict(r) for r in result.mappings()]
+
+    checked = []
+    for row in rows:
+        errors = check_row(row)
+        checked.append({
+            "task_number": row.get("task_number"),
+            "address": row.get("address"),
+            "subscriber_name": row.get("subscriber_name"),
+            "meter_serial_number": row.get("meter_serial_number"),
+            "work_type": row.get("work_type"),
+            "work_result": row.get("work_result"),
+            "executor": row.get("executor"),
+            "done_day": row.get("done_day"),
+            "errors": errors,
+            "error_count": len(errors),
+        })
+
+    with_errors = sum(1 for c in checked if c["error_count"] > 0)
+    checked.sort(key=lambda c: (-c["error_count"], c["task_number"] or ""))
+
+    return Response(content=json.dumps({
+        "total": len(checked),
+        "with_errors": with_errors,
+        "rows": checked,
+    }, ensure_ascii=False), media_type="application/json")
+
+
 # ─── App Init ─────────────────────────────────────────────────
 
 cors_config = CORSConfig(allow_origins=["http://localhost:5173"], allow_credentials=True)
@@ -690,7 +727,7 @@ app = Litestar(
         api_main_afl, api_main_afl_stats,
         api_reestr, api_download_reestr, api_reset_reestr,
         api_update_task_report,
-        api_report, api_download_report,
+        api_report, api_download_report, api_report_check,
         api_story_afl, api_reject_story,
         api_executor_organizations, api_reestr_list,
         api_executors, api_task_reports,

@@ -52,38 +52,44 @@ async def merge_to_main(db_session, upload_progress, upload_id, total_rows):
     all_rows = [dict(row._mapping) for row in result]
 
     new_rows = [row for row in all_rows if row['task_number'] not in existing_tasks]
+    update_rows = [row for row in all_rows if row['task_number'] in existing_tasks]
 
-    if not new_rows:
-        upload_progress[upload_id] = {
-            "status": "complete", "progress": 100, "total": total_rows,
-            "inserted": 0, "updated": 0
-        }
-        await db_session.commit()
-        return 0, 0
+    inserted = 0
+    updated = 0
 
-    batch_size = 1000
-    columns_list = list(new_rows[0].keys())
-    placeholders = ', '.join([':' + c for c in columns_list])
-    columns_names = ', '.join(columns_list)
+    if new_rows:
+        batch_size = 1000
+        columns_list = list(new_rows[0].keys())
+        placeholders = ', '.join([':' + c for c in columns_list])
+        columns_names = ', '.join(columns_list)
 
-    for i in range(0, len(new_rows), batch_size):
-        batch = new_rows[i:i + batch_size]
-        await db_session.execute(
-            text(f"INSERT INTO main_afl ({columns_names}) VALUES ({placeholders})"),
-            batch
-        )
-        progress = 90 + int((i / len(new_rows)) * 9) if len(new_rows) > 0 else 99
-        upload_progress[upload_id] = {
-            "status": "merging", "progress": min(progress, 99),
-            "total": total_rows, "inserted": min(i + batch_size, len(new_rows)),
-            "updated": 0
-        }
+        for i in range(0, len(new_rows), batch_size):
+            batch = new_rows[i:i + batch_size]
+            await db_session.execute(
+                text(f"INSERT INTO main_afl ({columns_names}) VALUES ({placeholders})"),
+                batch
+            )
+            progress = 90 + int((i / len(new_rows)) * 9) if len(new_rows) > 0 else 99
+            upload_progress[upload_id] = {
+                "status": "merging", "progress": min(progress, 99),
+                "total": total_rows, "inserted": min(i + batch_size, len(new_rows)),
+                "updated": 0
+            }
+        inserted = len(new_rows)
+
+    if update_rows:
+        update_cols = [c for c in MAIN_AFL_COLUMNS if c != 'task_number']
+        set_clause = ', '.join(f'"{c}" = :{c}' for c in update_cols)
+        update_sql = text(f"UPDATE main_afl SET {set_clause} WHERE task_number = :task_number")
+        await db_session.execute(update_sql, update_rows)
+        updated = len(update_rows)
 
     await db_session.commit()
 
     upload_progress[upload_id] = {
         "status": "complete", "progress": 100, "total": total_rows,
-        "inserted": len(new_rows), "updated": 0
+        "inserted": inserted, "updated": updated
     }
 
-    return len(new_rows), 0
+    affected = [row['task_number'] for row in all_rows]
+    return inserted, updated, affected

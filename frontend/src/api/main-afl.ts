@@ -23,6 +23,7 @@ export interface MainAflRow {
   done_day: string | null;
   reestr_number: string | null;
   reestr_date: string | null;
+  errors: string | null;
 }
 
 export interface MainAflResponse {
@@ -68,7 +69,7 @@ export async function createReestr(taskNumbers: string[]) {
     body: JSON.stringify({ task_numbers: taskNumbers }),
   });
   if (!res.ok) throw new Error("Ошибка создания реестра");
-  return res.json() as Promise<{ success: boolean; reestrs: ReestrResult[]; reestr_date: string }>;
+  return res.json() as Promise<{ success: boolean; reestrs: ReestrResult[]; reestr_date: string; blocked: string[] }>;
 }
 
 export async function resetReestr(taskNumbers: string[]) {

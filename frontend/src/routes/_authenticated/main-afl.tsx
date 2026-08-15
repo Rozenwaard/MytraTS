@@ -38,6 +38,7 @@ const columns: ColumnDef<MainAflRow>[] = [
   { accessorKey: "grid", header: "Сеть" },
   { accessorKey: "done_day", header: "Дата" },
   { accessorKey: "reestr_number", header: "Реестр" },
+  { accessorKey: "errors", header: "Ошибки" },
 ];
 
 
@@ -108,7 +109,8 @@ function MainAflPage() {
       const parts = result.reestrs.map((r) =>
         r.reestr_number === "Отклонён" ? `${r.task_report}: отклонён` : `${r.reestr_number} — ${r.task_report} (${r.count})`
       );
-      showToast(parts.join(" | ") || "Готово");
+      const blockedMsg = result.blocked?.length ? ` | Стоп-фактор: ${result.blocked.length}` : "";
+      showToast((parts.join(" | ") || "Готово") + blockedMsg);
       setSelected(new Set()); refetch(); loadReestrs();
     } catch { showToast("Ошибка создания реестра"); }
   };
