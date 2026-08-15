@@ -686,9 +686,9 @@ async def api_task_reports(request: Request, db_session: AsyncSession) -> Respon
 
 
 @get("/api/dashboard/summary", guards=[require_auth])
-async def api_dashboard_summary(request: Request, db_session: AsyncSession) -> Response:
+async def api_dashboard_summary(request: Request, db_session: AsyncSession, dept: str = "") -> Response:
     user = await get_current_user(request, db_session)
-    clauses, params = build_scope(user)
+    clauses, params = build_scope(user, dept)
     where = " AND ".join(clauses)
 
     result = await db_session.execute(text(f"SELECT errors FROM main_afl WHERE {where}"), params)
@@ -709,9 +709,9 @@ async def api_dashboard_summary(request: Request, db_session: AsyncSession) -> R
 
 
 @get("/api/dashboard/errors-report", guards=[require_auth])
-async def api_dashboard_errors_report(request: Request, db_session: AsyncSession) -> Response:
+async def api_dashboard_errors_report(request: Request, db_session: AsyncSession, dept: str = "") -> Response:
     user = await get_current_user(request, db_session)
-    clauses, params = build_scope(user)
+    clauses, params = build_scope(user, dept)
     where = " AND ".join(clauses)
 
     result = await db_session.execute(
@@ -725,9 +725,9 @@ async def api_dashboard_errors_report(request: Request, db_session: AsyncSession
 
 
 @get("/api/dashboard/balance-report", guards=[require_auth])
-async def api_dashboard_balance_report(request: Request, db_session: AsyncSession) -> Response:
+async def api_dashboard_balance_report(request: Request, db_session: AsyncSession, dept: str = "") -> Response:
     user = await get_current_user(request, db_session)
-    clauses, params = build_scope(user)
+    clauses, params = build_scope(user, dept)
     clauses.append("errors LIKE :be")
     params["be"] = "%Балансовая принадлежность%"
     where = " AND ".join(clauses)

@@ -1,7 +1,8 @@
 import { createRoute } from "@tanstack/react-router";
+import { useState } from "react";
 import { rootRoute } from "../__root";
 import { useAuth } from "../../store/auth";
-import { useDashboardSummary } from "../../hooks/use-dashboard";
+import { useDashboardSummary, useDepartments } from "../../hooks/use-dashboard";
 
 export const dashboardRoute = createRoute({
   getParentRoute: () => rootRoute,
@@ -27,13 +28,27 @@ function DashboardPage() {
 }
 
 function OverviewTab() {
-  const { data, isLoading } = useDashboardSummary();
+  const { user } = useAuth();
+  const isAdmin = user?.role === "администратор" || user?.role === "специалист";
+  const [dept, setDept] = useState("");
+  const { data: depts } = useDepartments(isAdmin);
+  const { data, isLoading } = useDashboardSummary(dept);
+
+  const qs = dept ? `?dept=${encodeURIComponent(dept)}` : "";
 
   return (
     <div className="flex-1 min-h-0 flex flex-col gap-3">
-      <div className="flex-shrink-0 flex flex-wrap gap-2">
-        <a href="/api/dashboard/errors-report" className="btn btn-accent btn-sm">Отчёт об ошибках</a>
-        <a href="/api/dashboard/balance-report" className="btn btn-outline btn-sm">Балансовая принадлежность</a>
+      <div className="flex-shrink-0 flex flex-wrap items-center gap-2">
+        {isAdmin && (
+          <select className="select select-bordered select-sm" value={dept} onChange={(e) => setDept(e.target.value)}>
+            <option value="">Все отделения</option>
+            {(depts ?? []).map((d) => (
+              <option key={d} value={d}>{d}</option>
+            ))}
+          </select>
+        )}
+        <a href={`/api/dashboard/errors-report${qs}`} className="btn btn-accent btn-sm">Отчёт об ошибках</a>
+        <a href={`/api/dashboard/balance-report${qs}`} className="btn btn-outline btn-sm">Балансовая принадлежность</a>
       </div>
 
       {isLoading || !data ? (

@@ -21,10 +21,14 @@ DASHBOARD_WORK_TYPES = [
 ]
 
 
-def build_scope(user) -> tuple[list, dict]:
-    """Зона видимости пользователя + территории стоп-фактора + виды работ + только строки с ошибками."""
+def build_scope(user, dept: str = "") -> tuple[list, dict]:
+    """Зона видимости + территории стоп-фактора + виды работ + (отделение) + только строки с ошибками."""
     clauses = ["customer = 'ПСК'", "(errors IS NOT NULL AND errors != '')"]
     params: dict = {}
+
+    if dept:
+        clauses.append("executor_organization = :dept_filter")
+        params["dept_filter"] = dept
 
     wt_names = [f"wt{i}" for i in range(len(DASHBOARD_WORK_TYPES))]
     params.update(zip(wt_names, DASHBOARD_WORK_TYPES))

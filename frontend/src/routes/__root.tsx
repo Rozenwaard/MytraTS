@@ -24,7 +24,7 @@ function RootLayout() {
     <div className="min-h-screen bg-base-200" data-theme={theme}>
       <nav className="navbar bg-base-100 shadow-lg sticky top-0 z-50 px-4">
         <div className="navbar-start">
-          <Link to={user ? "/main-afl" : "/login"} className="text-lg font-bold flex items-center gap-2">
+          <Link to={user ? "/dashboard" : "/login"} className="text-lg font-bold flex items-center gap-2">
             <Logo />
             <span className="text-accent">MYTRA</span>
           </Link>

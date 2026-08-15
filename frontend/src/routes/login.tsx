@@ -74,7 +74,7 @@ function LoginPage() {
     setError("");
     try {
       const result = await login(staffId, password);
-      navigate({ to: result.changePassword ? "/change-password" : "/main-afl" });
+      navigate({ to: result.changePassword ? "/change-password" : "/dashboard" });
     } catch (err) {
       console.error("Login error:", err);
       setError("Неверный логин или пароль");

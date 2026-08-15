@@ -40,7 +40,7 @@ function ChangePasswordPage() {
         method: "POST",
         body: JSON.stringify({ new_password: newPassword, confirm_password: confirmPassword }),
       });
-      navigate({ to: "/main-afl" });
+      navigate({ to: "/dashboard" });
     } catch {
       setError("Ошибка при смене пароля");
     } finally {
