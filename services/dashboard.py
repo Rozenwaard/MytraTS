@@ -6,11 +6,30 @@ from openpyxl import Workbook
 
 from services.report_check import STOP_FACTOR_REGIONS, STOP_FACTOR_DISTRICTS
 
+# Виды работ, которые учитываются в дашборде/отчётах (остальные не важны).
+DASHBOARD_WORK_TYPES = [
+    "Бытовые заявки",
+    "План лестница",
+    "План квартира",
+    "Периодический контроль БП",
+    "Допуск ПУ в МКД",
+    "Допуск ПУ в ИЖС",
+    "План ИЖС",
+    "Выявление безучетного потребления БП",
+    "Инструментальная проверка",
+    "Контроль СП",
+]
+
 
 def build_scope(user) -> tuple[list, dict]:
-    """Зона видимости пользователя + территории стоп-фактора + только строки с ошибками."""
+    """Зона видимости пользователя + территории стоп-фактора + виды работ + только строки с ошибками."""
     clauses = ["customer = 'ПСК'", "(errors IS NOT NULL AND errors != '')"]
     params: dict = {}
+
+    wt_names = [f"wt{i}" for i in range(len(DASHBOARD_WORK_TYPES))]
+    params.update(zip(wt_names, DASHBOARD_WORK_TYPES))
+    wt_in = ", ".join(f":{n}" for n in wt_names)
+    clauses.append(f"task_report IN ({wt_in})")
 
     regions = sorted(STOP_FACTOR_REGIONS)
     districts = sorted(STOP_FACTOR_DISTRICTS)
