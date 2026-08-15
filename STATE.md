@@ -23,24 +23,26 @@ bun run dev
 ## Структура
 ```
 MytraTS/
-├── app.py                 # все эндпоинты (Litestar), ~670 строк
+├── app.py                 # все эндпоинты (Litestar), ~770 строк (пока не разделён на модули)
 ├── data/
 │   ├── config.py          # engine, SECRET_KEY из .env
-│   └── models.py          # RawAfl, MainAfl, StoryAfl, Calendar, User (+ ROLES, FIELD_ROLES, ADMIN_ROLES)
+│   └── models.py          # RawAfl, MainAfl (+errors), StoryAfl, Calendar, User (+ ROLES, FIELD_ROLES, ADMIN_ROLES)
 ├── services/
 │   ├── uploader.py        # xlsx → raw_afl (async engine, run_sync)
 │   ├── processor.py       # 30+ SQL-шагов классификации (портирован как есть)
-│   ├── merger.py          # raw → main (только INSERT новых, без update)
-│   └── reestr.py          # генерация xlsx реестра/отчёта, DEPT_PREFIXES, LOCALE_SUFFIXES
+│   ├── merger.py          # raw → main (INSERT новых + UPDATE существующих, возвращает inserted/updated/affected)
+│   ├── reestr.py          # генерация xlsx реестра/отчёта, DEPT_PREFIXES, LOCALE_SUFFIXES
+│   ├── report_check.py    # правила проверки «Алькор» (check_row), recompute_errors, BALANCE_ERRORS, STOP_FACTOR_*
+│   └── dashboard.py       # build_scope (виды работ+территории+видимость+отделение), генераторы xlsx отчётов дашборда
 ├── frontend/
 │   └── src/
-│       ├── api/           # client.ts (fetch+cookie), main-afl.ts (типы + fetch)
+│       ├── api/           # client.ts (fetch+cookie), main-afl.ts, dashboard.ts
 │       ├── store/auth.tsx # AuthContext (user, login, logout)
-│       ├── hooks/use-main-afl.ts # useMainAfl, useMainAflStats
-│       ├── routes/        # __root (navbar+тема), login, _authenticated/main-afl (вся логика страницы Реестры)
+│       ├── hooks/         # use-main-afl.ts, use-dashboard.ts
+│       ├── routes/        # __root (navbar+тема), login, _authenticated/{main-afl, change-password, dashboard}
 │       ├── components/    # data-table.tsx (клик-выбор строк), logo.tsx
 │       └── lib/use-theme.ts
-└── _migrate_role.py       # миграция: ALTER users ADD role + бэкфилл
+└── _migrate_errors.py     # миграция: ALTER main_afl ADD errors + бэкфилл
 ```
 
 ## Роли (5)
@@ -61,29 +63,46 @@ MytraTS/
   4. Исполнители (алфавит, с locale) — скролл по 12 строк для админ/спец, простой список для менеджер/оператор.
 - Поиск по дате — выпадающий список доступных done_day.
 - Фильтры суммируются (AND). «Сброс фильтров» очищает.
-- Вкладка Загрузка: файл .xlsx + прогресс (polling /api/upload/progress/{id}), статусы loading→loaded→processing→merging→complete. Сообщение «Загружено: N | Новых: M» (без Обновлено).
+- Вкладка Загрузка: файл .xlsx + прогресс (polling /api/upload/progress/{id}), статусы loading→loaded→processing→merging→complete. Сообщение «Загружено: N | Новых: M | Обновлено: K» (update возвращён).
 - Вкладка Список (менеджер/оператор): плашки реестров (номер + (П) для пустых), кнопки Печать/Пустой/Удалить из реестра, метаданные Вид работ/Заказчик. Фильтр таблицы по выбранному реестру.
 - Вкладка Настройка: порядок + видимость колонок (drag&drop, autosave в users.settings).
 - Тема light/dark (autumn/dracula), кнопка в навбаре.
 
+## Дашборд (стартовая страница `/dashboard`)
+После логина открывается Дашборд, вкладка «Обзор»:
+- Карточки частоты ошибок (число + тип) по `main_afl.errors`.
+- Фильтр по отделениям (выпадающий список) — только для администратора/специалиста.
+- Кнопки выгрузки xlsx: «Отчёт об ошибках» (№ задания + ошибки) и «Балансовая принадлежность» (№ задания + тип ПУ: группа 3 → 2 → 1).
+- Область данных (карточки и оба файла): территории стоп-фактора (region='СПб' или municipal_district='ЛО Гатчинский муниципальный район') + зона видимости пользователя + только 10 видов работ (task_report) + только строки с ошибками.
+
+## Проверка отчёта «Алькор» (ошибки и стоп-фактор)
+- `main_afl.errors` — колонка с найденными ошибками (через `; `). Пересчитывается при загрузке (`recompute_errors`) и миграцией `_migrate_errors.py`.
+- Всего 25 типов ошибок = 23 стоп-фактора + 2 балансовых («Балансовая принадлежность», «Балансовая принадлежность нового ПУ»).
+- Стоп-фактор (23 ошибки) блокирует присвоение номера реестра; активен для region='СПб' или municipal_district='ЛО Гатчинский муниципальный район' (кроме строк, где только балансовые ошибки). В `api_reestr` такие строки исключаются и возвращаются в `blocked`.
+- 2 балансовые ошибки обрабатываются особо (не стоп-фактор).
+- Виды работ для дашборда/отчётов — `DASHBOARD_WORK_TYPES` в services/dashboard.py (10 типов).
+
 ## Эндпоинты (app.py)
 Auth: `/api/login`, `/api/me`, `/api/logout`, `/api/change-password`, `/api/user/settings` (GET/POST)
 Данные: `/api/main-afl` (GET, параметры: page, per_page, sort, order, search, customer, task_report, task_type, executor_org, executor_filter, only_completed, only_without_reestr, reestr, done_day), `/api/main-afl/stats` (GET), `/api/users/search`
-Реестры: `/api/reestr` (POST), `/api/reestr/reset` (POST), `/api/download-reestr/{reestr_number}`, `/api/reestr-list`, `/api/task-reports`, `/api/executor-organizations`, `/api/executors`, `/api/main-afl/task-report` (PATCH)
+Реестры: `/api/reestr` (POST, + возвращает blocked), `/api/reestr/reset` (POST), `/api/download-reestr/{reestr_number}`, `/api/reestr-list`, `/api/task-reports`, `/api/executor-organizations`, `/api/executors`, `/api/main-afl/task-report` (PATCH)
+Дашборд: `/api/dashboard/summary` (GET, ?dept=), `/api/dashboard/errors-report` (GET xlsx, ?dept=), `/api/dashboard/balance-report` (GET xlsx, ?dept=)
 Загрузка: `/api/upload` (POST multipart), `/api/upload/progress/{upload_id}`
+Готово на бэке, нет UI: `/api/report` (POST), `/api/download-report/{period}`, `/api/story-afl` (GET), `/api/story-afl/reject` (POST)
 
 ## НЕ ДОДЕЛАНО (заглушки / не перенесено)
 1. **Архив (Story)** — страница `/story` в навбаре ведёт на `/main-afl` (заглушка). Бэкенд-эндпоинты готовы: `/api/story-afl` (GET с фильтрами), `/api/story-afl/reject` (POST). Нужно: страница архива + таблица с фильтрами.
 2. **Формирование отчёта** — `/api/report` (POST) + `/api/download-report/{period}` готовы на бэке. Нужен UI (выбор месяца/года, кнопка «Сформировать», скачивание). Логика: строки с reestr_date → report=period, «Отклонён» → report=«Отклонён», перенос в story_afl, удаление из main_afl.
 3. **README.md** — пустой.
-4. `.env` — не в git (в .gitignore), есть `.env.example`.
+4. **app.py не разделён на тематические модули** — решено отложить (пока ~770 строк в одном файле).
+5. `.env` — не в git (в .gitignore), есть `.env.example`.
 
 ## Конвенции
 - SQL: только bindparams (`:name`), без f-string-инъекций. Для IN — `_build_in_clause(prefix, values)` в app.py.
 - Роли проверяются через `user.effective_role`.
 - Фильтры на бэке строятся из `clauses` + `params` dict.
 - Фронт: типы в `api/main-afl.ts`, запросы через `api<T>()` (client.ts, credentials:include).
-- Коммиты атомарные (сейчас всё в master).
+- Коммиты атомарные, ветка master, пушится на GitHub.
 
 - **специалист**: как админ, но БЕЗ кнопки/списка смены вида работ. Тоже видит Отделения + скролл исполнителей.
 - **менеджер**: видимость по dept. Вкладки Загрузка/Обзор/Список/Настройка. Кнопка «В реестр». Нет колонки Отделений, нет скролла исполнителей (простой список).
