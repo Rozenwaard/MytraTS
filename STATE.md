@@ -2,6 +2,7 @@
 
 ## Что это
 Приложение управления реестрами заданий энергосбыта. Бэкенд — Litestar (JSON API) + SQLAlchemy 2, фронтенд — React SPA + TanStack.
+Бизнес-логика и правила — `docs/БИЗНЕС-ЛОГИКА.md`.
 
 ## Стек
 - **Бэкенд**: Python 3.11, Litestar 2.24, SQLAlchemy 2 (async + aiosqlite), `uv` для зависимостей. БД — SQLite `mytra.db`.
