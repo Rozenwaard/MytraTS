@@ -81,10 +81,11 @@ MytraTS/
 
 ## Дашборд (стартовая страница `/dashboard`)
 После логина открывается Дашборд, вкладка «Обзор»:
-- Карточки частоты ошибок (число + тип) по `main_afl.errors`.
+- Карточки-счётчики: заданий в зоне, с ошибками, отправлено в биллинг (из числа ошибок), на исправлении (не отправлено), всего ошибок (в строках «на исправлении»).
+- Сетка частоты ошибок — расклад по видам ошибок из строк «на исправлении».
 - Фильтр по отделениям (выпадающий список) — только для администратора/специалиста.
-- Кнопки выгрузки xlsx: «Отчёт об ошибках» (№ задания + ошибки) и «Балансовая принадлежность» (№ задания + тип ПУ: группа 3 → 2 → 1).
-- Область данных (карточки и оба файла): территории стоп-фактора (region='СПб' или municipal_district='ЛО Гатчинский муниципальный район') + зона видимости пользователя + только 10 видов работ (task_report) + только строки с ошибками.
+- Кнопки выгрузки xlsx (4): «Отчёт об ошибках» (№ задания + ошибки) — видна всем; «Балансовая принадлежность» (№ задания + тип ПУ: группа 3 → 2 → 1), «Дата работ» (только № задания), «Отметка о проверке» (только № задания, verified='Нет') — только администратор/специалист. В имя файла добавляется дата-время.
+- Зона (карточки): территории стоп-фактора (region='СПб' или municipal_district='ЛО Гатчинский муниципальный район') + зона видимости пользователя + customer='ПСК' + только 10 видов работ (task_report). Выгрузки — дополнительно только не отправленные в биллинг (sent_to_billing='Нет').
 
 ## Проверка отчёта «Алькор» (ошибки и стоп-фактор)
 - `main_afl.errors` — колонка с найденными ошибками (через `; `). Пересчитывается при загрузке (`recompute_errors`) и миграцией `_migrate_errors.py`.
@@ -97,7 +98,7 @@ MytraTS/
 Auth: `/api/login`, `/api/me`, `/api/logout`, `/api/change-password`, `/api/user/settings` (GET/POST)
 Данные: `/api/main-afl` (GET, параметры: page, per_page, sort, order, search, customer, task_report, task_type, executor_org, executor_filter, only_completed, only_without_reestr, reestr, done_day), `/api/main-afl/stats` (GET), `/api/users/search`
 Реестры: `/api/reestr` (POST, + возвращает blocked), `/api/reestr/reset` (POST), `/api/download-reestr/{reestr_number}`, `/api/reestr-list`, `/api/task-reports`, `/api/executor-organizations`, `/api/executors`, `/api/main-afl/task-report` (PATCH)
-Дашборд: `/api/dashboard/summary` (GET, ?dept=), `/api/dashboard/errors-report` (GET xlsx, ?dept=), `/api/dashboard/balance-report` (GET xlsx, ?dept=)
+Дашборд: `/api/dashboard/summary` (GET, ?dept=), `/api/dashboard/errors-report` (GET xlsx, ?dept=), `/api/dashboard/balance-report` (GET xlsx, ?dept=), `/api/dashboard/date-report` (GET xlsx, ?dept=), `/api/dashboard/verified-report` (GET xlsx, ?dept=)
 Загрузка: `/api/upload` (POST multipart), `/api/upload/progress/{upload_id}`
 Готово на бэке, нет UI: `/api/report` (POST), `/api/download-report/{period}`, `/api/story-afl` (GET), `/api/story-afl/reject` (POST)
 

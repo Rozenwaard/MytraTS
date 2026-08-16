@@ -4,7 +4,10 @@ export interface DashboardError {
 }
 
 export interface DashboardSummary {
-  total_with_errors: number;
+  total_rows: number;
+  with_errors: number;
+  billed_count: number;
+  unbilled_count: number;
   total_errors: number;
   errors: DashboardError[];
 }

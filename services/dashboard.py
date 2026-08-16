@@ -22,8 +22,8 @@ DASHBOARD_WORK_TYPES = [
 
 
 def build_scope(user, dept: str = "") -> tuple[list, dict]:
-    """Зона видимости + территории стоп-фактора + виды работ + (отделение) + только строки с ошибками."""
-    clauses = ["customer = 'ПСК'", "(errors IS NOT NULL AND errors != '')"]
+    """Зона видимости: ПСК + территории стоп-фактора + 10 видов работ + (отделение) + видимость по роли."""
+    clauses = ["customer = 'ПСК'"]
     params: dict = {}
 
     if dept:
@@ -86,6 +86,20 @@ def generate_balance_xlsx(rows) -> bytes:
         ws.append([tn, pu_type])
     ws.column_dimensions["A"].width = 28
     ws.column_dimensions["B"].width = 30
+    buf = io.BytesIO()
+    wb.save(buf)
+    return buf.getvalue()
+
+
+def generate_task_numbers_xlsx(rows) -> bytes:
+    """Отчёт из одного столбца «Номер задания» (для «Дата работ» и «Отметка о проверке»)."""
+    wb = Workbook()
+    ws = wb.active
+    ws.title = "Задания"
+    ws.append(["Номер задания"])
+    for tn in rows:
+        ws.append([tn])
+    ws.column_dimensions["A"].width = 28
     buf = io.BytesIO()
     wb.save(buf)
     return buf.getvalue()

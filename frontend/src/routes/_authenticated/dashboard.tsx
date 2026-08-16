@@ -48,7 +48,13 @@ function OverviewTab() {
           </select>
         )}
         <a href={`/api/dashboard/errors-report${qs}`} className="btn btn-accent btn-sm">Отчёт об ошибках</a>
-        <a href={`/api/dashboard/balance-report${qs}`} className="btn btn-outline btn-sm">Балансовая принадлежность</a>
+        {isAdmin && (
+          <>
+            <a href={`/api/dashboard/balance-report${qs}`} className="btn btn-outline btn-sm">Балансовая принадлежность</a>
+            <a href={`/api/dashboard/date-report${qs}`} className="btn btn-outline btn-sm">Дата работ</a>
+            <a href={`/api/dashboard/verified-report${qs}`} className="btn btn-outline btn-sm">Отметка о проверке</a>
+          </>
+        )}
       </div>
 
       {isLoading || !data ? (
@@ -57,9 +63,12 @@ function OverviewTab() {
         </div>
       ) : (
         <>
-          <div className="grid grid-cols-2 gap-3 flex-shrink-0">
-            <StatCard label="Заданий с ошибками" value={data.total_with_errors} accent="text-error" />
-            <StatCard label="Всего ошибок" value={data.total_errors} accent="text-accent" />
+          <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3 flex-shrink-0">
+            <StatCard label="Заданий в зоне" value={data.total_rows} />
+            <StatCard label="С ошибками" value={data.with_errors} accent="text-error" />
+            <StatCard label="Отправлено в биллинг" value={data.billed_count} accent="text-success" />
+            <StatCard label="На исправлении" value={data.unbilled_count} accent="text-warning" />
+            <StatCard label="Всего ошибок" value={data.total_errors} accent="text-error" />
           </div>
 
           {data.errors.length === 0 ? (
