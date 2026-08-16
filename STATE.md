@@ -1,7 +1,7 @@
 # STATE — MYTRA (MytraTS)
 
 ## Что это
-Приложение управления реестрами заданий энергосбыта. Перенос со старого проекта `C:\Users\ASUS\MaterialThought\Mytra` (Litestar + Jinja2 + vanilla JS) на новый `C:\Users\ASUS\MaterialThought\MytraTS` (Litestar JSON API + React SPA + TanStack).
+Приложение управления реестрами заданий энергосбыта. Бэкенд — Litestar (JSON API) + SQLAlchemy 2, фронтенд — React SPA + TanStack.
 
 ## Стек
 - **Бэкенд**: Python 3.11, Litestar 2.24, SQLAlchemy 2 (async + aiosqlite), `uv` для зависимостей. БД — SQLite `mytra.db`.
@@ -23,17 +23,28 @@ bun run dev
 ## Структура
 ```
 MytraTS/
-├── app.py                 # все эндпоинты (Litestar), ~770 строк (пока не разделён на модули)
+├── app.py                 # точка входа: сборка Litestar-приложения из роутеров
+├── deps.py                # get_current_user, require_auth (общие зависимости)
+├── sql.py                 # build_in_clause (общий SQL-хелпер для IN)
 ├── data/
 │   ├── config.py          # engine, SECRET_KEY из .env
 │   └── models.py          # RawAfl, MainAfl (+errors), StoryAfl, Calendar, User (+ ROLES, FIELD_ROLES, ADMIN_ROLES)
 ├── services/
 │   ├── uploader.py        # xlsx → raw_afl (async engine, run_sync)
-│   ├── processor.py       # 30+ SQL-шагов классификации (портирован как есть)
+│   ├── processor.py       # 30+ SQL-шагов классификации
 │   ├── merger.py          # raw → main (INSERT новых + UPDATE существующих, возвращает inserted/updated/affected)
 │   ├── reestr.py          # генерация xlsx реестра/отчёта, DEPT_PREFIXES, LOCALE_SUFFIXES
 │   ├── report_check.py    # правила проверки «Алькор» (check_row), recompute_errors, BALANCE_ERRORS, STOP_FACTOR_*
 │   └── dashboard.py       # build_scope (виды работ+территории+видимость+отделение), генераторы xlsx отчётов дашборда
+├── routers/
+│   ├── auth.py             # логин/логаут, смена пароля, настройки, поиск пользователей
+│   ├── upload.py           # загрузка xlsx + прогресс загрузки
+│   ├── main_afl.py         # таблица реестров, статистика, смена вида работ
+│   ├── reestr.py           # формирование/сброс реестров, список, выгрузка
+│   ├── report.py           # формирование отчётного периода + выгрузка xlsx
+│   ├── story.py            # архив (перенос строк) + отклонение
+│   ├── dashboard.py        # сводка ошибок и отчёты дашборда
+│   └── lookups.py          # справочники (отделения, исполнители, виды работ)
 ├── frontend/
 │   └── src/
 │       ├── api/           # client.ts (fetch+cookie), main-afl.ts, dashboard.ts
@@ -54,7 +65,7 @@ MytraTS/
 Матрица (страница «Реестры» `/main-afl`):
 - **администратор**: вкладки Загрузка/Обзор/Настройка (без Список). Кнопка «Поменять работу» + выпадающий список видов работ (меняет task_report у ОДНОЙ выбранной строки, PATCH /api/main-afl/task-report). Видит колонку «Отделения» и скролл исполнителей.
 
-## Что сделано (вкладка «Обзор» = бывшее «Добавление»)
+## Что сделано (вкладка «Обзор»)
 - Таблица main_afl: поиск (адрес/№/лс), сортировка (серверная), пагинация, выбор строк кликом (подсветка).
 - Статистика-фильтры (4 колонки для админ/спец, 3 для менеджер/оператор):
   1. Статистика: ПСК, РЛЭ, План, Внеплан (по task_type), Выполнено, Не выполнено (включает Дубли+Ручная проверка), С реестром, Без реестра.
@@ -82,7 +93,7 @@ MytraTS/
 - 2 балансовые ошибки обрабатываются особо (не стоп-фактор).
 - Виды работ для дашборда/отчётов — `DASHBOARD_WORK_TYPES` в services/dashboard.py (10 типов).
 
-## Эндпоинты (app.py)
+## Эндпоинты (routers/)
 Auth: `/api/login`, `/api/me`, `/api/logout`, `/api/change-password`, `/api/user/settings` (GET/POST)
 Данные: `/api/main-afl` (GET, параметры: page, per_page, sort, order, search, customer, task_report, task_type, executor_org, executor_filter, only_completed, only_without_reestr, reestr, done_day), `/api/main-afl/stats` (GET), `/api/users/search`
 Реестры: `/api/reestr` (POST, + возвращает blocked), `/api/reestr/reset` (POST), `/api/download-reestr/{reestr_number}`, `/api/reestr-list`, `/api/task-reports`, `/api/executor-organizations`, `/api/executors`, `/api/main-afl/task-report` (PATCH)
@@ -90,15 +101,14 @@ Auth: `/api/login`, `/api/me`, `/api/logout`, `/api/change-password`, `/api/user
 Загрузка: `/api/upload` (POST multipart), `/api/upload/progress/{upload_id}`
 Готово на бэке, нет UI: `/api/report` (POST), `/api/download-report/{period}`, `/api/story-afl` (GET), `/api/story-afl/reject` (POST)
 
-## НЕ ДОДЕЛАНО (заглушки / не перенесено)
+## НЕ ДОДЕЛАНО (заглушки / TODO)
 1. **Архив (Story)** — страница `/story` в навбаре ведёт на `/main-afl` (заглушка). Бэкенд-эндпоинты готовы: `/api/story-afl` (GET с фильтрами), `/api/story-afl/reject` (POST). Нужно: страница архива + таблица с фильтрами.
 2. **Формирование отчёта** — `/api/report` (POST) + `/api/download-report/{period}` готовы на бэке. Нужен UI (выбор месяца/года, кнопка «Сформировать», скачивание). Логика: строки с reestr_date → report=period, «Отклонён» → report=«Отклонён», перенос в story_afl, удаление из main_afl.
 3. **README.md** — пустой.
-4. **app.py не разделён на тематические модули** — решено отложить (пока ~770 строк в одном файле).
-5. `.env` — не в git (в .gitignore), есть `.env.example`.
+4. `.env` — не в git (в .gitignore), есть `.env.example`.
 
 ## Конвенции
-- SQL: только bindparams (`:name`), без f-string-инъекций. Для IN — `_build_in_clause(prefix, values)` в app.py.
+- SQL: только bindparams (`:name`), без f-string-инъекций. Для IN — `build_in_clause(prefix, values)` в sql.py.
 - Роли проверяются через `user.effective_role`.
 - Фильтры на бэке строятся из `clauses` + `params` dict.
 - Фронт: типы в `api/main-afl.ts`, запросы через `api<T>()` (client.ts, credentials:include).
