@@ -12,7 +12,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from deps import get_current_user, require_auth
 from services.dashboard import build_scope, generate_errors_xlsx, generate_balance_xlsx, generate_task_numbers_xlsx, pick_pu_type, WORK_TYPE_RATES
-from services.report_check import split_errors
+from services.report_check import split_errors, join_errors, BALANCE_ERRORS, STOP_FACTOR_REGIONS, STOP_FACTOR_DISTRICTS
 
 
 @get("/dashboard/summary", guards=[require_auth])
@@ -88,8 +88,18 @@ async def api_dashboard_overview(request: Request, db_session: AsyncSession) -> 
         text(f"SELECT COUNT(*) FROM main_afl WHERE {completed_where} AND (errors IS NOT NULL AND errors != '')"), params)).scalar()
     without_errors = completed - with_errors
 
+    # Стоимость = всё выполненное минус строки с ошибками в зоне стоп-фактора.
+    regions = sorted(STOP_FACTOR_REGIONS)
+    districts = sorted(STOP_FACTOR_DISTRICTS)
+    zr = [f"zr{i}" for i in range(len(regions))]
+    zd = [f"zd{i}" for i in range(len(districts))]
+    zone_params = dict(zip(zr, regions))
+    zone_params.update(zip(zd, districts))
+    zone_clause = f"(region IN ({', '.join(':' + n for n in zr)}) OR municipal_district IN ({', '.join(':' + n for n in zd)}))"
+
     cost_result = await db_session.execute(
-        text(f"SELECT task_report, COUNT(*) FROM main_afl WHERE {completed_where} AND (errors IS NULL OR errors = '') GROUP BY task_report"), params)
+        text(f"SELECT task_report, COUNT(*) FROM main_afl WHERE {completed_where} AND ((errors IS NULL OR errors = '') OR NOT ({zone_clause})) GROUP BY task_report"),
+        {**params, **zone_params})
     cost = 0.0
     for (tr, cnt) in cost_result:
         cost += WORK_TYPE_RATES.get(tr, 0.0) * (cnt or 0)
@@ -118,7 +128,14 @@ async def api_dashboard_errors_report(request: Request, db_session: AsyncSession
 
     result = await db_session.execute(
         text(f"SELECT task_number, errors FROM main_afl WHERE {where} ORDER BY task_number"), params)
-    rows = [(r[0], r[1]) for r in result]
+
+    # Балансовые ошибки и «Дата работ» сюда не входят — по ним отдельные выгрузки.
+    excluded = BALANCE_ERRORS | {"Дата работ"}
+    rows = []
+    for tn, errors_text in result:
+        kept = [e for e in split_errors(errors_text) if e not in excluded]
+        if kept:
+            rows.append((tn, join_errors(kept)))
 
     output = generate_errors_xlsx(rows)
     filename = f"Отчёт_об_ошибках_{datetime.now().strftime('%Y-%m-%d_%H-%M-%S')}.xlsx"

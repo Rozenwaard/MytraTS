@@ -467,16 +467,16 @@ def _in_clause(prefix: str, values: list) -> tuple[str, dict]:
 
 
 async def recompute_errors(db_session: AsyncSession, task_numbers: list | None = None) -> int:
-    """Пересчитывает и сохраняет ошибки в main_afl.errors (только для ПСК)."""
+    """Пересчитывает и сохраняет ошибки в main_afl.errors (все заказчики)."""
     if task_numbers is not None and not task_numbers:
         return 0
 
     if task_numbers is not None:
         names, params = _in_clause("ce", task_numbers)
         result = await db_session.execute(
-            text(f"SELECT * FROM main_afl WHERE task_number IN ({names}) AND customer = 'ПСК'"), params)
+            text(f"SELECT * FROM main_afl WHERE task_number IN ({names})"), params)
     else:
-        result = await db_session.execute(text("SELECT * FROM main_afl WHERE customer = 'ПСК'"))
+        result = await db_session.execute(text("SELECT * FROM main_afl"))
 
     rows = [dict(r._mapping) for r in result]
     updates = [{"e": join_errors(check_row(row)), "tn": row["task_number"]} for row in rows]
