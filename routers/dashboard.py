@@ -32,9 +32,9 @@ async def api_dashboard_summary(request: Request, db_session: AsyncSession, dept
     billed_count = (await db_session.execute(
         text(f"SELECT COUNT(*) FROM main_afl WHERE {err_where} AND sent_to_billing = 'Да'"), params)).scalar()
     unbilled_count = (await db_session.execute(
-        text(f"SELECT COUNT(*) FROM main_afl WHERE {err_where} AND sent_to_billing = 'Нет'"), params)).scalar()
+        text(f"SELECT COUNT(*) FROM main_afl WHERE {err_where} AND sent_to_billing = 'Нет' AND status != 'Закрыто'"), params)).scalar()
 
-    unbilled_err_where = f"{err_where} AND sent_to_billing = 'Нет'"
+    unbilled_err_where = f"{err_where} AND sent_to_billing = 'Нет' AND status != 'Закрыто'"
     result = await db_session.execute(text(f"SELECT errors FROM main_afl WHERE {unbilled_err_where}"), params)
     counter = Counter()
     for (errors_text,) in result:
@@ -123,7 +123,7 @@ async def api_dashboard_errors_report(request: Request, db_session: AsyncSession
     user = await get_current_user(request, db_session)
     clauses, params = build_scope(user, dept)
     clauses.append("(errors IS NOT NULL AND errors != '')")
-    clauses.append("sent_to_billing = 'Нет'")
+    clauses.append("sent_to_billing = 'Нет' AND status != 'Закрыто'")
     where = " AND ".join(clauses)
 
     result = await db_session.execute(
@@ -148,7 +148,7 @@ async def api_dashboard_balance_report(request: Request, db_session: AsyncSessio
     user = await get_current_user(request, db_session)
     clauses, params = build_scope(user, dept)
     clauses.append("errors LIKE :be")
-    clauses.append("sent_to_billing = 'Нет'")
+    clauses.append("sent_to_billing = 'Нет' AND status != 'Закрыто'")
     params["be"] = "%Балансовая принадлежность%"
     where = " AND ".join(clauses)
 
@@ -167,7 +167,7 @@ async def api_dashboard_date_report(request: Request, db_session: AsyncSession, 
     user = await get_current_user(request, db_session)
     clauses, params = build_scope(user, dept)
     clauses.append("errors LIKE :dw")
-    clauses.append("sent_to_billing = 'Нет'")
+    clauses.append("sent_to_billing = 'Нет' AND status != 'Закрыто'")
     params["dw"] = "%Дата работ%"
     where = " AND ".join(clauses)
 
@@ -186,7 +186,7 @@ async def api_dashboard_verified_report(request: Request, db_session: AsyncSessi
     user = await get_current_user(request, db_session)
     clauses, params = build_scope(user, dept)
     clauses.append("verified = 'Нет'")
-    clauses.append("sent_to_billing = 'Нет'")
+    clauses.append("sent_to_billing = 'Нет' AND status != 'Закрыто'")
     where = " AND ".join(clauses)
 
     result = await db_session.execute(

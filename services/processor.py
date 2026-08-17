@@ -323,7 +323,7 @@ async def process_raw_afl(db_session: AsyncSession, upload_progress: dict, uploa
         await db_session.execute(text(
             "UPDATE raw_afl SET task_output = 'Проверка', task_detail = 'Неподключенный новый ввод' "
             "WHERE work_type_in_task = 'Проверка, осмотр ПУ' "
-            "AND comment REGEXP '(^| )??( |$)'"
+            "AND comment REGEXP '(^| )\\?\\?( |$)'"
         ))
 
         # 77 для Допуск
