@@ -171,7 +171,7 @@ function MainAflPage() {
 
       {(tab === "add" || tab === "list") && (
         <div className="min-h-0 flex-1 overflow-hidden">
-          {isLoading ? (
+          {isLoading && !data ? (
             <div className="flex justify-center py-12"><span className="loading loading-spinner loading-lg text-accent" /></div>
           ) : (
             <DataTable columns={columns} data={rows} total={total}
@@ -185,6 +185,23 @@ function MainAflPage() {
       )}
     </div>
   );
+
+type ExecutorItem = { label: string; count: number; locale: string | null };
+
+function ExecutorCol({ list, onSelect }: { list: ExecutorItem[]; onSelect: (label: string) => void }) {
+  return (
+    <div className="flex flex-col gap-y-0.5 text-xs min-w-[220px]">
+      {list.map((ex) => (
+        <button key={ex.label} className="text-left cursor-pointer hover:underline flex gap-2"
+          onClick={() => onSelect(ex.label)}>
+          <span className="text-base-content/70 truncate">{ex.label}</span>
+          {ex.locale && <span className="text-secondary/80 text-[10px] self-center whitespace-nowrap">·{ex.locale}</span>}
+          <span className="font-semibold tabular-nums ml-auto">{ex.count.toLocaleString()}</span>
+        </button>
+      ))}
+    </div>
+  );
+}
 
 function AddTab({ params, setParams, onReset, onCreate, role, onChangeReport, reportOptions, selectedReport, setSelectedReport }: {
   params: MainAflParams; setParams: (p: MainAflParams) => void;
@@ -203,24 +220,30 @@ function AddTab({ params, setParams, onReset, onCreate, role, onChangeReport, re
   for (let i = 0; i < executors.length; i += chunk) executorCols.push(executors.slice(i, i + chunk));
   const deptLabel = (d: string) => d.replace(/ отделение$/, "");
 
-  const ExecutorCol = ({ list }: { list: typeof executors }) => (
-    <div className="flex flex-col gap-y-0.5 text-xs min-w-[220px]">
-      {list.map((ex) => (
-        <button key={ex.label} className="text-left cursor-pointer hover:underline flex gap-2"
-          onClick={() => setParams({ ...params, executor_filter: params.executor_filter === ex.label ? undefined : ex.label, page: 1 })}>
-          <span className="text-base-content/70 truncate">{ex.label}</span>
-          {ex.locale && <span className="text-secondary/80 text-[10px] self-center whitespace-nowrap">·{ex.locale}</span>}
-          <span className="font-semibold tabular-nums ml-auto">{ex.count.toLocaleString()}</span>
-        </button>
-      ))}
-    </div>
-  );
+  // Локальное состояние поиска + дебаунс, чтобы не дёргать запрос/перерисовку на каждый символ
+  // (иначе поле теряет фокус из-за смены ключа запроса useQuery).
+  const [search, setSearch] = useState(params.search ?? "");
+  const searchTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  useEffect(() => () => { if (searchTimer.current) clearTimeout(searchTimer.current); }, []);
+
+  useEffect(() => {
+    setSearch(params.search ?? "");
+  }, [params.search]);
+
+  const handleSearch = (value: string) => {
+    setSearch(value);
+    if (searchTimer.current) clearTimeout(searchTimer.current);
+    searchTimer.current = setTimeout(() => {
+      setParams({ ...params, search: value || undefined, page: 1 });
+    }, 300);
+  };
 
   return (
     <div className="space-y-2">
       <div className="flex flex-wrap gap-2 items-center">
         <input type="text" placeholder="Поиск по адресу, № задания или л/с" className="input input-bordered input-sm flex-1 min-w-[220px]"
-          value={params.search ?? ""} onChange={(e) => setParams({ ...params, search: e.target.value || undefined, page: 1 })} />
+          value={search} onChange={(e) => handleSearch(e.target.value)} />
         <select className={`select select-bordered select-sm w-[150px] ${!((params as Record<string, string>).done_day) ? "text-base-content/50" : ""}`} value={(params as Record<string, string>).done_day ?? ""}
           onChange={(e) => setParams({ ...params, done_day: e.target.value || undefined } as MainAflParams)}>
           <option value="">Выберите дату</option>
@@ -302,10 +325,10 @@ function AddTab({ params, setParams, onReset, onCreate, role, onChangeReport, re
           <div className="text-xs text-base-content/40 mb-1.5 font-medium">Исполнители</div>
           {showExecutorScroll ? (
             <div className="flex gap-6 overflow-x-auto">
-              {executorCols.map((col, i) => <ExecutorCol key={i} list={col} />)}
+              {executorCols.map((col, i) => <ExecutorCol key={i} list={col} onSelect={(label) => setParams({ ...params, executor_filter: params.executor_filter === label ? undefined : label, page: 1 })} />)}
             </div>
           ) : (
-            <ExecutorCol list={executors} />
+            <ExecutorCol list={executors} onSelect={(label) => setParams({ ...params, executor_filter: params.executor_filter === label ? undefined : label, page: 1 })} />
           )}
         </div>
       </div>

@@ -11,7 +11,7 @@ from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from deps import get_current_user, require_auth
-from services.dashboard import build_scope, generate_errors_xlsx, generate_balance_xlsx, generate_task_numbers_xlsx, pick_pu_type
+from services.dashboard import build_scope, generate_errors_xlsx, generate_balance_xlsx, generate_task_numbers_xlsx, pick_pu_type, WORK_TYPE_RATES
 from services.report_check import split_errors
 
 
@@ -50,6 +50,61 @@ async def api_dashboard_summary(request: Request, db_session: AsyncSession, dept
         "unbilled_count": unbilled_count,
         "total_errors": sum(counter.values()),
         "errors": errors_list,
+    }, ensure_ascii=False), media_type="application/json")
+
+
+@get("/dashboard/overview", guards=[require_auth])
+async def api_dashboard_overview(request: Request, db_session: AsyncSession) -> Response:
+    """Общая сводка для вкладки «Обзор»: все строки в зоне видимости пользователя."""
+    user = await get_current_user(request, db_session)
+    base_where = "1=1"
+    params: dict = {}
+
+    if user.effective_role in ("оператор", "работник"):
+        base_where += " AND executor IN (SELECT full_name FROM users WHERE locale = :locale)"
+        params["locale"] = user.locale
+    elif user.effective_role == "менеджер":
+        base_where += " AND executor_organization = :dept"
+        params["dept"] = user.dept
+
+    total = (await db_session.execute(
+        text(f"SELECT COUNT(*) FROM main_afl WHERE {base_where}"), params)).scalar()
+
+    cust_result = await db_session.execute(
+        text(f"SELECT customer, COUNT(*) FROM main_afl WHERE {base_where} GROUP BY customer"), params)
+    customers = {row[0] or "(пусто)": row[1] for row in cust_result}
+
+    plan_result = await db_session.execute(
+        text(f"SELECT task_type, COUNT(*) FROM main_afl WHERE {base_where} AND task_type IN ('Плановый','Внеплановый') GROUP BY task_type"), params)
+    plan_counts = {row[0]: row[1] for row in plan_result}
+
+    completed_where = f"{base_where} AND task_report IS NOT NULL AND task_report NOT IN ('Дубли','Ручная проверка')"
+    completed = (await db_session.execute(
+        text(f"SELECT COUNT(*) FROM main_afl WHERE {completed_where}"), params)).scalar()
+    uncompleted = (await db_session.execute(
+        text(f"SELECT COUNT(*) FROM main_afl WHERE {base_where} AND (task_report IS NULL OR task_report = '' OR task_report IN ('Дубли','Ручная проверка'))"), params)).scalar()
+
+    with_errors = (await db_session.execute(
+        text(f"SELECT COUNT(*) FROM main_afl WHERE {completed_where} AND (errors IS NOT NULL AND errors != '')"), params)).scalar()
+    without_errors = completed - with_errors
+
+    cost_result = await db_session.execute(
+        text(f"SELECT task_report, COUNT(*) FROM main_afl WHERE {completed_where} AND (errors IS NULL OR errors = '') GROUP BY task_report"), params)
+    cost = 0.0
+    for (tr, cnt) in cost_result:
+        cost += WORK_TYPE_RATES.get(tr, 0.0) * (cnt or 0)
+
+    return Response(content=json.dumps({
+        "total": total,
+        "psk": customers.get("ПСК", 0),
+        "rle": customers.get("РЛЭ", 0),
+        "plan": plan_counts.get("Плановый", 0),
+        "unplan": plan_counts.get("Внеплановый", 0),
+        "completed": completed,
+        "uncompleted": uncompleted,
+        "with_errors": with_errors,
+        "without_errors": without_errors,
+        "cost": round(cost, 2),
     }, ensure_ascii=False), media_type="application/json")
 
 
@@ -128,6 +183,6 @@ async def api_dashboard_verified_report(request: Request, db_session: AsyncSessi
 
 
 dashboard_router = Router("/api", route_handlers=[
-    api_dashboard_summary, api_dashboard_errors_report, api_dashboard_balance_report,
-    api_dashboard_date_report, api_dashboard_verified_report,
+    api_dashboard_summary, api_dashboard_overview, api_dashboard_errors_report,
+    api_dashboard_balance_report, api_dashboard_date_report, api_dashboard_verified_report,
 ])

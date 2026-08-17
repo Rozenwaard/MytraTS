@@ -33,7 +33,7 @@ MytraTS/
 ├── services/
 │   ├── uploader.py        # xlsx → raw_afl (async engine, run_sync)
 │   ├── processor.py       # 30+ SQL-шагов классификации
-│   ├── merger.py          # raw → main (INSERT новых + UPDATE существующих, возвращает inserted/updated/affected)
+│   ├── merger.py          # raw → main (INSERT новых + UPDATE пустых/'Отклонён'; строки с номером реестра защищены)
 │   ├── reestr.py          # генерация xlsx реестра/отчёта, DEPT_PREFIXES, LOCALE_SUFFIXES
 │   ├── report_check.py    # правила проверки «Алькор» (check_row), recompute_errors, BALANCE_ERRORS, STOP_FACTOR_*
 │   └── dashboard.py       # build_scope (виды работ+территории+видимость+отделение), генераторы xlsx отчётов дашборда
@@ -83,7 +83,7 @@ MytraTS/
 - Тема light/dark (autumn/dracula), кнопка в навбаре.
 
 ## Дашборд (стартовая страница `/dashboard`)
-После логина открывается Дашборд, вкладка «Обзор»:
+После логина открывается Дашборд с двумя вкладками. «Обзор» — лента плашек: Заданий (число строк), ПСК/РЛЭ, План/Внеплан, Выполнено/Не выполнено, С ошибками/Без ошибок (из выполненного), Стоимость (из без ошибок, по расценкам WORK_TYPE_RATES). «Ошибки»:
 - Карточки-счётчики: заданий в зоне, с ошибками, отправлено в биллинг (из числа ошибок), на исправлении (не отправлено), всего ошибок (в строках «на исправлении»).
 - Сетка частоты ошибок — расклад по видам ошибок из строк «на исправлении».
 - Фильтр по отделениям (выпадающий список) — только для администратора/специалиста.
@@ -101,15 +101,13 @@ MytraTS/
 Auth: `/api/login`, `/api/me`, `/api/logout`, `/api/change-password`, `/api/user/settings` (GET/POST)
 Данные: `/api/main-afl` (GET, параметры: page, per_page, sort, order, search, customer, task_report, task_type, executor_org, executor_filter, only_completed, only_without_reestr, reestr, done_day), `/api/main-afl/stats` (GET), `/api/users/search`
 Реестры: `/api/reestr` (POST, + возвращает blocked), `/api/reestr/reset` (POST), `/api/download-reestr/{reestr_number}`, `/api/reestr-list`, `/api/task-reports`, `/api/executor-organizations`, `/api/executors`, `/api/main-afl/task-report` (PATCH)
-Дашборд: `/api/dashboard/summary` (GET, ?dept=), `/api/dashboard/errors-report` (GET xlsx, ?dept=), `/api/dashboard/balance-report` (GET xlsx, ?dept=), `/api/dashboard/date-report` (GET xlsx, ?dept=), `/api/dashboard/verified-report` (GET xlsx, ?dept=)
+Дашборд: `/api/dashboard/summary` (GET, ?dept=), `/api/dashboard/overview` (GET), `/api/dashboard/errors-report` (GET xlsx, ?dept=), `/api/dashboard/balance-report` (GET xlsx, ?dept=), `/api/dashboard/date-report` (GET xlsx, ?dept=), `/api/dashboard/verified-report` (GET xlsx, ?dept=)
 Загрузка: `/api/upload` (POST multipart), `/api/upload/progress/{upload_id}`
 Готово на бэке, нет UI: `/api/report` (POST), `/api/download-report/{period}`, `/api/story-afl` (GET), `/api/story-afl/reject` (POST)
 
 ## НЕ ДОДЕЛАНО (заглушки / TODO)
 1. **Архив (Story)** — страница `/story` в навбаре ведёт на `/main-afl` (заглушка). Бэкенд-эндпоинты готовы: `/api/story-afl` (GET с фильтрами), `/api/story-afl/reject` (POST). Нужно: страница архива + таблица с фильтрами.
 2. **Формирование отчёта** — `/api/report` (POST) + `/api/download-report/{period}` готовы на бэке. Нужен UI (выбор месяца/года, кнопка «Сформировать», скачивание). Логика: строки с reestr_date → report=period, «Отклонён» → report=«Отклонён», перенос в story_afl, удаление из main_afl.
-3. **README.md** — пустой.
-4. `.env` — не в git (в .gitignore), есть `.env.example`.
 
 ## Конвенции
 - SQL: только bindparams (`:name`), без f-string-инъекций. Для IN — `build_in_clause(prefix, values)` в sql.py.

@@ -32,14 +32,14 @@ function RootLayout() {
 
         {user && (
           <div className="navbar-center flex gap-1">
+            <Link to="/dashboard" className="btn btn-ghost btn-sm" activeProps={{ className: "btn-active" }}>
+              Дашборд
+            </Link>
             <Link to="/main-afl" className="btn btn-ghost btn-sm" activeProps={{ className: "btn-active" }}>
               Реестры
             </Link>
             <Link to="/main-afl" className="btn btn-ghost btn-sm">
               Архив
-            </Link>
-            <Link to="/dashboard" className="btn btn-ghost btn-sm" activeProps={{ className: "btn-active" }}>
-              Дашборд
             </Link>
           </div>
         )}

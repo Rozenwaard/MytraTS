@@ -11,3 +11,16 @@ export interface DashboardSummary {
   total_errors: number;
   errors: DashboardError[];
 }
+
+export interface DashboardOverview {
+  total: number;
+  psk: number;
+  rle: number;
+  plan: number;
+  unplan: number;
+  completed: number;
+  uncompleted: number;
+  with_errors: number;
+  without_errors: number;
+  cost: number;
+}

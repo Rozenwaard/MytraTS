@@ -1,6 +1,8 @@
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from sql import build_in_clause
+
 MAIN_AFL_COLUMNS = [
     'task_number', 'task_source', 'task_type', 'work_type_in_task',
     'created_at', 'address', 'municipal_district', 'house_type',
@@ -44,15 +46,30 @@ MAIN_AFL_COLUMNS = [
 
 
 async def merge_to_main(db_session, upload_progress, upload_id, total_rows):
-    result = await db_session.execute(text("SELECT task_number FROM main_afl"))
-    existing_tasks = {row[0] for row in result}
+    # Существующие строки: task_number → текущий reestr_number.
+    result = await db_session.execute(text("SELECT task_number, reestr_number FROM main_afl"))
+    existing = {row[0]: row[1] for row in result}
 
     columns_str = ', '.join(f'"{c}"' for c in MAIN_AFL_COLUMNS)
     result = await db_session.execute(text(f"SELECT {columns_str} FROM raw_afl"))
     all_rows = [dict(row._mapping) for row in result]
 
-    new_rows = [row for row in all_rows if row['task_number'] not in existing_tasks]
-    update_rows = [row for row in all_rows if row['task_number'] in existing_tasks]
+    new_rows = [row for row in all_rows if row['task_number'] not in existing]
+
+    # Перезаписываем только строки без номера реестра (пусто или 'Отклонён').
+    # Строки с реальным номером реестра защищены и не обновляются.
+    update_rows = []
+    reset_reestr_tasks = []
+    for row in all_rows:
+        tn = row['task_number']
+        if tn not in existing:
+            continue
+        rn = existing[tn]
+        if rn and rn != 'Отклонён':
+            continue
+        update_rows.append(row)
+        if rn == 'Отклонён':
+            reset_reestr_tasks.append(tn)
 
     inserted = 0
     updated = 0
@@ -84,6 +101,14 @@ async def merge_to_main(db_session, upload_progress, upload_id, total_rows):
         await db_session.execute(update_sql, update_rows)
         updated = len(update_rows)
 
+    if reset_reestr_tasks:
+        # 'Отклонён' сбрасываем в пустой — строка снова доступна для реестра.
+        names, params = build_in_clause("rn", reset_reestr_tasks)
+        await db_session.execute(
+            text(f"UPDATE main_afl SET reestr_number = NULL, reestr_date = NULL WHERE task_number IN ({names})"),
+            params
+        )
+
     await db_session.commit()
 
     upload_progress[upload_id] = {
@@ -91,5 +116,5 @@ async def merge_to_main(db_session, upload_progress, upload_id, total_rows):
         "inserted": inserted, "updated": updated
     }
 
-    affected = [row['task_number'] for row in all_rows]
+    affected = [row['task_number'] for row in new_rows + update_rows]
     return inserted, updated, affected
