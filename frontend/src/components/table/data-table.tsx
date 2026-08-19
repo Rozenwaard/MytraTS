@@ -16,6 +16,7 @@ interface DataTableProps<TData> {
   perPage: number;
   selectedIds: Set<string>;
   onRowClick: (id: string) => void;
+  onCopy?: (id: string) => void;
   onSort: (sort: string, order: string) => void;
   onPage: (page: number) => void;
   getId: (row: TData) => string;
@@ -29,6 +30,7 @@ export function DataTable<TData>({
   perPage,
   selectedIds,
   onRowClick,
+  onCopy,
   onSort,
   onPage,
   getId,
@@ -79,8 +81,13 @@ export function DataTable<TData>({
               return (
                 <tr
                   key={id}
+                  title="ПКМ — скопировать № задания"
                   className={`cursor-pointer ${selectedIds.has(id) ? "bg-accent/15 hover:bg-accent/20" : "hover:bg-base-200"}`}
                   onClick={() => onRowClick(id)}
+                  onContextMenu={(e) => {
+                    e.preventDefault();
+                    onCopy?.(id);
+                  }}
                 >
                   {row.getVisibleCells().map((cell) => (
                     <td key={cell.id} className="whitespace-nowrap text-sm">

@@ -362,10 +362,13 @@ def check_row(row: dict) -> list:
     if bd_date is not None and bc_year is not None and bd_date.year < bc_year:
         add_error(errors, "Годы несовпадают")
 
-    # Балансовая принадлежность старого ПУ
+    # Балансовая принадлежность старого ПУ.
+    # Не ставим, если нет старого ПУ (meter_type пуст).
     old_balance = norm_key(row.get("meter_ownership"))
 
-    if (old_balance == "" or old_balance == "не задано") and is_empty(row.get("meter_ownership_1")):
+    if (is_filled(row.get("meter_type"))
+            and (old_balance == "" or old_balance == "не задано")
+            and is_empty(row.get("meter_ownership_1"))):
         add_error(errors, "Балансовая принадлежность")
 
     # Активное отключение

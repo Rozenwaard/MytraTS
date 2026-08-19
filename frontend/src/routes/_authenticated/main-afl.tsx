@@ -72,6 +72,11 @@ function MainAflPage() {
     toastTimer.current = setTimeout(() => setToast(null), 3000);
   };
 
+  const handleCopy = (id: string) => {
+    if (!id) return;
+    navigator.clipboard.writeText(id).catch(() => {});
+  };
+
   const loadReestrs = async () => {
     const data = await fetchReestrList();
     setReestrs(data.reestrs);
@@ -176,7 +181,7 @@ function MainAflPage() {
           ) : (
             <DataTable columns={columns} data={rows} total={total}
               page={params.page ?? 1} perPage={params.per_page ?? 50}
-              selectedIds={selected} onRowClick={toggleRow}
+              selectedIds={selected} onRowClick={toggleRow} onCopy={handleCopy}
               onSort={(sort, order) => setParams({ ...params, sort, order })}
               onPage={(page) => setParams({ ...params, page })}
               getId={getId} />
