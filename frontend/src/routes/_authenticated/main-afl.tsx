@@ -462,7 +462,6 @@ function SettingsTab() {
 function UploadTab() {
   const [uploading, setUploading] = useState(false);
   const [progress, setProgress] = useState<{ status: string; progress: number; message?: string; loaded?: number; total?: number } | null>(null);
-  const fileRef = useRef<HTMLInputElement>(null);
 
   const handleFile = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -505,11 +504,8 @@ function UploadTab() {
         Сформируйте отчёт, скачайте и сохраните файл на свой компьютер.
       </p>
       <div className="flex items-center gap-2">
-        <input ref={fileRef} type="file" accept=".xlsx" className="file-input file-input-bordered file-input-sm flex-1"
+        <input type="file" accept=".xlsx" className="file-input file-input-bordered file-input-sm flex-1"
           onChange={handleFile} disabled={uploading} />
-        <button className="btn btn-accent btn-sm" onClick={() => fileRef.current?.click()} disabled={uploading}>
-          {uploading ? "Загрузка..." : "Загрузить"}
-        </button>
       </div>
       {progress && (
         <span className="text-xs text-base-content/50">

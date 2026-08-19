@@ -31,7 +31,7 @@ MytraTS/
 │   ├── config.py          # engine, SECRET_KEY из .env
 │   └── models.py          # RawAfl, MainAfl (+errors), StoryAfl, Calendar, User (+ ROLES, FIELD_ROLES, ADMIN_ROLES)
 ├── services/
-│   ├── uploader.py        # xlsx → raw_afl (async engine, run_sync)
+│   ├── uploader.py        # xlsx → raw_afl (чтение calamine, fallback openpyxl; async engine, run_sync)
 │   ├── processor.py       # 30+ SQL-шагов классификации
 │   ├── merger.py          # raw → main (INSERT новых + UPDATE пустых/'Отклонён'; строки с номером реестра защищены)
 │   ├── reestr.py          # генерация xlsx реестра/отчёта, DEPT_PREFIXES, LOCALE_SUFFIXES
@@ -56,7 +56,8 @@ MytraTS/
 │       └── lib/use-theme.ts
 ├── docs/
 │   └── БИЗНЕС-ЛОГИКА.md    # поток данных и бизнес-правила (классификация, ошибки, реестры, роли, дашборд)
-└── _migrate_errors.py     # миграция: ALTER main_afl ADD errors + бэкфилл
+├── _migrate_errors.py     # миграция: ALTER main_afl ADD errors + бэкфилл
+└── _migrate_index.py      # миграция: индекс main_afl.task_number (ускоряет UPDATE при переносе/проверке)
 ```
 
 ## Роли (5)

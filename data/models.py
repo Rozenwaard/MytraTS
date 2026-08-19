@@ -141,7 +141,7 @@ class MainAfl(Base):
     __tablename__ = 'main_afl'
 
     id: Mapped[Optional[int]] = mapped_column(Integer, primary_key=True)
-    task_number: Mapped[Optional[str]] = mapped_column(Text)
+    task_number: Mapped[Optional[str]] = mapped_column(Text, index=True)
     task_source: Mapped[Optional[str]] = mapped_column(Text)
     task_type: Mapped[Optional[str]] = mapped_column(Text)
     work_type_in_task: Mapped[Optional[str]] = mapped_column(Text)

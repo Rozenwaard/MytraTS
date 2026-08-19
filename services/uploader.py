@@ -46,9 +46,17 @@ RAW_AFL_XLSX_COLUMNS = [
 ]
 
 
+def _read_excel(content: bytes) -> pd.DataFrame:
+    """Читает xlsx. calamine (Rust) в разы быстрее openpyxl; при сбое — fallback."""
+    try:
+        return pd.read_excel(io.BytesIO(content), dtype=str, engine="calamine")
+    except Exception:
+        return pd.read_excel(io.BytesIO(content), dtype=str, engine="openpyxl")
+
+
 async def load_xlsx_to_raw(db_session: AsyncSession, content: bytes) -> tuple[bool, str, int]:
     try:
-        df = pd.read_excel(io.BytesIO(content), dtype=str)
+        df = _read_excel(content)
 
         if len(df.columns) > len(RAW_AFL_XLSX_COLUMNS):
             df = df.iloc[:, 1:]

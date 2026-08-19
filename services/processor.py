@@ -101,13 +101,17 @@ async def process_raw_afl(db_session: AsyncSession, upload_progress: dict, uploa
         # === Шаг 2: grid из visit_reason (Python-обработка) ===
         result = await db_session.execute(text("SELECT id, visit_reason FROM raw_afl"))
         rows = result.fetchall()
-        
-        for row_id, visit_text in rows:
-            norm_name, reg_number = process_row(visit_text)
-            # Пока используем только norm_name для grid
-            await db_session.execute(text(
-                "UPDATE raw_afl SET grid = :grid WHERE id = :id"
-            ), {"grid": norm_name, "id": row_id})
+
+        # Один executemany вместо N+1 отдельных UPDATE (раньше — по запросу на строку).
+        updates = [
+            {"grid": process_row(visit_text)[0], "id": row_id}
+            for row_id, visit_text in rows
+        ]
+        if updates:
+            await db_session.execute(
+                text("UPDATE raw_afl SET grid = :grid WHERE id = :id"),
+                updates,
+            )
         
         progress = 30
         upload_progress[upload_id] = {"status": "processing", "progress": progress, "total": total_rows}

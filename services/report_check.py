@@ -78,6 +78,18 @@ STOP_FACTOR_REGIONS = {"СПб"}
 STOP_FACTOR_DISTRICTS = {"ЛО Гатчинский муниципальный район"}
 
 
+# ─── Предкомпилированные регулярки (без медленного strptime/re.compile) ───
+_RE_WS = re.compile(r"\s+")
+_RE_SLASH_WS = re.compile(r"\s*/\s*")
+_RE_NONNUM_DASH = re.compile(r"[^0-9.\-]")
+_RE_FOUR_DIGITS = re.compile(r"\d{4}")
+_RE_YMD = re.compile(r"(\d{4})-(\d{1,2})-(\d{1,2})")
+_RE_DMY = re.compile(r"(\d{1,2})\.(\d{1,2})\.(\d{4})")
+_RE_DMY_FALLBACK = re.compile(r"(\d{1,2})[./\-](\d{1,2})[./\-](\d{4})")
+_RE_NONDIGIT = re.compile(r"\D")
+_RE_YEAR_2D = re.compile(r"(19|20)\d{2}")
+
+
 # ─── Вспомогательные функции (из city.py, без pandas) ─────────
 def norm_text(value: Any) -> str:
     if value is None:
@@ -85,7 +97,7 @@ def norm_text(value: Any) -> str:
     if isinstance(value, float) and (math.isnan(value) or math.isinf(value)):
         return ""
     text = str(value).replace("\xa0", " ")
-    text = re.sub(r"\s+", " ", text)
+    text = _RE_WS.sub(" ", text)
     return text.strip()
 
 
@@ -117,7 +129,7 @@ def is_no(value: Any) -> bool:
 
 def norm_work_key(value: Any) -> str:
     text = norm_key(value)
-    return re.sub(r"\s*/\s*", "/", text)
+    return _RE_SLASH_WS.sub("/", text)
 
 
 def to_number(value: Any) -> float | None:
@@ -128,7 +140,7 @@ def to_number(value: Any) -> float | None:
         return float(value)
 
     text = norm_text(value).replace(" ", "").replace("\xa0", "").replace(",", ".")
-    text = re.sub(r"[^0-9.\-]", "", text)
+    text = _RE_NONNUM_DASH.sub("", text)
 
     if text in {"", "-", ".", "-."}:
         return None
@@ -153,7 +165,7 @@ def to_four_digit_year(value: Any) -> int | None:
 
     text = norm_text(value)
 
-    if re.fullmatch(r"\d{4}", text):
+    if _RE_FOUR_DIGITS.fullmatch(text):
         return int(text)
 
     return None
@@ -178,20 +190,22 @@ def to_date(value: Any) -> date | None:
 
     text = norm_text(value)
 
-    for fmt in ("%Y-%m-%d %H:%M:%S", "%Y-%m-%d %H:%M", "%Y-%m-%d"):
+    m = _RE_YMD.match(text)
+    if m:
         try:
-            return datetime.strptime(text, fmt).date()
+            return date(int(m.group(1)), int(m.group(2)), int(m.group(3)))
         except ValueError:
             pass
 
-    for fmt in ("%d.%m.%Y %H:%M:%S", "%d.%m.%Y %H:%M", "%d.%m.%Y"):
+    m = _RE_DMY.match(text)
+    if m:
         try:
-            return datetime.strptime(text, fmt).date()
+            return date(int(m.group(3)), int(m.group(2)), int(m.group(1)))
         except ValueError:
             pass
 
     # Фолбэк: «ДД.ММ.ГГГГ» / «ДД/ММ/ГГГГ» (dayfirst)
-    m = re.search(r"(\d{1,2})[./\-](\d{1,2})[./\-](\d{4})", text)
+    m = _RE_DMY_FALLBACK.search(text)
     if m:
         try:
             return date(int(m.group(3)), int(m.group(2)), int(m.group(1)))
@@ -218,7 +232,7 @@ def contains_brackets(value: Any) -> bool:
 
 def first_two_digits(value: Any) -> str:
     text = norm_text(value)
-    digits = re.sub(r"\D", "", text)
+    digits = _RE_NONDIGIT.sub("", text)
     return digits[:2] if len(digits) >= 2 else ""
 
 
@@ -231,11 +245,11 @@ def year_to_last_two(value: Any) -> str:
 
     text = norm_text(value)
 
-    m = re.search(r"(19|20)\d{2}", text)
+    m = _RE_YEAR_2D.search(text)
     if m:
         return m.group(0)[-2:]
 
-    digits = re.sub(r"\D", "", text)
+    digits = _RE_NONDIGIT.sub("", text)
 
     if len(digits) >= 4:
         return digits[-2:]
