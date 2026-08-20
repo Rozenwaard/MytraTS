@@ -6,7 +6,9 @@ import { useAuth } from "../../store/auth";
 import { useMainAfl, useMainAflStats } from "../../hooks/use-main-afl";
 import { DataTable } from "../../components/table/data-table";
 import type { MainAflRow, MainAflParams } from "../../api/main-afl";
-import { createReestr, resetReestr, fetchReestrList, downloadReestrUrl, fetchAllTaskNumbers } from "../../api/main-afl";
+import { createReestr, resetReestr, fetchReestrList, downloadReestrUrl, fetchAllTaskNumbers, findReestr } from "../../api/main-afl";
+
+const NO_REESTR = "\u0000";
 
 export const mainAflRoute = createRoute({
   getParentRoute: () => rootRoute,
@@ -56,6 +58,7 @@ function MainAflPage() {
   const [selectedReport, setSelectedReport] = useState("");
   const [selecting, setSelecting] = useState(false);
   const toastTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const searchSeq = useRef(0);
 
   const { data, isLoading, refetch } = useMainAfl(params);
   const rows = data?.rows ?? [];
@@ -149,6 +152,22 @@ function MainAflPage() {
     setParams({ ...params, reestr: rn, page: 1 });
   };
 
+  const handleSearch = async (q: string) => {
+    const seq = ++searchSeq.current;
+    if (!q) {
+      setParams({ page: 1, per_page: 50, reestr: activeReestr || reestrs[0] || undefined });
+      return;
+    }
+    const rn = await findReestr(q);
+    if (seq !== searchSeq.current) return;
+    if (rn) {
+      setActiveReestr(rn);
+      setParams({ page: 1, per_page: 50, reestr: rn, exact: q });
+    } else {
+      setParams({ page: 1, per_page: 50, reestr: NO_REESTR });
+    }
+  };
+
   const toggleEmpty = (rn: string) => {
     setEmptyReestrs((prev) => { const next = new Set(prev); next.has(rn) ? next.delete(rn) : next.add(rn); return next; });
   };
@@ -182,7 +201,7 @@ function MainAflPage() {
           <div className="py-2 px-3">
             {tab === "upload" && <UploadTab />}
             {tab === "add" && <AddTab params={params} setParams={setParams} onReset={handleResetFilters} onCreate={handleCreateReestr} role={user.role} onChangeReport={handleChangeReport} reportOptions={reportOptions} selectedReport={selectedReport} setSelectedReport={setSelectedReport} onSelectAll={handleSelectAll} selecting={selecting} />}
-            {tab === "list" && <ListTab reestrs={reestrs} activeReestr={activeReestr} setActiveReestr={setActiveReestr} emptyReestrs={emptyReestrs} toggleEmpty={toggleEmpty} onReset={handleResetReestr} onSelectReestr={handleSelectReestr} meta={reestrMeta} />}
+            {tab === "list" && <ListTab reestrs={reestrs} activeReestr={activeReestr} setActiveReestr={setActiveReestr} emptyReestrs={emptyReestrs} toggleEmpty={toggleEmpty} onReset={handleResetReestr} onSelectReestr={handleSelectReestr} onSearch={handleSearch} meta={reestrMeta} />}
             {tab === "settings" && <SettingsTab />}
           </div>
         </div>
@@ -207,14 +226,13 @@ function MainAflPage() {
 
 type ExecutorItem = { label: string; count: number; locale: string | null };
 
-function ExecutorCol({ list, onSelect }: { list: ExecutorItem[]; onSelect: (label: string) => void }) {
+function ExecutorCol({ list, onSelect, tabular }: { list: ExecutorItem[]; onSelect: (label: string) => void; tabular?: boolean }) {
   return (
-    <div className="flex flex-col gap-y-0.5 text-xs min-w-[220px]">
+    <div className="flex flex-col gap-y-0.5 text-xs">
       {list.map((ex) => (
-        <button key={ex.label} className="text-left cursor-pointer hover:underline flex gap-2"
+        <button key={ex.label} className="text-left cursor-pointer hover:underline flex gap-1"
           onClick={() => onSelect(ex.label)}>
-          <span className="text-base-content/70 truncate">{ex.label}</span>
-          {ex.locale && <span className="text-secondary/80 text-[10px] self-center whitespace-nowrap">·{ex.locale}</span>}
+          <span className={`text-base-content/70${tabular ? " truncate" : ""}`}>{ex.label}</span>
           <span className="font-semibold tabular-nums ml-auto">{ex.count.toLocaleString()}</span>
         </button>
       ))}
@@ -289,7 +307,7 @@ function AddTab({ params, setParams, onReset, onCreate, role, onChangeReport, re
         )}
       </div>
       <div className="border-t border-base-200" />
-      <div className={`grid ${showDepts ? "grid-cols-[240px_240px_240px_1fr]" : "grid-cols-[240px_240px_1fr]"} gap-6 text-sm`}>
+      <div className={`grid ${showDepts ? "grid-cols-[260px_260px_260px_1fr]" : "grid-cols-[260px_260px_260px]"} gap-10 text-sm`}>
         <div>
           <div className="text-xs text-base-content/40 mb-1.5 font-medium">Статистика</div>
           <div className="flex flex-col gap-y-0.5 text-xs">
@@ -350,7 +368,11 @@ function AddTab({ params, setParams, onReset, onCreate, role, onChangeReport, re
           <div className="text-xs text-base-content/40 mb-1.5 font-medium">Исполнители</div>
           {showExecutorScroll ? (
             <div className="flex gap-6 overflow-x-auto">
-              {executorCols.map((col, i) => <ExecutorCol key={i} list={col} onSelect={(label) => setParams({ ...params, executor_filter: params.executor_filter === label ? undefined : label, page: 1 })} />)}
+              {executorCols.map((col, i) => (
+                <div key={i} className="min-w-[220px]">
+                  <ExecutorCol list={col} onSelect={(label) => setParams({ ...params, executor_filter: params.executor_filter === label ? undefined : label, page: 1 })} tabular />
+                </div>
+              ))}
             </div>
           ) : (
             <ExecutorCol list={executors} onSelect={(label) => setParams({ ...params, executor_filter: params.executor_filter === label ? undefined : label, page: 1 })} />
@@ -361,24 +383,47 @@ function AddTab({ params, setParams, onReset, onCreate, role, onChangeReport, re
   );
 }
 
-function ListTab({ reestrs, activeReestr, setActiveReestr, emptyReestrs, toggleEmpty, onReset, onSelectReestr, meta }: {
+function ListTab({ reestrs, activeReestr, setActiveReestr, emptyReestrs, toggleEmpty, onReset, onSelectReestr, onSearch, meta }: {
   reestrs: string[]; activeReestr: string; setActiveReestr: (r: string) => void;
   emptyReestrs: Set<string>; toggleEmpty: (rn: string) => void; onReset: () => void;
-  onSelectReestr: (rn: string) => void;
+  onSelectReestr: (rn: string) => void; onSearch: (q: string) => void;
   meta: Record<string, { task_report: string | null; customer: string | null }>;
 }) {
   const m = meta[activeReestr];
+  const [searchQ, setSearchQ] = useState("");
+  const searchTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  useEffect(() => () => { if (searchTimer.current) clearTimeout(searchTimer.current); }, []);
+
+  const clearSearchInput = () => {
+    if (searchTimer.current) clearTimeout(searchTimer.current);
+    setSearchQ("");
+  };
+
+  const handleSearchInput = (value: string) => {
+    setSearchQ(value);
+    if (searchTimer.current) clearTimeout(searchTimer.current);
+    searchTimer.current = setTimeout(() => onSearch(value.trim()), 300);
+  };
+
+  const handleSearchReset = () => {
+    clearSearchInput();
+    onSearch("");
+  };
+
   return (
     <div className="space-y-2">
       <div className="flex flex-wrap gap-2 items-center">
         {reestrs.map((rn) => (
-          <button key={rn} onClick={() => { setActiveReestr(rn); onSelectReestr(rn); }}
+          <button key={rn} onClick={() => { clearSearchInput(); setActiveReestr(rn); onSelectReestr(rn); }}
             className={`text-sm px-2 py-0.5 rounded ${activeReestr === rn ? "bg-accent text-accent-content" : "bg-base-200 hover:bg-base-300"}`}>
             {rn}{emptyReestrs.has(rn) ? " (П)" : ""}
           </button>
         ))}
       </div>
       <div className="flex flex-wrap gap-3 items-center">
+        <input type="text" placeholder="№ задания / л/с" className="input input-bordered input-xs w-56" value={searchQ} onChange={(e) => handleSearchInput(e.target.value)} />
+        <button className="btn btn-ghost btn-xs" onClick={handleSearchReset}>Сброс</button>
         <button className="btn btn-ghost btn-xs" onClick={() => activeReestr && window.open(downloadReestrUrl(activeReestr), "_blank")}>Печать</button>
         <button className="btn btn-ghost btn-xs" onClick={() => activeReestr && toggleEmpty(activeReestr)}>
           {activeReestr && emptyReestrs.has(activeReestr) ? "Снять (П)" : "Пустой"}

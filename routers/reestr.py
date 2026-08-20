@@ -157,7 +157,36 @@ async def api_reestr_list(request: Request, db_session: AsyncSession) -> Respons
     return Response(content=json.dumps({"reestrs": reestrs, "meta": reestr_meta}, ensure_ascii=False), media_type="application/json")
 
 
+@get("/reestr/find", guards=[require_auth])
+async def api_reestr_find(request: Request, db_session: AsyncSession, q: str = "") -> Response:
+    """Поиск реестра по № задания или лицевому счёту (точное совпадение)."""
+    q = q.strip()
+    if not q:
+        return Response(content=json.dumps({"found": False}, ensure_ascii=False), media_type="application/json")
+
+    user = await get_current_user(request, db_session)
+    query = (
+        "SELECT reestr_number FROM main_afl "
+        "WHERE (task_number = :q COLLATE NOCASE OR personal_account = :q) "
+        "AND reestr_number IS NOT NULL AND reestr_number != 'Отклонён'"
+    )
+    params = {"q": q}
+    if user.effective_role in ("оператор", "работник"):
+        query += " AND executor IN (SELECT full_name FROM users WHERE locale = :locale)"
+        params["locale"] = user.locale
+    elif user.effective_role == "менеджер":
+        query += " AND executor_organization = :dept"
+        params["dept"] = user.dept
+    query += " ORDER BY reestr_number LIMIT 1"
+
+    result = await db_session.execute(text(query), params)
+    row = result.fetchone()
+    if not row:
+        return Response(content=json.dumps({"found": False}, ensure_ascii=False), media_type="application/json")
+    return Response(content=json.dumps({"found": True, "reestr_number": row[0]}, ensure_ascii=False), media_type="application/json")
+
+
 reestr_router = Router("/api", route_handlers=[
-    api_reestr, api_download_reestr, api_reset_reestr, api_reestr_list,
+    api_reestr, api_download_reestr, api_reset_reestr, api_reestr_list, api_reestr_find,
 ])
 

@@ -88,7 +88,7 @@ async def api_dashboard_overview(request: Request, db_session: AsyncSession) -> 
         text(f"SELECT COUNT(*) FROM main_afl WHERE {completed_where} AND (errors IS NOT NULL AND errors != '')"), params)).scalar()
     without_errors = completed - with_errors
 
-    # Стоимость = всё выполненное минус строки с ошибками в зоне стоп-фактора.
+    # Стоимость = строки с присвоенным реестром (пойдут в отчёт), минус ошибки зоны стоп-фактора.
     regions = sorted(STOP_FACTOR_REGIONS)
     districts = sorted(STOP_FACTOR_DISTRICTS)
     zr = [f"zr{i}" for i in range(len(regions))]
@@ -98,7 +98,7 @@ async def api_dashboard_overview(request: Request, db_session: AsyncSession) -> 
     zone_clause = f"(region IN ({', '.join(':' + n for n in zr)}) OR municipal_district IN ({', '.join(':' + n for n in zd)}))"
 
     cost_result = await db_session.execute(
-        text(f"SELECT task_report, COUNT(*) FROM main_afl WHERE {completed_where} AND ((errors IS NULL OR errors = '') OR NOT ({zone_clause})) GROUP BY task_report"),
+        text(f"SELECT task_report, COUNT(*) FROM main_afl WHERE {completed_where} AND reestr_number IS NOT NULL AND reestr_number != 'Отклонён' AND ((errors IS NULL OR errors = '') OR NOT ({zone_clause})) GROUP BY task_report"),
         {**params, **zone_params})
     cost = 0.0
     for (tr, cnt) in cost_result:

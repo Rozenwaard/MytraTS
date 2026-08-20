@@ -81,12 +81,12 @@ MytraTS/
 - Фильтры суммируются (AND). «Сброс фильтров» очищает.
 - Кнопка «Выбрать всё» (менеджер/оператор/работник) — выделяет все строки текущей фильтрации (GET `/api/main-afl/ids`) для отправки в реестр пакетом.
 - Вкладка Загрузка: файл .xlsx + прогресс (polling /api/upload/progress/{id}), статусы loading→loaded→processing→merging→complete. Сообщение «Загружено: N | Новых: M | Обновлено: K» (update возвращён).
-- Вкладка Список (менеджер/оператор): плашки реестров (номер + (П) для пустых), кнопки Печать/Пустой/Удалить из реестра, метаданные Вид работ/Заказчик. Фильтр таблицы по выбранному реестру.
+- Вкладка Список (менеджер/оператор): плашки реестров (номер + (П) для пустых), кнопки Печать/Пустой/Удалить из реестра, окно поиска по № задания/л/с + кнопка «Сброс» (переключает на реестр найденной строки и показывает одну строку; если у строки реестра нет — ничего не выводит), метаданные Вид работ/Заказчик. Фильтр таблицы по выбранному реестру.
 - Вкладка Настройка: порядок + видимость колонок (drag&drop, autosave в users.settings).
 - Тема light/dark (autumn/dracula), кнопка в навбаре.
 
 ## Дашборд (стартовая страница `/dashboard`)
-После логина открывается Дашборд с двумя вкладками. «Обзор» — лента плашек: Заданий (число строк), ПСК/РЛЭ, План/Внеплан, Выполнено/Не выполнено, С ошибками/Без ошибок (из выполненного), Стоимость (выполненное минус ошибки в зоне стоп-фактора, по расценкам WORK_TYPE_RATES). «Ошибки»:
+После логина открывается Дашборд с двумя вкладками. «Обзор» — лента плашек: Заданий (число строк), ПСК/РЛЭ, План/Внеплан, Выполнено/Не выполнено, С ошибками/Без ошибок (из выполненного), Стоимость (строки с присвоенным реестром минус ошибки в зоне стоп-фактора, по расценкам WORK_TYPE_RATES). «Ошибки»:
 - Карточки-счётчики: заданий в зоне, с ошибками, отправлено в биллинг (из числа ошибок), на исправлении (не отправлено и не закрыто), всего ошибок (в строках «на исправлении»).
 - Сетка частоты ошибок — расклад по видам ошибок из строк «на исправлении».
 - Фильтр по отделениям (выпадающий список) — только для администратора/специалиста.
@@ -102,8 +102,8 @@ MytraTS/
 
 ## Эндпоинты (routers/)
 Auth: `/api/login`, `/api/me`, `/api/logout`, `/api/change-password`, `/api/user/settings` (GET/POST)
-Данные: `/api/main-afl` (GET, параметры: page, per_page, sort, order, search, customer, task_report, task_type, executor_org, executor_filter, only_completed, only_without_reestr, reestr, done_day), `/api/main-afl/ids` (GET, все task_number текущей фильтрации), `/api/main-afl/stats` (GET), `/api/users/search`
-Реестры: `/api/reestr` (POST, + возвращает blocked), `/api/reestr/reset` (POST), `/api/download-reestr/{reestr_number}`, `/api/reestr-list`, `/api/task-reports`, `/api/executor-organizations`, `/api/executors`, `/api/main-afl/task-report` (PATCH)
+Данные: `/api/main-afl` (GET, параметры: page, per_page, sort, order, search, customer, task_report, task_type, executor_org, executor_filter, only_completed, only_without_reestr, reestr, done_day, exact), `/api/main-afl/ids` (GET, все task_number текущей фильтрации), `/api/main-afl/stats` (GET), `/api/users/search`
+Реестры: `/api/reestr` (POST, + возвращает blocked), `/api/reestr/reset` (POST), `/api/download-reestr/{reestr_number}`, `/api/reestr-list`, `/api/reestr/find` (GET, ?q= — поиск реестра по № задания/л/с), `/api/task-reports`, `/api/executor-organizations`, `/api/executors`, `/api/main-afl/task-report` (PATCH)
 Дашборд: `/api/dashboard/summary` (GET, ?dept=), `/api/dashboard/overview` (GET), `/api/dashboard/errors-report` (GET xlsx, ?dept=), `/api/dashboard/balance-report` (GET xlsx, ?dept=), `/api/dashboard/date-report` (GET xlsx, ?dept=), `/api/dashboard/verified-report` (GET xlsx, ?dept=)
 Загрузка: `/api/upload` (POST multipart), `/api/upload/progress/{upload_id}`
 Готово на бэке, нет UI: `/api/report` (POST), `/api/download-report/{period}`, `/api/story-afl` (GET), `/api/story-afl/reject` (POST)

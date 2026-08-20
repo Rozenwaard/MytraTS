@@ -24,7 +24,7 @@ MAIN_AFL_DISPLAY_COLUMNS = [
 
 def _build_main_afl_clauses(user, search, customer, task_report, executor_org,
                             executor_filter, only_completed, only_without_reestr,
-                            reestr, task_type, done_day):
+                            reestr, task_type, done_day, exact):
     """Общие фильтры списка main_afl: видимость по роли + пользовательские фильтры."""
     clauses = ["1=1"]
     params: dict = {}
@@ -64,6 +64,9 @@ def _build_main_afl_clauses(user, search, customer, task_report, executor_org,
     if executor_filter:
         clauses.append("executor = :executor_filter")
         params["executor_filter"] = executor_filter
+    if exact:
+        clauses.append("(task_number = :exact COLLATE NOCASE OR personal_account = :exact)")
+        params["exact"] = exact
 
     return clauses, params
 
@@ -75,12 +78,12 @@ async def api_main_afl(
     order: str = "asc", customer: str = "", task_report: str = "",
     executor_org: str = "", executor_filter: str = "",
     only_completed: bool = False, only_without_reestr: bool = False,
-    reestr: str = "", task_type: str = "", done_day: str = "",
+    reestr: str = "", task_type: str = "", done_day: str = "", exact: str = "",
 ) -> Response:
     user = await get_current_user(request, db_session)
     clauses, params = _build_main_afl_clauses(
         user, search, customer, task_report, executor_org, executor_filter,
-        only_completed, only_without_reestr, reestr, task_type, done_day)
+        only_completed, only_without_reestr, reestr, task_type, done_day, exact)
 
     safe_sort = sort if sort in MAIN_AFL_DISPLAY_COLUMNS else ""
     where_sql = " AND ".join(clauses)
@@ -107,13 +110,13 @@ async def api_main_afl_ids(
     order: str = "asc", customer: str = "", task_report: str = "",
     executor_org: str = "", executor_filter: str = "",
     only_completed: bool = False, only_without_reestr: bool = False,
-    reestr: str = "", task_type: str = "", done_day: str = "",
+    reestr: str = "", task_type: str = "", done_day: str = "", exact: str = "",
 ) -> Response:
     """Все task_number текущей фильтрации (для кнопки «Выбрать всё»)."""
     user = await get_current_user(request, db_session)
     clauses, params = _build_main_afl_clauses(
         user, search, customer, task_report, executor_org, executor_filter,
-        only_completed, only_without_reestr, reestr, task_type, done_day)
+        only_completed, only_without_reestr, reestr, task_type, done_day, exact)
     where_sql = " AND ".join(clauses)
     result = await db_session.execute(
         text(f"SELECT task_number FROM main_afl WHERE {where_sql}"), params)

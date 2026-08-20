@@ -49,6 +49,7 @@ export interface MainAflParams {
   only_uncompleted?: boolean;
   reestr?: string;
   task_type?: string;
+  exact?: string;
 }
 
 
@@ -70,6 +71,7 @@ export function buildMainAflQuery(params: MainAflParams): string {
   if (params.reestr) q.set("reestr", params.reestr);
   if (params.task_type) q.set("task_type", params.task_type);
   if (params.only_uncompleted) q.set("only_uncompleted", "1");
+  if (params.exact) q.set("exact", params.exact);
   return q.toString();
 }
 
@@ -118,6 +120,13 @@ export async function fetchReestrList(): Promise<{ reestrs: string[]; meta: Reco
 
 export function downloadReestrUrl(rn: string) {
   return `/api/download-reestr/${encodeURIComponent(rn)}`;
+}
+
+export async function findReestr(q: string): Promise<string | null> {
+  const res = await fetch(`/api/reestr/find?q=${encodeURIComponent(q)}`, { credentials: "include" });
+  if (!res.ok) return null;
+  const data = await res.json() as { found: boolean; reestr_number?: string };
+  return data.found && data.reestr_number ? data.reestr_number : null;
 }
 
 
