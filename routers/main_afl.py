@@ -22,16 +22,10 @@ MAIN_AFL_DISPLAY_COLUMNS = [
 ]
 
 
-@get("/main-afl", guards=[require_auth])
-async def api_main_afl(
-    request: Request, db_session: AsyncSession,
-    page: int = 1, per_page: int = 50, sort: str = "", search: str = "",
-    order: str = "asc", customer: str = "", task_report: str = "",
-    executor_org: str = "", executor_filter: str = "",
-    only_completed: bool = False, only_without_reestr: bool = False,
-    reestr: str = "", task_type: str = "", done_day: str = "",
-) -> Response:
-    user = await get_current_user(request, db_session)
+def _build_main_afl_clauses(user, search, customer, task_report, executor_org,
+                            executor_filter, only_completed, only_without_reestr,
+                            reestr, task_type, done_day):
+    """Общие фильтры списка main_afl: видимость по роли + пользовательские фильтры."""
     clauses = ["1=1"]
     params: dict = {}
 
@@ -71,6 +65,23 @@ async def api_main_afl(
         clauses.append("executor = :executor_filter")
         params["executor_filter"] = executor_filter
 
+    return clauses, params
+
+
+@get("/main-afl", guards=[require_auth])
+async def api_main_afl(
+    request: Request, db_session: AsyncSession,
+    page: int = 1, per_page: int = 50, sort: str = "", search: str = "",
+    order: str = "asc", customer: str = "", task_report: str = "",
+    executor_org: str = "", executor_filter: str = "",
+    only_completed: bool = False, only_without_reestr: bool = False,
+    reestr: str = "", task_type: str = "", done_day: str = "",
+) -> Response:
+    user = await get_current_user(request, db_session)
+    clauses, params = _build_main_afl_clauses(
+        user, search, customer, task_report, executor_org, executor_filter,
+        only_completed, only_without_reestr, reestr, task_type, done_day)
+
     safe_sort = sort if sort in MAIN_AFL_DISPLAY_COLUMNS else ""
     where_sql = " AND ".join(clauses)
     sort_sql = f" ORDER BY {safe_sort} {'ASC' if order == 'asc' else 'DESC'}" if safe_sort else ""
@@ -87,6 +98,27 @@ async def api_main_afl(
     rows = [dict(row._mapping) for row in result]
 
     return Response(content=json.dumps({"rows": rows, "total": total, "page": page, "per_page": per_page}, ensure_ascii=False, default=str), media_type="application/json")
+
+
+@get("/main-afl/ids", guards=[require_auth])
+async def api_main_afl_ids(
+    request: Request, db_session: AsyncSession,
+    page: int = 1, per_page: int = 50, sort: str = "", search: str = "",
+    order: str = "asc", customer: str = "", task_report: str = "",
+    executor_org: str = "", executor_filter: str = "",
+    only_completed: bool = False, only_without_reestr: bool = False,
+    reestr: str = "", task_type: str = "", done_day: str = "",
+) -> Response:
+    """Все task_number текущей фильтрации (для кнопки «Выбрать всё»)."""
+    user = await get_current_user(request, db_session)
+    clauses, params = _build_main_afl_clauses(
+        user, search, customer, task_report, executor_org, executor_filter,
+        only_completed, only_without_reestr, reestr, task_type, done_day)
+    where_sql = " AND ".join(clauses)
+    result = await db_session.execute(
+        text(f"SELECT task_number FROM main_afl WHERE {where_sql}"), params)
+    task_numbers = [row[0] for row in result if row[0]]
+    return Response(content=json.dumps({"task_numbers": task_numbers}, ensure_ascii=False, default=str), media_type="application/json")
 
 
 @patch("/main-afl/task-report", guards=[require_auth])
@@ -176,6 +208,6 @@ async def api_main_afl_stats(request: Request, db_session: AsyncSession) -> Resp
 
 
 main_afl_router = Router("/api", route_handlers=[
-    api_main_afl, api_main_afl_stats, api_update_task_report,
+    api_main_afl, api_main_afl_ids, api_main_afl_stats, api_update_task_report,
 ])
 

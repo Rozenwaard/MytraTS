@@ -6,7 +6,7 @@ import { useAuth } from "../../store/auth";
 import { useMainAfl, useMainAflStats } from "../../hooks/use-main-afl";
 import { DataTable } from "../../components/table/data-table";
 import type { MainAflRow, MainAflParams } from "../../api/main-afl";
-import { createReestr, resetReestr, fetchReestrList, downloadReestrUrl } from "../../api/main-afl";
+import { createReestr, resetReestr, fetchReestrList, downloadReestrUrl, fetchAllTaskNumbers } from "../../api/main-afl";
 
 export const mainAflRoute = createRoute({
   getParentRoute: () => rootRoute,
@@ -54,6 +54,7 @@ function MainAflPage() {
   const [emptyReestrs, setEmptyReestrs] = useState<Set<string>>(new Set());
   const [reportOptions, setReportOptions] = useState<string[]>([]);
   const [selectedReport, setSelectedReport] = useState("");
+  const [selecting, setSelecting] = useState(false);
   const toastTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const { data, isLoading, refetch } = useMainAfl(params);
@@ -131,6 +132,19 @@ function MainAflPage() {
 
   const handleResetFilters = () => { setParams({ page: 1, per_page: 50 }); setSelected(new Set()); };
 
+  const handleSelectAll = async () => {
+    setSelecting(true);
+    try {
+      const ids = await fetchAllTaskNumbers(params);
+      setSelected(new Set(ids));
+      showToast(ids.length ? `Выбрано: ${ids.length}` : "Нет строк в текущей фильтрации");
+    } catch {
+      showToast("Ошибка выбора строк");
+    } finally {
+      setSelecting(false);
+    }
+  };
+
   const handleSelectReestr = (rn: string) => {
     setParams({ ...params, reestr: rn, page: 1 });
   };
@@ -167,7 +181,7 @@ function MainAflPage() {
 
           <div className="py-2 px-3">
             {tab === "upload" && <UploadTab />}
-            {tab === "add" && <AddTab params={params} setParams={setParams} onReset={handleResetFilters} onCreate={handleCreateReestr} role={user.role} onChangeReport={handleChangeReport} reportOptions={reportOptions} selectedReport={selectedReport} setSelectedReport={setSelectedReport} />}
+            {tab === "add" && <AddTab params={params} setParams={setParams} onReset={handleResetFilters} onCreate={handleCreateReestr} role={user.role} onChangeReport={handleChangeReport} reportOptions={reportOptions} selectedReport={selectedReport} setSelectedReport={setSelectedReport} onSelectAll={handleSelectAll} selecting={selecting} />}
             {tab === "list" && <ListTab reestrs={reestrs} activeReestr={activeReestr} setActiveReestr={setActiveReestr} emptyReestrs={emptyReestrs} toggleEmpty={toggleEmpty} onReset={handleResetReestr} onSelectReestr={handleSelectReestr} meta={reestrMeta} />}
             {tab === "settings" && <SettingsTab />}
           </div>
@@ -208,10 +222,11 @@ function ExecutorCol({ list, onSelect }: { list: ExecutorItem[]; onSelect: (labe
   );
 }
 
-function AddTab({ params, setParams, onReset, onCreate, role, onChangeReport, reportOptions, selectedReport, setSelectedReport }: {
+function AddTab({ params, setParams, onReset, onCreate, role, onChangeReport, reportOptions, selectedReport, setSelectedReport, onSelectAll, selecting }: {
   params: MainAflParams; setParams: (p: MainAflParams) => void;
   onReset: () => void; onCreate: () => void; role: string; onChangeReport: () => void;
   reportOptions: string[]; selectedReport: string; setSelectedReport: (v: string) => void;
+  onSelectAll: () => void; selecting: boolean;
 }) {
   const { data: stats } = useMainAflStats();
   const isAdmin = role === "администратор";
@@ -265,7 +280,12 @@ function AddTab({ params, setParams, onReset, onCreate, role, onChangeReport, re
             <button className="btn btn-accent btn-sm" onClick={onChangeReport}>Поменять работу</button>
           </>
         ) : isSpecialist ? null : (
-          <button className="btn btn-accent btn-sm" onClick={onCreate}>В реестр</button>
+          <>
+            <button className="btn btn-ghost btn-sm" onClick={onSelectAll} disabled={selecting}>
+              {selecting ? "Выбор..." : "Выбрать всё"}
+            </button>
+            <button className="btn btn-accent btn-sm" onClick={onCreate}>В реестр</button>
+          </>
         )}
       </div>
       <div className="border-t border-base-200" />

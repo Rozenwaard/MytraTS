@@ -79,6 +79,7 @@ MytraTS/
   4. Исполнители (алфавит, с locale) — скролл по 12 строк для админ/спец, простой список для менеджер/оператор.
 - Поиск по дате — выпадающий список доступных done_day.
 - Фильтры суммируются (AND). «Сброс фильтров» очищает.
+- Кнопка «Выбрать всё» (менеджер/оператор/работник) — выделяет все строки текущей фильтрации (GET `/api/main-afl/ids`) для отправки в реестр пакетом.
 - Вкладка Загрузка: файл .xlsx + прогресс (polling /api/upload/progress/{id}), статусы loading→loaded→processing→merging→complete. Сообщение «Загружено: N | Новых: M | Обновлено: K» (update возвращён).
 - Вкладка Список (менеджер/оператор): плашки реестров (номер + (П) для пустых), кнопки Печать/Пустой/Удалить из реестра, метаданные Вид работ/Заказчик. Фильтр таблицы по выбранному реестру.
 - Вкладка Настройка: порядок + видимость колонок (drag&drop, autosave в users.settings).
@@ -101,7 +102,7 @@ MytraTS/
 
 ## Эндпоинты (routers/)
 Auth: `/api/login`, `/api/me`, `/api/logout`, `/api/change-password`, `/api/user/settings` (GET/POST)
-Данные: `/api/main-afl` (GET, параметры: page, per_page, sort, order, search, customer, task_report, task_type, executor_org, executor_filter, only_completed, only_without_reestr, reestr, done_day), `/api/main-afl/stats` (GET), `/api/users/search`
+Данные: `/api/main-afl` (GET, параметры: page, per_page, sort, order, search, customer, task_report, task_type, executor_org, executor_filter, only_completed, only_without_reestr, reestr, done_day), `/api/main-afl/ids` (GET, все task_number текущей фильтрации), `/api/main-afl/stats` (GET), `/api/users/search`
 Реестры: `/api/reestr` (POST, + возвращает blocked), `/api/reestr/reset` (POST), `/api/download-reestr/{reestr_number}`, `/api/reestr-list`, `/api/task-reports`, `/api/executor-organizations`, `/api/executors`, `/api/main-afl/task-report` (PATCH)
 Дашборд: `/api/dashboard/summary` (GET, ?dept=), `/api/dashboard/overview` (GET), `/api/dashboard/errors-report` (GET xlsx, ?dept=), `/api/dashboard/balance-report` (GET xlsx, ?dept=), `/api/dashboard/date-report` (GET xlsx, ?dept=), `/api/dashboard/verified-report` (GET xlsx, ?dept=)
 Загрузка: `/api/upload` (POST multipart), `/api/upload/progress/{upload_id}`
@@ -120,6 +121,6 @@ Auth: `/api/login`, `/api/me`, `/api/logout`, `/api/change-password`, `/api/user
 - Документация обновляется вместе с кодом: любое изменение бизнес-логики, структуры, эндпоинтов или ролей должно отражаться в `docs/БИЗНЕС-ЛОГИКА.md` и `STATE.md` в том же коммите (теперь помимо кода на автомате обновляем и документацию).
 
 - **специалист**: как админ, но БЕЗ кнопки/списка смены вида работ. Тоже видит Отделения + скролл исполнителей.
-- **менеджер**: видимость по dept. Вкладки Загрузка/Обзор/Список/Настройка. Кнопка «В реестр». Нет колонки Отделений, нет скролла исполнителей (простой список).
+- **менеджер**: видимость по dept. Вкладки Загрузка/Обзор/Список/Настройка. Кнопки «Выбрать всё» + «В реестр». Нет колонки Отделений, нет скролла исполнителей (простой список).
 - **оператор**: как менеджер, но видимость по locale.
 - **работник**: пока = оператор (выделен на будущее).
