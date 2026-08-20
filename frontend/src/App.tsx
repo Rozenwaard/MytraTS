@@ -4,9 +4,10 @@ import { loginRoute } from "./routes/login";
 import { mainAflRoute } from "./routes/_authenticated/main-afl";
 import { changePasswordRoute } from "./routes/_authenticated/change-password";
 import { dashboardRoute } from "./routes/_authenticated/dashboard";
+import { reportsRoute } from "./routes/_authenticated/reports";
 import { AuthProvider } from "./store/auth";
 
-const routeTree = rootRoute.addChildren([loginRoute, mainAflRoute, changePasswordRoute, dashboardRoute]);
+const routeTree = rootRoute.addChildren([loginRoute, mainAflRoute, changePasswordRoute, dashboardRoute, reportsRoute]);
 
 const router = createRouter({ routeTree });
 

@@ -43,15 +43,16 @@ MytraTS/
 │   ├── main_afl.py         # таблица реестров, статистика, смена вида работ
 │   ├── reestr.py           # формирование/сброс реестров, список, выгрузка
 │   ├── report.py           # формирование отчётного периода + выгрузка xlsx
+│   ├── fin_report.py       # «Отчёты» → Финотчёт (плашки/раскладка по locale, добавление в отчёт)
 │   ├── story.py            # архив (перенос строк) + отклонение
 │   ├── dashboard.py        # обзор (сводка) + ошибки + отчёты дашборда
 │   └── lookups.py          # справочники (отделения, исполнители, виды работ)
 ├── frontend/
 │   └── src/
-│       ├── api/           # client.ts (fetch+cookie), main-afl.ts, dashboard.ts
+│       ├── api/           # client.ts (fetch+cookie), main-afl.ts, dashboard.ts, fin-report.ts
 │       ├── store/auth.tsx # AuthContext (user, login, logout)
 │       ├── hooks/         # use-main-afl.ts, use-dashboard.ts
-│       ├── routes/        # __root (navbar+тема), login, _authenticated/{main-afl, change-password, dashboard}
+│       ├── routes/        # __root (navbar+тема), login, _authenticated/{main-afl, change-password, dashboard, reports}
 │       ├── components/    # data-table.tsx (клик-выбор строк), logo.tsx
 │       └── lib/use-theme.ts
 ├── docs/
@@ -105,12 +106,14 @@ Auth: `/api/login`, `/api/me`, `/api/logout`, `/api/change-password`, `/api/user
 Данные: `/api/main-afl` (GET, параметры: page, per_page, sort, order, search, customer, task_report, task_type, executor_org, executor_filter, only_completed, only_without_reestr, reestr, done_day, exact), `/api/main-afl/ids` (GET, все task_number текущей фильтрации), `/api/main-afl/stats` (GET), `/api/users/search`
 Реестры: `/api/reestr` (POST, + возвращает blocked), `/api/reestr/reset` (POST), `/api/download-reestr/{reestr_number}`, `/api/reestr-list`, `/api/reestr/find` (GET, ?q= — поиск реестра по № задания/л/с), `/api/task-reports`, `/api/executor-organizations`, `/api/executors`, `/api/main-afl/task-report` (PATCH)
 Дашборд: `/api/dashboard/summary` (GET, ?dept=), `/api/dashboard/overview` (GET), `/api/dashboard/errors-report` (GET xlsx, ?dept=), `/api/dashboard/balance-report` (GET xlsx, ?dept=), `/api/dashboard/date-report` (GET xlsx, ?dept=), `/api/dashboard/verified-report` (GET xlsx, ?dept=)
+Отчёты (пункт меню, только администратор): `/api/fin-report` (GET, ?period=YYYY-MM — плашки + раскладка по locale и видам работ периода + стоимость), `/api/fin-report/add` (POST {period} — проставляет report = «ГГГГ ММ» строкам с реестром и пустым report); «Скачать отчёт» — заглушка
 Загрузка: `/api/upload` (POST multipart), `/api/upload/progress/{upload_id}`
 Готово на бэке, нет UI: `/api/report` (POST), `/api/download-report/{period}`, `/api/story-afl` (GET), `/api/story-afl/reject` (POST)
 
 ## НЕ ДОДЕЛАНО (заглушки / TODO)
 1. **Архив (Story)** — страница `/story` в навбаре ведёт на `/main-afl` (заглушка). Бэкенд-эндпоинты готовы: `/api/story-afl` (GET с фильтрами), `/api/story-afl/reject` (POST). Нужно: страница архива + таблица с фильтрами.
 2. **Формирование отчёта** — `/api/report` (POST) + `/api/download-report/{period}` готовы на бэке. Нужен UI (выбор месяца/года, кнопка «Сформировать», скачивание). Логика: строки с reestr_date → report=period, «Отклонён» → report=«Отклонён», перенос в story_afl, удаление из main_afl.
+3. **«Скачать отчёт» (Отчёты → Финотчёт)** — кнопка-заглушка (администратор), формат выгрузки ещё не описан.
 
 ## Конвенции
 - SQL: только bindparams (`:name`), без f-string-инъекций. Для IN — `build_in_clause(prefix, values)` в sql.py.
