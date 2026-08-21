@@ -87,7 +87,7 @@ MytraTS/
 - Тема light/dark (autumn/dracula), кнопка в навбаре.
 
 ## Дашборд (стартовая страница `/dashboard`)
-После логина открывается Дашборд с двумя вкладками. «Обзор» — лента плашек: Заданий (число строк), ПСК/РЛЭ, План/Внеплан, Выполнено/Не выполнено, С ошибками/Без ошибок (из выполненного), Стоимость (строки с присвоенным реестром минус ошибки в зоне стоп-фактора, по расценкам WORK_TYPE_RATES). «Ошибки»:
+После логина открывается Дашборд с двумя вкладками. «Обзор» — лента плашек: Заданий (число строк), ПСК/РЛЭ, План/Внеплан, Выполнено/Не выполнено, С ошибками/Без ошибок (из выполненного), Стоимость (строки с присвоенным реестром, кроме заблокированных стоп-фактором — не-балансовая ошибка в зоне, по расценкам WORK_TYPE_RATES). «Ошибки»:
 - Карточки-счётчики: заданий в зоне, с ошибками, отправлено в биллинг (из числа ошибок), на исправлении (не отправлено и не закрыто), всего ошибок (в строках «на исправлении»).
 - Сетка частоты ошибок — расклад по видам ошибок из строк «на исправлении».
 - Фильтр по отделениям (выпадающий список) — только для администратора/специалиста.
@@ -106,14 +106,13 @@ Auth: `/api/login`, `/api/me`, `/api/logout`, `/api/change-password`, `/api/user
 Данные: `/api/main-afl` (GET, параметры: page, per_page, sort, order, search, customer, task_report, task_type, executor_org, executor_filter, only_completed, only_without_reestr, reestr, done_day, exact), `/api/main-afl/ids` (GET, все task_number текущей фильтрации), `/api/main-afl/stats` (GET), `/api/users/search`
 Реестры: `/api/reestr` (POST, + возвращает blocked), `/api/reestr/reset` (POST), `/api/download-reestr/{reestr_number}`, `/api/reestr-list`, `/api/reestr/find` (GET, ?q= — поиск реестра по № задания/л/с), `/api/task-reports`, `/api/executor-organizations`, `/api/executors`, `/api/main-afl/task-report` (PATCH)
 Дашборд: `/api/dashboard/summary` (GET, ?dept=), `/api/dashboard/overview` (GET), `/api/dashboard/errors-report` (GET xlsx, ?dept=), `/api/dashboard/balance-report` (GET xlsx, ?dept=), `/api/dashboard/date-report` (GET xlsx, ?dept=), `/api/dashboard/verified-report` (GET xlsx, ?dept=)
-Отчёты (пункт меню, только администратор): `/api/fin-report` (GET, ?period=YYYY-MM — плашки + раскладка по locale и видам работ периода + стоимость), `/api/fin-report/add` (POST {period} — проставляет report = «ГГГГ ММ» строкам с реестром и пустым report); «Скачать отчёт» — заглушка
+Отчёты (пункт меню, только администратор): `/api/fin-report` (GET, ?period=YYYY-MM — плашки + раскладка по locale и видам работ периода + стоимость + сумма по каждой плашке + разбивка суммы ПСК/РЛЭ), `/api/fin-report/add` (POST {period} — проставляет report = «ГГГГ ММ» строкам с реестром и пустым report), `/api/fin-report/download` (GET, ?period=YYYY-MM — ZIP с двумя xlsx: «Плановый»/«Внеплановый» по task_type; строки report = период; даты дд.мм.гггг; grid → название сети; task_report → нумерованный код)
 Загрузка: `/api/upload` (POST multipart), `/api/upload/progress/{upload_id}`
 Готово на бэке, нет UI: `/api/report` (POST), `/api/download-report/{period}`, `/api/story-afl` (GET), `/api/story-afl/reject` (POST)
 
 ## НЕ ДОДЕЛАНО (заглушки / TODO)
 1. **Архив (Story)** — страница `/story` в навбаре ведёт на `/main-afl` (заглушка). Бэкенд-эндпоинты готовы: `/api/story-afl` (GET с фильтрами), `/api/story-afl/reject` (POST). Нужно: страница архива + таблица с фильтрами.
 2. **Формирование отчёта** — `/api/report` (POST) + `/api/download-report/{period}` готовы на бэке. Нужен UI (выбор месяца/года, кнопка «Сформировать», скачивание). Логика: строки с reestr_date → report=period, «Отклонён» → report=«Отклонён», перенос в story_afl, удаление из main_afl.
-3. **«Скачать отчёт» (Отчёты → Финотчёт)** — кнопка-заглушка (администратор), формат выгрузки ещё не описан.
 
 ## Конвенции
 - SQL: только bindparams (`:name`), без f-string-инъекций. Для IN — `build_in_clause(prefix, values)` в sql.py.

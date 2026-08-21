@@ -12,7 +12,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from deps import get_current_user, require_auth
 from services.dashboard import build_scope, generate_errors_xlsx, generate_balance_xlsx, generate_task_numbers_xlsx, pick_pu_type, WORK_TYPE_RATES
-from services.report_check import split_errors, join_errors, BALANCE_ERRORS, STOP_FACTOR_REGIONS, STOP_FACTOR_DISTRICTS
+from services.report_check import split_errors, join_errors, BALANCE_ERRORS, is_stop_blocked
 
 
 @get("/dashboard/summary", guards=[require_auth])
@@ -88,21 +88,15 @@ async def api_dashboard_overview(request: Request, db_session: AsyncSession) -> 
         text(f"SELECT COUNT(*) FROM main_afl WHERE {completed_where} AND (errors IS NOT NULL AND errors != '')"), params)).scalar()
     without_errors = completed - with_errors
 
-    # Стоимость = строки с присвоенным реестром (пойдут в отчёт), минус ошибки зоны стоп-фактора.
-    regions = sorted(STOP_FACTOR_REGIONS)
-    districts = sorted(STOP_FACTOR_DISTRICTS)
-    zr = [f"zr{i}" for i in range(len(regions))]
-    zd = [f"zd{i}" for i in range(len(districts))]
-    zone_params = dict(zip(zr, regions))
-    zone_params.update(zip(zd, districts))
-    zone_clause = f"(region IN ({', '.join(':' + n for n in zr)}) OR municipal_district IN ({', '.join(':' + n for n in zd)}))"
-
+    # Стоимость = строки с присвоенным реестром (пойдут в отчёт), кроме заблокированных
+    # стоп-фактором (не-балансовая ошибка в зоне стоп-фактора — is_stop_blocked).
     cost_result = await db_session.execute(
-        text(f"SELECT task_report, COUNT(*) FROM main_afl WHERE {completed_where} AND reestr_number IS NOT NULL AND reestr_number != 'Отклонён' AND ((errors IS NULL OR errors = '') OR NOT ({zone_clause})) GROUP BY task_report"),
-        {**params, **zone_params})
+        text(f"SELECT task_report, errors, region, municipal_district FROM main_afl WHERE {completed_where} AND reestr_number IS NOT NULL AND reestr_number != 'Отклонён'"),
+        params)
     cost = 0.0
-    for (tr, cnt) in cost_result:
-        cost += WORK_TYPE_RATES.get(tr, 0.0) * (cnt or 0)
+    for tr, errors_text, region, mdist in cost_result:
+        if not is_stop_blocked({"errors": errors_text, "region": region, "municipal_district": mdist}):
+            cost += WORK_TYPE_RATES.get(tr, 0.0)
 
     return Response(content=json.dumps({
         "total": total,

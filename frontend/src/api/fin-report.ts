@@ -1,6 +1,7 @@
 export interface FinCardData {
   total: number;
   by_locale: { locale: string; count: number }[];
+  cost: number;
 }
 
 export interface FinReportData {
@@ -12,6 +13,8 @@ export interface FinReportData {
   };
   work_types: { label: string; count: number }[];
   total_cost: number;
+  cost_psk: number;
+  cost_rle: number;
 }
 
 export async function fetchFinReport(period: string): Promise<FinReportData> {

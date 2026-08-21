@@ -30,6 +30,10 @@ function periodLabel(period: string): string {
   return `Отчёт за ${MONTHS[Number(month) - 1]} ${year}`;
 }
 
+function fmtMoney(v: number): string {
+  return v.toLocaleString("ru-RU", { minimumFractionDigits: 2, maximumFractionDigits: 2 }) + " ₽";
+}
+
 function ReportsPage() {
   const { user } = useAuth();
   if (!user || user.role !== "администратор") {
@@ -63,6 +67,7 @@ function FinReportTab() {
   const [period, setPeriod] = useState(options[0].value);
   const [data, setData] = useState<FinReportData | null>(null);
   const [loading, setLoading] = useState(true);
+  const [downloading, setDownloading] = useState(false);
   const [toast, setToast] = useState<string | null>(null);
   const [expanded, setExpanded] = useState<Set<string>>(new Set());
   const toastTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -108,8 +113,29 @@ function FinReportTab() {
     }
   };
 
-  const handleDownload = () => {
-    showToast("Скачивание отчёта — в разработке");
+  const handleDownload = async () => {
+    if (downloading) return;
+    setDownloading(true);
+    try {
+      const res = await fetch(`/api/fin-report/download?period=${encodeURIComponent(period)}`, { credentials: "include" });
+      if (!res.ok) {
+        showToast("Ошибка скачивания отчёта");
+        return;
+      }
+      const blob = await res.blob();
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `Отчёт_${period}.zip`;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      URL.revokeObjectURL(url);
+    } catch {
+      showToast("Ошибка скачивания отчёта");
+    } finally {
+      setDownloading(false);
+    }
   };
 
   const cards: { key: keyof FinReportData["cards"]; label: string }[] = [
@@ -128,7 +154,10 @@ function FinReportTab() {
           ))}
         </select>
         <button className="btn btn-accent btn-sm" onClick={handleAdd}>Добавить в отчёт</button>
-        <button className="btn btn-outline btn-sm" onClick={handleDownload}>Скачать отчёт</button>
+        <button className="btn btn-outline btn-sm" onClick={handleDownload} disabled={downloading}>
+          {downloading ? <span className="loading loading-spinner loading-sm" /> : null}
+          {downloading ? "Формируем…" : "Скачать отчёт"}
+        </button>
       </div>
 
       <div className="flex-1 min-h-0 flex gap-6">
@@ -168,11 +197,19 @@ function FinReportTab() {
               ))}
             </div>
           )}
-          <div className="border-t border-base-300 mt-3 pt-2 flex justify-between text-sm font-semibold">
-            <span>Итого</span>
-            <span className="tabular-nums">
-              {data ? data.total_cost.toLocaleString("ru-RU", { minimumFractionDigits: 2, maximumFractionDigits: 2 }) : "0,00"} ₽
-            </span>
+          <div className="border-t border-base-300 mt-3 pt-2 space-y-1 text-sm">
+            <div className="flex justify-between font-semibold">
+              <span>Итого</span>
+              <span className="tabular-nums">{data ? fmtMoney(data.total_cost) : fmtMoney(0)}</span>
+            </div>
+            <div className="flex justify-between text-base-content/70">
+              <span>ПСК</span>
+              <span className="tabular-nums">{data ? fmtMoney(data.cost_psk) : fmtMoney(0)}</span>
+            </div>
+            <div className="flex justify-between text-base-content/70">
+              <span>РЛЭ</span>
+              <span className="tabular-nums">{data ? fmtMoney(data.cost_rle) : fmtMoney(0)}</span>
+            </div>
           </div>
         </div>
       </div>
@@ -195,6 +232,7 @@ function FinCard({ label, card, expanded, onToggle }: { label: string; card: Fin
           {card.total.toLocaleString("ru-RU")}
           <span className="text-xs text-base-content/40">{expanded ? "▲" : "▼"}</span>
         </div>
+        <div className="text-sm text-base-content/70 tabular-nums mt-1">{fmtMoney(card.cost)}</div>
       </button>
       {expanded && (
         <div className="px-4 pb-3 space-y-1">

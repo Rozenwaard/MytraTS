@@ -303,3 +303,171 @@ async def generate_report_xlsx_bytes(db_session, period):
     wb.save(output)
     output.seek(0)
     return output.read()
+
+
+# ─── Финотчёт: выгрузка xlsx ──────────────────────────────────────
+
+GRID_NAMES = {
+    "ВЭС": 'ПАО "Россети Ленэнерго" "Выборгские электрические сети"',
+    "ГтЭС": 'ПАО "Россети Ленэнерго" "Гатчинские электрические сети"',
+    "КнЭС": 'ПАО "Россети Ленэнерго" "Кингисеппские электрические сети"',
+    "НлЭС": 'ПАО "Россети Ленэнерго" "Новоладожские электрические сети"',
+    "СЭС": 'ПАО "Россети Ленэнерго" "Северные электрические сети"',
+    "ТхЭС": 'ПАО "Россети Ленэнерго" "Тихвинские электрические сети"',
+    "ЮЭС": 'ПАО "Россети Ленэнерго" "Южные электрические сети"',
+}
+# «Кабельная сеть» и «Санкт-Петербургские высоковольтные электрические сети»
+# в текущих данных не встречаются (нет кода grid) — пока не маппируются.
+
+WORK_TYPE_CODES = {
+    "Допуск ПУ в МКД": "2.4 Допуск ПУ в МКД",
+    "Допуск ПУ в ИЖС": "2.9 Допуск ПУ в ИЖС",
+    "Инструментальная проверка": "2.14 Инструментальная проверка ПУ",
+    "Периодический контроль БП": "2.8 Контроль самовольного подключения",
+    "Бытовые заявки": "2.5 Проверка/осмотр ПУ",
+    "Выявление безучетного потребления БП": "2.5 Проверка/осмотр ПУ",
+}
+
+REPORT_COLUMNS = [
+    "task_number", "task_source", "task_type", "work_type_in_task", "created_at",
+    "address", "municipal_district", "house_type", "personal_account",
+    "contract_status", "contract_created_at", "debt_amount", "debt_calculation_date",
+    "disconnection_reconnection_debt_amount", "debt_calculation_date_1",
+    "notification_debt_amount", "debt_calculation_date_2", "due_date",
+    "service_object_type", "subscriber_name", "subscriber_type", "subscriber_phone",
+    "metering_point", "meter_type", "meter_model", "meter_serial_number",
+    "manufacture_year", "last_verification_date", "meter_tariff_rate",
+    "integer_capacity", "fractional_capacity", "calibration_interval",
+    "rated_current", "rated_voltage", "meter_installation_place", "meter_status",
+    "meter_ownership", "active_disconnection", "last_readings_t1_estimated",
+    "last_readings_t2_estimated", "last_readings_t3_estimated",
+    "last_estimated_readings_date", "last_readings_t1_control",
+    "last_readings_t2_control", "last_readings_t3_control",
+    "last_control_readings_date", "seals", "has_current_transformer",
+    "has_voltage_transformer", "meter_inspection_results", "meter_type_1",
+    "meter_model_1", "meter_serial_number_1", "manufacture_year_1",
+    "last_verification_date_1", "meter_tariff_rate_1", "integer_capacity_1",
+    "fractional_capacity_1", "calibration_interval_1", "rated_current_1",
+    "rated_voltage_1", "meter_installation_place_1", "meter_ownership_1",
+    "seals_1", "t1", "t2", "t3", "violations", "meter_status_date",
+    "meter_malfunction", "unauthorized_interference", "unauthorized_connection",
+    "additional_violations", "unsuccessful_inspection_reason", "work_type",
+    "work_result", "meter_type_2", "meter_model_2", "meter_serial_number_2",
+    "manufacture_year_2", "last_verification_date_2", "meter_tariff_rate_2",
+    "integer_capacity_2", "fractional_capacity_2", "calibration_interval_2",
+    "rated_current_2", "rated_voltage_2", "meter_installation_place_2",
+    "meter_ownership_2", "seals_2", "t1_1", "t2_1", "t3_1", "final_meter_status",
+    "acts", "comment", "work_start_date", "work_end_date", "sent_to_billing",
+    "billing_sent_at", "task_organization", "third_party_organization",
+    "assignee", "executor", "executor_organization", "visit_reason", "verified",
+    "status", "work_result_1", "status_changed_at", "task_link",
+    "customer", "task_output", "task_report", "task_detail", "region", "grid",
+    "reestr_number", "reestr_date",
+]
+
+FIN_REPORT_HEADERS = [
+    "Номер задания", "Источник задания", "Вид задания", "Вид работы в задании",
+    "Дата создания", "Адрес", "Муниципальный район", "Тип дома", "Лицевой счет",
+    "Статус договора", "Дата создания договора", "Сумма ДЗ", "Дата расчета задолженности",
+    "Сумма задолженности за отключение/возобновление ЭЭ", "Дата расчета задолженности.1",
+    "Сумма задолженности из уведомления", "Дата расчета задолженности.2", "Срок исполнения",
+    "Тип объекта обслуживания", "Наименование абонента", "Тип абонента", "Телефон абонента",
+    "Точка учета", "Тип ПУ", "Модель ПУ", "Заводской номер ПУ", "Год выпуска",
+    "Дата последней поверки", "Тарифность ПУ", "Разрядность целой части",
+    "Разрядность дробной части", "МПИ", "Номинальный ток", "Номинальное напряжение",
+    "Место установки ПУ", "Статус ПУ", "Балансовая принадлежность ПУ", "Активное отключение",
+    "Последние показания Т1 (расчетные)", "Последние показания Т2 (расчетные)",
+    "Последние показания Т3 (расчетные)", "Дата последних расчетных показаний",
+    "Последние показания Т1 (контрольные)", "Последние показания Т2 (контрольные)",
+    "Последние показания Т3 (контрольные)", "Дата последних контрольных показаний",
+    "Пломбы", "Есть трансформатор тока", "Есть трансформатор напряжения",
+    "Результаты осмотра/проверки ПУ", "Тип ПУ.1", "Модель ПУ.1", "Заводской номер ПУ.1",
+    "Год выпуска.1", "Дата последней поверки.1", "Тарифность ПУ.1",
+    "Разрядность целой части.1", "Разрядность дробной части.1", "МПИ.1",
+    "Номинальный ток.1", "Номинальное напряжение.1", "Место установки ПУ.1",
+    "Балансовая принадлежность ПУ.1", "Пломбы.1", "T1", "T2", "T3", "Нарушения",
+    "Дата состояния ПУ", "Неисправность ПУ", "Несанкционированное вмешательство",
+    "Несанкционированное подключение", "Доп. нарушения", "Причина нерезультативного осмотра",
+    "Вид работы", "Результат работы", "Тип ПУ.2", "Модель ПУ.2", "Заводской номер ПУ.2",
+    "Год выпуска.2", "Дата последней поверки.2", "Тарифность ПУ.2",
+    "Разрядность целой части.2", "Разрядность дробной части.2", "МПИ.2",
+    "Номинальный ток.2", "Номинальное напряжение.2", "Место установки ПУ.2",
+    "Балансовая принадлежность ПУ.2", "Пломбы.2", "T1.1", "T2.1", "T3.1",
+    "Статус ПУ (итог)", "Акты", "Комментарий", "Дата начала выполнения работы",
+    "Дата окончания выполнения работы", "Отправлено в биллинг", "Дата и время отправки в биллинг",
+    "Организация задания", "Сторонняя организация", "Ответственный за исполнение",
+    "Исполнитель", "Организация исполнителя", "Основание посещения", "Проверено",
+    "Статус", "Результат работы.1", "Дата изменения статуса", "Ссылка на задание", "Заказчик",
+    "Результат", "Отчёт", "Детали", "Субьект", "Сеть", "Номер реестра", "Дата реестра",
+]
+
+
+def _format_date(val):
+    """Приводит дату к формату дд.мм.гггг (иначе возвращает как есть)."""
+    if val is None:
+        return ""
+    s = str(val).strip()
+    if not s:
+        return ""
+    for fmt in ("%Y-%m-%d %H:%M:%S", "%Y-%m-%d", "%d.%m.%Y %H:%M:%S", "%d.%m.%Y", "%d-%m-%Y", "%Y.%m.%d"):
+        try:
+            return datetime.strptime(s, fmt).strftime("%d.%m.%Y")
+        except ValueError:
+            continue
+    return s
+
+
+def _transform_value(col, header, val):
+    if val is None:
+        return ""
+    if col == "grid":
+        if val in GRID_NAMES:
+            return GRID_NAMES[val]
+        if val == "-":
+            return ""
+        return val
+    if col == "task_report":
+        return WORK_TYPE_CODES.get(val, val)
+    if "Дата" in header:
+        return _format_date(val)
+    return val
+
+
+async def generate_fin_report_xlsx_bytes(db_session, period, task_type):
+    """Генерирует xlsx финансового отчёта за период (только строки с task_type)."""
+    columns_str = ", ".join(REPORT_COLUMNS)
+    result = await db_session.execute(
+        text(f"SELECT {columns_str} FROM main_afl WHERE report = :period AND task_type = :task_type ORDER BY task_number"),
+        {"period": period, "task_type": task_type})
+    rows = [dict(r._mapping) for r in result]
+
+    wb = Workbook()
+    ws = wb.active
+    ws.title = "Отчёт"
+    ws.page_setup.orientation = "landscape"
+
+    header_fill = PatternFill(start_color="D9E1F2", end_color="D9E1F2", fill_type="solid")
+    thin_border = Border(
+        left=Side(style="thin"), right=Side(style="thin"),
+        top=Side(style="thin"), bottom=Side(style="thin"))
+
+    for i, header in enumerate(FIN_REPORT_HEADERS, 1):
+        cell = ws.cell(row=1, column=i, value=header)
+        cell.font = Font(bold=True, size=8)
+        cell.fill = header_fill
+        cell.border = thin_border
+        cell.alignment = Alignment(horizontal="center", vertical="center", wrap_text=True)
+
+    for r, row_data in enumerate(rows, 2):
+        for c, (col, header) in enumerate(zip(REPORT_COLUMNS, FIN_REPORT_HEADERS), 1):
+            cell = ws.cell(row=r, column=c, value=_transform_value(col, header, row_data.get(col)))
+            cell.font = Font(size=8)
+            cell.border = thin_border
+
+    for col in range(1, len(FIN_REPORT_HEADERS) + 1):
+        ws.column_dimensions[get_column_letter(col)].width = 12
+
+    output = io_module.BytesIO()
+    wb.save(output)
+    output.seek(0)
+    return output.read()
