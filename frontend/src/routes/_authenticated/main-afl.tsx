@@ -531,7 +531,7 @@ function SettingsTab() {
 
 function UploadTab() {
   const [uploading, setUploading] = useState(false);
-  const [progress, setProgress] = useState<{ status: string; progress: number; message?: string; loaded?: number; total?: number } | null>(null);
+  const [progress, setProgress] = useState<{ status: string; progress: number; message?: string; loaded?: number; total?: number; inserted?: number; updated?: number } | null>(null);
 
   const handleFile = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -544,6 +544,11 @@ function UploadTab() {
 
     try {
       const res = await fetch("/api/upload", { method: "POST", credentials: "include", body: form });
+      if (!res.ok) {
+        setProgress({ status: "error", progress: 0, message: "Ошибка загрузки" });
+        setUploading(false);
+        return;
+      }
       const { upload_id } = await res.json();
 
       const poll = setInterval(async () => {
@@ -563,6 +568,8 @@ function UploadTab() {
     }
   };
 
+  const isDone = progress?.status === "complete" || progress?.status === "error";
+
   return (
     <div className="space-y-3">
       <p className="text-xs text-base-content/50 leading-relaxed">
@@ -577,18 +584,27 @@ function UploadTab() {
         <input type="file" accept=".xlsx" className="file-input file-input-bordered file-input-sm flex-1"
           onChange={handleFile} disabled={uploading} />
       </div>
-      {progress && (
-        <span className="text-xs text-base-content/50">
-          {progress.status === "loading" && "Загрузка в БД..."}
-          {progress.status === "loaded" && `Готово: ${progress.loaded} строк`}
-          {progress.status === "processing" && "Обработка..."}
-          {progress.status === "merging" && "Перенос в основную таблицу..."}
-          {progress.status === "complete" && <span className="text-success">{progress.message}</span>}
-          {progress.status === "error" && <span className="text-error">{progress.message}</span>}
-        </span>
+      {progress && !isDone && (
+        <>
+          <span className="text-xs text-base-content/50">
+            {progress.status === "starting" && "Старт..."}
+            {progress.status === "loading" && "Загрузка в БД..."}
+            {progress.status === "loaded" && `Готово: ${progress.loaded} строк`}
+            {progress.status === "processing" && "Обработка..."}
+            {progress.status === "merging" && "Перенос в основную таблицу..."}
+          </span>
+          <progress className="progress progress-accent w-full" value={progress.progress} max="100" />
+        </>
       )}
-      {progress && (
-        <progress className="progress progress-accent w-full" value={progress.progress} max="100" />
+      {progress?.status === "complete" && (
+        <div className="alert alert-success text-sm">
+          <span>{progress.message}</span>
+        </div>
+      )}
+      {progress?.status === "error" && (
+        <div className="alert alert-error text-sm">
+          <span>{progress.message || "Ошибка загрузки"}</span>
+        </div>
       )}
     </div>
   );

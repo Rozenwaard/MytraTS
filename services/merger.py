@@ -112,7 +112,7 @@ async def merge_to_main(db_session, upload_progress, upload_id, total_rows):
     await db_session.commit()
 
     upload_progress[upload_id] = {
-        "status": "complete", "progress": 100, "total": total_rows,
+        "status": "merging", "progress": 99, "total": total_rows,
         "inserted": inserted, "updated": updated
     }
 

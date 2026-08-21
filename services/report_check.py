@@ -66,7 +66,8 @@ READING_RULES = [
 
 ERRORS_SEPARATOR = "; "
 
-# Ошибки по балансовой принадлежности обрабатываются особо (не стоп-фактор).
+# Ошибки по балансовой принадлежности. Выносятся в отдельные отчёты дашборда,
+# но тоже являются стоп-факторами (блокируют реестр), как и остальные ошибки.
 BALANCE_ERRORS = {
     "Балансовая принадлежность",
     "Балансовая принадлежность нового ПУ",
@@ -275,11 +276,11 @@ def split_errors(value: Any) -> list:
 
 
 def has_stop_factor(errors: list) -> bool:
-    return any(e not in BALANCE_ERRORS for e in errors)
+    return bool(errors)
 
 
 def is_stop_blocked(row: dict) -> bool:
-    """Стоп-фактор активен: регион/район в списке И есть не-балансовая ошибка."""
+    """Стоп-фактор активен: регион/район в списке И есть хотя бы одна ошибка."""
     if row.get("region") not in STOP_FACTOR_REGIONS and row.get("municipal_district") not in STOP_FACTOR_DISTRICTS:
         return False
     errors = split_errors(row.get("errors") or "")

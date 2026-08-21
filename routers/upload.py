@@ -57,6 +57,7 @@ async def _run_pipeline(upload_id: str, content: bytes):
                 return
             upload_progress[upload_id] = {"status": "merging", "progress": 90, "total": total_rows}
             inserted, updated, affected = await merge_to_main(db_session, upload_progress, upload_id, total_rows)
+            upload_progress[upload_id] = {"status": "merging", "progress": 99, "total": total_rows, "inserted": inserted, "updated": updated}
             await recompute_errors(db_session, affected)
             upload_progress[upload_id] = {"status": "complete", "progress": 100, "total": total_rows, "inserted": inserted, "updated": updated, "message": f"Загружено: {total_rows} строк | Новых: {inserted} | Обновлено: {updated}"}
         except Exception as e:
