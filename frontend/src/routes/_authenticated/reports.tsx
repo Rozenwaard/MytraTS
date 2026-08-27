@@ -3,7 +3,7 @@ import { useEffect, useRef, useState } from "react";
 import { rootRoute } from "../__root";
 import { useAuth } from "../../store/auth";
 import { fetchFinReport, addToReport, uploadDiscrepancies, type FinReportData, type FinCardData } from "../../api/fin-report";
-import { fetchPremiumSummary, uploadTabel, type PremiumSummary } from "../../api/premium";
+import { fetchPremiumSummary, uploadTabel, addNorms, type PremiumSummary } from "../../api/premium";
 
 export const reportsRoute = createRoute({
   getParentRoute: () => rootRoute,
@@ -353,6 +353,7 @@ function PremiumTab() {
   const [period, setPeriod] = useState("");
   const [loading, setLoading] = useState(true);
   const [uploading, setUploading] = useState(false);
+  const [addingNorms, setAddingNorms] = useState(false);
   const [toast, setToast] = useState<string | null>(null);
   const toastTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const fileInput = useRef<HTMLInputElement>(null);
@@ -411,6 +412,22 @@ function PremiumTab() {
     { key: "drivers" as const, label: "Водители" },
   ];
 
+  const handleAddNorms = async () => {
+    if (!period) {
+      showToast("Выберите период");
+      return;
+    }
+    setAddingNorms(true);
+    try {
+      const res = await addNorms(period);
+      showToast(`Нормативы агрегированы: ${res.rows} строк`);
+    } catch (e) {
+      showToast(e instanceof Error ? e.message : "Ошибка добавления нормативов");
+    } finally {
+      setAddingNorms(false);
+    }
+  };
+
   return (
     <div className="flex flex-col gap-3 overflow-auto">
       <div className="flex-shrink-0 flex flex-wrap items-center gap-3">
@@ -441,6 +458,21 @@ function PremiumTab() {
             <option key={p} value={p}>{premiumPeriodLabel(p)}</option>
           ))}
         </select>
+        <button
+          className="btn btn-accent btn-sm"
+          onClick={handleAddNorms}
+          disabled={addingNorms || !period}
+          title={period ? undefined : "Выберите период"}
+        >
+          {addingNorms ? <span className="loading loading-spinner loading-sm" /> : null}
+          {addingNorms ? "Агрегируем…" : "Добавить нормативы"}
+        </button>
+        <button
+          className="btn btn-outline btn-sm"
+          onClick={() => showToast("Скачивание отчёта — скоро")}
+        >
+          Скачать отчёт
+        </button>
       </div>
 
       <div className="flex flex-wrap gap-3">

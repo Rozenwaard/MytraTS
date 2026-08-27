@@ -265,6 +265,7 @@ class MainAfl(Base):
     reestr_date: Mapped[Optional[str]] = mapped_column(Text)
     report: Mapped[Optional[str]] = mapped_column(Text)
     errors: Mapped[Optional[str]] = mapped_column(Text)
+    norm: Mapped[Optional[float]] = mapped_column(Float)  # норматив (минуты) из carte
 
 
 class StoryAfl(Base):
@@ -405,6 +406,29 @@ class Tabel(Base):
     minutes: Mapped[Optional[float]] = mapped_column(Float) # часы × 60
     position: Mapped[Optional[str]] = mapped_column(Text)   # должность из файла (col4), для категорий и missing
     name: Mapped[Optional[str]] = mapped_column(Text)       # ФИО из файла (col3), для missing
+
+
+class Carte(Base):
+    __tablename__ = 'carte'
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    title: Mapped[str] = mapped_column(Text)
+    absolute: Mapped[Optional[float]] = mapped_column(Float)  # норматив, минуты
+    price: Mapped[Optional[float]] = mapped_column(Float)     # цена, ₽
+
+
+class Utalo(Base):
+    __tablename__ = 'utalo'
+
+    id: Mapped[Optional[int]] = mapped_column(Integer, primary_key=True)
+    period: Mapped[Optional[str]] = mapped_column(Text)
+    staff_id: Mapped[Optional[str]] = mapped_column(Text)
+    full_name: Mapped[Optional[str]] = mapped_column(Text)
+    position: Mapped[Optional[str]] = mapped_column(Text)
+    dept: Mapped[Optional[str]] = mapped_column(Text)
+    task_report: Mapped[Optional[str]] = mapped_column(Text)
+    count: Mapped[Optional[int]] = mapped_column(Integer)
+    norm_sum: Mapped[Optional[float]] = mapped_column(Float)
 
 
 class Calendar(Base):

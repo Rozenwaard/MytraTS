@@ -41,3 +41,17 @@ export async function uploadTabel(file: File): Promise<TabelUploadResult> {
   }
   return res.json();
 }
+
+export async function addNorms(period: string): Promise<{ success: boolean; period: string; rows: number }> {
+  const res = await fetch("/api/premium/norms", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    credentials: "include",
+    body: JSON.stringify({ period }),
+  });
+  if (!res.ok) {
+    const j = await res.json().catch(() => null);
+    throw new Error(j?.error || "Ошибка добавления нормативов");
+  }
+  return res.json();
+}

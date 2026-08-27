@@ -36,14 +36,15 @@ MytraTS/
 ├── sql.py                 # build_in_clause (общий SQL-хелпер для IN)
 ├── data/
 │   ├── config.py          # engine, SECRET_KEY из .env
-│   └── models.py          # RawAfl, MainAfl (+errors), StoryAfl, Tabel, Calendar, User (+ ROLES, FIELD_ROLES, ADMIN_ROLES)
+│   └── models.py          # RawAfl, MainAfl (+errors, +norm), StoryAfl, Tabel, Carte, Utalo, Calendar, User (+ ROLES, FIELD_ROLES, ADMIN_ROLES)
 ├── services/
 │   ├── uploader.py        # xlsx → raw_afl (чтение calamine, fallback openpyxl; async engine, run_sync)
 │   ├── processor.py       # классификация: словари групп признаков + data-driven правила (TASK_OUTPUT/COMMENT/TASK_REPORT_RULES)
 │   ├── merger.py          # raw → main (INSERT новых + UPDATE пустых/'Отклонён'; защищены строки с номером реестра и с task_detail='Разногласия')
 │   ├── reestr.py          # генерация xlsx реестра/отчёта, DEPT_PREFIXES, LOCALE_SUFFIXES
 │   ├── report_check.py    # правила проверки «Алькор» (check_row), recompute_errors, BALANCE_ERRORS, STOP_FACTOR_*
-│   └── dashboard.py       # build_scope (виды работ+территории+видимость+отделение), WORK_TYPE_RATES, генераторы xlsx отчётов дашборда
+│   ├── dashboard.py       # build_scope (виды работ+территории+видимость+отделение), WORK_TYPE_RATES, генераторы xlsx отчётов дашборда
+│   └── premium.py         # apply_norms (проставление main_afl.norm из carte), aggregate_utalo (агрегация в utalo)
 ├── routers/
 │   ├── auth.py             # логин/логаут, смена пароля, настройки, поиск пользователей
 │   ├── upload.py           # загрузка xlsx + прогресс загрузки
@@ -51,7 +52,7 @@ MytraTS/
 │   ├── reestr.py           # формирование/сброс реестров, список, выгрузка
 │   ├── report.py           # формирование отчётного периода + выгрузка xlsx
 │   ├── fin_report.py       # «Отчёты» → Финотчёт (плашки/раскладка по locale, добавление в отчёт, разногласия)
-│   ├── premium.py          # «Отчёты» → Премия (загрузка табеля в tabel, сводка по должностям)
+│   ├── premium.py          # «Отчёты» → Премия (загрузка табеля в tabel, сводка по должностям, агрегация нормативов в utalo)
 │   ├── story.py            # архив (перенос строк) + отклонение
 │   ├── dashboard.py        # обзор (сводка) + ошибки + отчёты дашборда
 │   └── lookups.py          # справочники (отделения, исполнители, виды работ)
@@ -69,6 +70,7 @@ MytraTS/
 ├── _migrate_errors.py     # миграция: ALTER main_afl ADD errors + бэкфилл
 ├── _migrate_index.py      # миграция: индекс main_afl.task_number (ускоряет UPDATE при переносе/проверке)
 ├── _migrate_tabel.py      # миграция: создание таблицы tabel (Base.metadata.create_all)
+├── _migrate_premium.py    # миграция: carte (заполнение справочника), utalo, main_afl.norm
 └── DEPLOYMENT.md          # развёртывание в локалке (Apache2 + uv + systemd), особенности прод-окружения
 ```
 
@@ -178,6 +180,7 @@ MytraTS/
 |---|---|---|
 | GET | `/premium/summary?period=YYYY MM` | список периодов + плашки по выбранному периоду (инженеры без ведущих / контролёры / водители автомобиля, по должности из файла): число и человекодни (целые); по умолчанию — последний по календарю; `missing` — лица (ФИО, должность, табельный номер) из tabel, отсутствующие в users (только инженеры/контролёры) |
 | POST | `/premium/tabel` | multipart .xlsx/.xls (табель) → таблица `tabel(табельный номер, период, минуты, должность, ФИО)`; хранит только инженеров (без ведущих), контролёров и водителей автомобиля, строки без часов пропускает |
+| POST | `/premium/norms` | `{period}` — «Добавить нормативы»: агрегирует main_afl (done_day в периоде, реестр реальный, норматив есть) в `utalo(период, табельный номер, ФИО, должность, подразделение, вид работ, количество, сумма норматива)`; повторно перезаписывает период |
 
 ### Загрузка
 | Метод | Путь | Что делает |
@@ -202,6 +205,11 @@ MytraTS/
    - Если убрать — уходят `numpy + pandas + python-dateutil + tzdata` (~50 МБ) и **навсегда закрывается проблема baseline x86-64-v2** на прод-сервере, вместе с потолком `requires-python <3.13`.
    - **Решаем после того, как в проект добавим выгрузку ещё пары xlsx-файлов** — тогда станет видно, где pandas реально выигрывает у openpyxl/calamine, а где он лишний.
    - До вердикта действует пин `numpy>=1.26.0,<2`. Учесть: untracked-скрипт `rle.py` тоже использует pandas.
+4. **Премия — что осталось:**
+   - **Цена в carte**: перенести цену из `WORK_TYPE_RATES` в `carte.price` и читать оттуда везде (dashboard/fin_report/reestr) — сейчас дублируется.
+   - **Фильтр работников**: заменить в `processor.py` отсев по организации (`executor_organization NOT IN users.dept`) на отсев по ФИО (фамилия + инициалы) из табеля ↔ users (с хардкод-переименованиями); чужих не пускать в main_afl.
+   - **«Скачать отчёт»** в Премии — пока муляж, сделать выгрузку.
+   - **Формула премии**: как сочетаются норматив (минуты) и цена (₽) с табелем; непрямой матчинг «Фамилия И. О.» ↔ `users.full_name` для расхождений.
 
 ## Конвенции
 - SQL: только bindparams (`:name`), без f-string-инъекций. Для IN — `build_in_clause(prefix, values)` в sql.py.

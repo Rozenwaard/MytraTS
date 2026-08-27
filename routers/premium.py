@@ -15,6 +15,7 @@ from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from deps import get_current_user, require_auth
+from services.premium import aggregate_utalo
 
 MAN_DAY_MINUTES = 480  # 8 часов в человеко-дне
 
@@ -214,6 +215,24 @@ async def api_premium_tabel(
     }, ensure_ascii=False), media_type="application/json")
 
 
-premium_router = Router("/api", route_handlers=[api_premium_summary, api_premium_tabel])
+@post("/premium/norms", guards=[require_auth])
+async def api_premium_norms(
+    request: Request, db_session: AsyncSession,
+    data: dict = Body(media_type=RequestEncodingType.JSON),
+) -> Response:
+    """«Добавить нормативы»: агрегирует main_afl в utalo за выбранный период."""
+    user = await get_current_user(request, db_session)
+    if user.effective_role != "администратор":
+        return Response(content=json.dumps({"error": "Нет прав"}, ensure_ascii=False), media_type="application/json", status_code=403)
+
+    period = (data.get("period") or "").strip()
+    if not period:
+        return Response(content=json.dumps({"error": "Выберите период"}, ensure_ascii=False), media_type="application/json", status_code=400)
+
+    rows = await aggregate_utalo(db_session, period)
+    return Response(content=json.dumps({"success": True, "period": period, "rows": rows}, ensure_ascii=False), media_type="application/json")
+
+
+premium_router = Router("/api", route_handlers=[api_premium_summary, api_premium_tabel, api_premium_norms])
 
 
