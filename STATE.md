@@ -5,9 +5,14 @@
 Бизнес-логика и правила — `docs/БИЗНЕС-ЛОГИКА.md`.
 
 ## Стек
-- **Бэкенд**: Python 3.11, Litestar 2.24, SQLAlchemy 2 (async + aiosqlite), `uv` для зависимостей. БД — SQLite `mytra.db`.
+- **Бэкенд**: Python 3.11 (закреплено `requires-python = ">=3.11,<3.13"`), Litestar 2.24, SQLAlchemy 2 (async + aiosqlite), `uv` для зависимостей. БД — SQLite `mytra.db`.
 - **Фронтенд**: Vite + React 19 + TypeScript (strict), Tailwind v4 + DaisyUI 5, TanStack Router/Query/Table. Менеджер — `bun`.
 - **Git**: https://github.com/Rozenwaard/MytraTS
+
+### Ограничения зависимостей (важно)
+- **`numpy>=1.26.0,<2` — жёсткий пин, не поднимать.** NumPy 2.x собран с baseline x86-64-v2 (SSSE3/SSE4.1/SSE4.2/POPCNT), а CPU прод-сервера его не поддерживает → бэкенд падает на импорте с `RuntimeError: NumPy was built with baseline optimizations: (X86_V2)`. В рантайме baseline не отключается. Потолок `requires-python <3.13` обязателен, иначе резолвинг `uv` вообще не проходит (на Python ≥3.14 pandas требует `numpy>=2.3.3`). Симптомы и что НЕ делать — `DEPLOYMENT.md` → «Особенности окружения (прод-сервер)».
+- **pandas** держим только там, где он реально выигрывает у альтернатив. Сейчас это ровно одно место — `services/uploader.py` (`pd.read_excel` через calamine + `df.to_sql`). Все выгрузки xlsx (`reestr.py`, `dashboard.py`) уже на чистом `openpyxl`. Новый код на pandas без необходимости не писать.
+- `pandas>=3.0.5` — версия 3.0.4 отозвана (yanked) из-за segfault в datetime-функциях.
 
 ## Запуск (dev)
 ```powershell
@@ -25,6 +30,8 @@ bun run dev
 ```
 MytraTS/
 ├── app.py                 # точка входа: сборка Litestar-приложения из роутеров
+│                          # (request_max_body_size = 35 МБ — потолок загрузки xlsx;
+│                          #  CORSConfig только под dev-origin localhost:5173)
 ├── deps.py                # get_current_user, require_auth (общие зависимости)
 ├── sql.py                 # build_in_clause (общий SQL-хелпер для IN)
 ├── data/
@@ -59,8 +66,19 @@ MytraTS/
 │   ├── БИЗНЕС-ЛОГИКА.md    # поток данных и бизнес-правила (классификация, ошибки, реестры, роли, дашборд)
 │   └── КЛАССИФИКАЦИЯ-ОБРАБОТКИ.md  # пошаговая логика processor.py (правила, словари, известные пробелы)
 ├── _migrate_errors.py     # миграция: ALTER main_afl ADD errors + бэкфилл
-└── _migrate_index.py      # миграция: индекс main_afl.task_number (ускоряет UPDATE при переносе/проверке)
+├── _migrate_index.py      # миграция: индекс main_afl.task_number (ускоряет UPDATE при переносе/проверке)
+└── DEPLOYMENT.md          # развёртывание в локалке (Apache2 + uv + systemd), особенности прод-окружения
 ```
+
+## Прод (локальная сеть)
+Схема: браузер → Apache2 :80 → статика `frontend/dist` + `ProxyPass /api` → uvicorn `127.0.0.1:8000`.
+Полная инструкция и боевой конфиг — `DEPLOYMENT.md`. Ключевые грабли, чтобы не наступать повторно:
+- В Apache **`ProxyPass /api http://127.0.0.1:8000/api`** — `/api` обязателен и в цели, иначе Apache
+  срежет префикс, а все роутеры зарегистрированы как `Router("/api", ...)` → 404 на всё API.
+  (В dev у Vite-прокси семантика обратная — он префикс сохраняет.)
+- Нужен **системный Python 3.11** + `uv sync --python-preference only-system`, иначе venv окажется
+  в `/home/<юзер>` и сервис упадёт с `status=203/EXEC`.
+- **`numpy` только 1.26.x** — см. «Ограничения зависимостей» выше.
 
 ## Роли (5)
 Хранятся в `users.role` (явное поле). `User.effective_role` = role или derived (fallback из dept+position). Константы в models.py:
@@ -113,6 +131,11 @@ Auth: `/api/login`, `/api/me`, `/api/logout`, `/api/change-password`, `/api/user
 ## НЕ ДОДЕЛАНО (заглушки / TODO)
 1. **Архив (Story)** — страница `/story` в навбаре ведёт на `/main-afl` (заглушка). Бэкенд-эндпоинты готовы: `/api/story-afl` (GET с фильтрами), `/api/story-afl/reject` (POST). Нужно: страница архива + таблица с фильтрами.
 2. **Формирование отчёта** — `/api/report` (POST) + `/api/download-report/{period}` готовы на бэке. Нужен UI (выбор месяца/года, кнопка «Сформировать», скачивание). Логика: строки с reestr_date → report=period, «Отклонён» → report=«Отклонён», перенос в story_afl, удаление из main_afl.
+3. **Вердикт по pandas / numpy** — решить окончательно: оставляем pandas или убираем совсем.
+   - Сейчас pandas нужен ровно в одном месте — `services/uploader.py` (`pd.read_excel` + `df.to_sql`), а `python-calamine` (уже прямая зависимость) умеет читать xlsx сам (`CalamineWorkbook.from_filelike` → `to_python`), вставку можно сделать через `executemany`.
+   - Если убрать — уходят `numpy + pandas + python-dateutil + tzdata` (~50 МБ) и **навсегда закрывается проблема baseline x86-64-v2** на прод-сервере, вместе с потолком `requires-python <3.13`.
+   - **Решаем после того, как в проект добавим выгрузку ещё пары xlsx-файлов** — тогда станет видно, где pandas реально выигрывает у openpyxl/calamine, а где он лишний.
+   - До вердикта действует пин `numpy>=1.26.0,<2`. Учесть: untracked-скрипт `rle.py` тоже использует pandas.
 
 ## Конвенции
 - SQL: только bindparams (`:name`), без f-string-инъекций. Для IN — `build_in_clause(prefix, values)` в sql.py.
@@ -120,6 +143,7 @@ Auth: `/api/login`, `/api/me`, `/api/logout`, `/api/change-password`, `/api/user
 - Фильтры на бэке строятся из `clauses` + `params` dict.
 - Фронт: типы в `api/main-afl.ts`, запросы через `api<T>()` (client.ts, credentials:include).
 - Коммиты атомарные, ветка master, пушится на GitHub.
+- Зависимости: `numpy` держать `<2`, `requires-python` — с потолком `<3.13` (см. «Ограничения зависимостей»). Для xlsx по умолчанию `openpyxl` / `python-calamine`; pandas — только если он объективно лучше альтернатив.
 - Документация обновляется вместе с кодом: любое изменение бизнес-логики, структуры, эндпоинтов или ролей должно отражаться в `docs/БИЗНЕС-ЛОГИКА.md` и `STATE.md` в том же коммите (теперь помимо кода на автомате обновляем и документацию).
 
 - **специалист**: как админ, но БЕЗ кнопки/списка смены вида работ. Тоже видит Отделения + скролл исполнителей.

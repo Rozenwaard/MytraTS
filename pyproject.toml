@@ -2,13 +2,23 @@
 name = "mytra"
 version = "0.2.0"
 description = "MYTRA — управление реестрами заданий"
-requires-python = ">=3.11"
+# Потолок <3.13 обязателен: без него uv резолвит и для Python >=3.14, где
+# pandas 3.x требует numpy>=2.3.3 — прямой конфликт с пином numpy<2 ниже
+# (см. DEPLOYMENT.md → «Особенности окружения (прод-сервер)»).
+# Колёса numpy 1.26.4 есть только для cp39–cp312.
+requires-python = ">=3.11,<3.13"
 dependencies = [
     "advanced-alchemy>=1.9.3",
     "aiosqlite>=0.22.1",
     "litestar[cryptography,standard]>=2.21.1",
+    # НЕ поднимать до 2.x: numpy 2.x собран с baseline X86_V2
+    # (SSSE3/SSE4.1/SSE4.2/POPCNT) и падает с RuntimeError на CPU гипервизора
+    # прод-сервера. У 1.26.x baseline — SSE3. Отключить baseline в рантайме
+    # нельзя (NPY_DISABLE_CPU_FEATURES глушит только dispatchable-наборы).
+    "numpy>=1.26.0,<2",
     "openpyxl>=3.1.5",
-    "pandas>=3.0.3",
+    # 3.0.4 отозван (yanked): segfault в datetime-функциях.
+    "pandas>=3.0.5",
     "python-calamine>=0.8.2",
     "python-dotenv>=1.2.2",
 ]
