@@ -40,7 +40,7 @@ MytraTS/
 ├── services/
 │   ├── uploader.py        # xlsx → raw_afl (чтение calamine, fallback openpyxl; async engine, run_sync)
 │   ├── processor.py       # классификация: словари групп признаков + data-driven правила (TASK_OUTPUT/COMMENT/TASK_REPORT_RULES)
-│   ├── merger.py          # raw → main (INSERT новых + UPDATE пустых/'Отклонён'; строки с номером реестра защищены)
+│   ├── merger.py          # raw → main (INSERT новых + UPDATE пустых/'Отклонён'; защищены строки с номером реестра и с task_detail='Разногласия')
 │   ├── reestr.py          # генерация xlsx реестра/отчёта, DEPT_PREFIXES, LOCALE_SUFFIXES
 │   ├── report_check.py    # правила проверки «Алькор» (check_row), recompute_errors, BALANCE_ERRORS, STOP_FACTOR_*
 │   └── dashboard.py       # build_scope (виды работ+территории+видимость+отделение), WORK_TYPE_RATES, генераторы xlsx отчётов дашборда
@@ -124,7 +124,7 @@ Auth: `/api/login`, `/api/me`, `/api/logout`, `/api/change-password`, `/api/user
 Данные: `/api/main-afl` (GET, параметры: page, per_page, sort, order, search, customer, task_report, task_type, executor_org, executor_filter, only_completed, only_without_reestr, reestr, done_day, exact), `/api/main-afl/ids` (GET, все task_number текущей фильтрации), `/api/main-afl/stats` (GET), `/api/users/search`
 Реестры: `/api/reestr` (POST, + возвращает blocked), `/api/reestr/reset` (POST), `/api/download-reestr/{reestr_number}`, `/api/reestr-list`, `/api/reestr/find` (GET, ?q= — поиск реестра по № задания/л/с), `/api/task-reports`, `/api/executor-organizations`, `/api/executors`, `/api/main-afl/task-report` (PATCH)
 Дашборд: `/api/dashboard/summary` (GET, ?dept=), `/api/dashboard/overview` (GET), `/api/dashboard/errors-report` (GET xlsx, ?dept=), `/api/dashboard/balance-report` (GET xlsx, ?dept=), `/api/dashboard/date-report` (GET xlsx, ?dept=), `/api/dashboard/verified-report` (GET xlsx, ?dept=)
-Отчёты (пункт меню, только администратор): `/api/fin-report` (GET, ?period=YYYY-MM — плашки + раскладка по locale и видам работ периода + стоимость + сумма по каждой плашке + разбивка суммы ПСК/РЛЭ), `/api/fin-report/add` (POST {period} — проставляет report = «ГГГГ ММ» строкам с реестром и пустым report), `/api/fin-report/download` (GET, ?period=YYYY-MM — ZIP с двумя xlsx: «Плановый»/«Внеплановый» по task_type; строки report = период; даты дд.мм.гггг; grid → название сети; task_report → нумерованный код)
+Отчёты (пункт меню, только администратор): `/api/fin-report` (GET, ?period=YYYY-MM — плашки + раскладка по locale и видам работ + стоимость + сумма по каждой плашке + разбивка суммы ПСК/РЛЭ; пустой period = «Выберите период» → только строки вне отчёта, period задан → строки этого периода), `/api/fin-report/add` (POST {period} — проставляет report = «ГГГГ ММ» строкам с реестром, пустым report и done_day <= конец периода), `/api/fin-report/discrepancies` (POST multipart .txt — по task_number сбрасывает в неисполненные: task_report/reestr_date/report = NULL, task_detail = «Разногласия», reestr_number = «Отклонён»), `/api/fin-report/download` (GET, ?period=YYYY-MM — ZIP с двумя xlsx: «Плановый»/«Внеплановый» по task_type; строки report = период; даты дд.мм.гггг; grid → название сети; task_report → нумерованный код)
 Загрузка: `/api/upload` (POST multipart), `/api/upload/progress/{upload_id}`
 Готово на бэке, нет UI: `/api/report` (POST), `/api/download-report/{period}`, `/api/story-afl` (GET), `/api/story-afl/reject` (POST)
 

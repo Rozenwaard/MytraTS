@@ -2,7 +2,7 @@ import { createRoute } from "@tanstack/react-router";
 import { useEffect, useRef, useState } from "react";
 import { rootRoute } from "../__root";
 import { useAuth } from "../../store/auth";
-import { fetchFinReport, addToReport, type FinReportData, type FinCardData } from "../../api/fin-report";
+import { fetchFinReport, addToReport, uploadDiscrepancies, type FinReportData, type FinCardData } from "../../api/fin-report";
 
 export const reportsRoute = createRoute({
   getParentRoute: () => rootRoute,
@@ -26,6 +26,7 @@ function monthOptions(): { value: string; label: string }[] {
 }
 
 function periodLabel(period: string): string {
+  if (!period) return "Ещё не в отчёте";
   const [year, month] = period.split("-");
   return `Отчёт за ${MONTHS[Number(month) - 1]} ${year}`;
 }
@@ -64,13 +65,16 @@ function ReportsPage() {
 
 function FinReportTab() {
   const [options] = useState(monthOptions);
-  const [period, setPeriod] = useState(options[0].value);
+  const [period, setPeriod] = useState("");
+  const [reportOpen, setReportOpen] = useState(false);
   const [data, setData] = useState<FinReportData | null>(null);
   const [loading, setLoading] = useState(true);
   const [downloading, setDownloading] = useState(false);
+  const [uploadingDiscrepancies, setUploadingDiscrepancies] = useState(false);
   const [toast, setToast] = useState<string | null>(null);
   const [expanded, setExpanded] = useState<Set<string>>(new Set());
   const toastTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const discrepanciesInput = useRef<HTMLInputElement>(null);
 
   const showToast = (msg: string) => {
     setToast(msg);
@@ -94,6 +98,41 @@ function FinReportTab() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [period]);
 
+  const selectPeriod = (p: string) => {
+    // Смена периода всегда возвращает блок на добавление (отчёт «закрыт» по умолчанию).
+    setPeriod(p);
+    setReportOpen(false);
+  };
+
+  const handleToggleReport = () => {
+    setReportOpen((prev) => !prev);
+  };
+
+  const openDiscrepancies = () => {
+    if (discrepanciesInput.current) {
+      discrepanciesInput.current.value = "";
+      discrepanciesInput.current.click();
+    }
+  };
+
+  const handleDiscrepanciesFile = async (file: File | undefined) => {
+    if (!file) return;
+    if (!file.name.toLowerCase().endsWith(".txt")) {
+      showToast("Нужен файл .txt");
+      return;
+    }
+    setUploadingDiscrepancies(true);
+    try {
+      const res = await uploadDiscrepancies(file);
+      showToast(`Разногласия: обновлено ${res.updated} | не найдено ${res.not_found}`);
+      await load(period);
+    } catch {
+      showToast("Ошибка загрузки разногласий");
+    } finally {
+      setUploadingDiscrepancies(false);
+    }
+  };
+
   const toggleExpand = (key: string) => {
     setExpanded((prev) => {
       const next = new Set(prev);
@@ -104,6 +143,7 @@ function FinReportTab() {
   };
 
   const handleAdd = async () => {
+    if (!period) return;
     try {
       const res = await addToReport(period);
       showToast(`Добавлено в отчёт: ${res.updated}`);
@@ -114,7 +154,7 @@ function FinReportTab() {
   };
 
   const handleDownload = async () => {
-    if (downloading) return;
+    if (downloading || !period) return;
     setDownloading(true);
     try {
       const res = await fetch(`/api/fin-report/download?period=${encodeURIComponent(period)}`, { credentials: "include" });
@@ -148,16 +188,53 @@ function FinReportTab() {
   return (
     <div className="flex-1 min-h-0 flex flex-col gap-3">
       <div className="flex-shrink-0 flex flex-wrap items-center gap-2">
-        <select className="select select-bordered select-sm" value={period} onChange={(e) => setPeriod(e.target.value)}>
+        <select className="select select-bordered select-sm" value={period} onChange={(e) => selectPeriod(e.target.value)}>
+          <option value="">Выберите период</option>
           {options.map((o) => (
             <option key={o.value} value={o.value}>{o.label}</option>
           ))}
         </select>
-        <button className="btn btn-accent btn-sm" onClick={handleAdd}>Добавить в отчёт</button>
-        <button className="btn btn-outline btn-sm" onClick={handleDownload} disabled={downloading}>
+        <button
+          className="btn btn-accent btn-sm"
+          onClick={handleAdd}
+          disabled={!reportOpen || !period}
+          title={!reportOpen ? "Отчёт закрыт — откройте переключателем" : !period ? "Выберите период" : undefined}
+        >
+          Добавить в отчёт
+        </button>
+        <button
+          className="btn btn-outline btn-sm"
+          onClick={handleToggleReport}
+          title={reportOpen ? "Закрыть отчёт (заблокирует «Добавить»)" : "Открыть отчёт (разблокирует «Добавить»)"}
+        >
+          {reportOpen ? "Закрыть отчёт" : "Открыть отчёт"}
+        </button>
+        <button
+          className="btn btn-outline btn-sm"
+          onClick={openDiscrepancies}
+          disabled={uploadingDiscrepancies}
+        >
+          {uploadingDiscrepancies ? <span className="loading loading-spinner loading-sm" /> : null}
+          {uploadingDiscrepancies ? "Обрабатываем…" : "Разногласия"}
+        </button>
+        <button
+          className="btn btn-outline btn-sm"
+          onClick={handleDownload}
+          disabled={downloading || !period}
+          title={period ? undefined : "Выберите период"}
+        >
           {downloading ? <span className="loading loading-spinner loading-sm" /> : null}
           {downloading ? "Формируем…" : "Скачать отчёт"}
         </button>
+        <input
+          ref={discrepanciesInput}
+          type="file"
+          accept=".txt"
+          className="hidden"
+          placeholder="Выберите txt файл с номерами отклонённых заданий"
+          title="Выберите txt файл с номерами отклонённых заданий"
+          onChange={(e) => handleDiscrepanciesFile(e.target.files?.[0])}
+        />
       </div>
 
       <div className="flex-1 min-h-0 flex gap-6">
@@ -186,7 +263,9 @@ function FinReportTab() {
           {loading || !data ? (
             <span className="loading loading-spinner loading-sm text-accent" />
           ) : data.work_types.length === 0 ? (
-            <div className="text-sm text-base-content/50">Нет данных за период</div>
+            <div className="text-sm text-base-content/50">
+              {period ? "Нет данных за период" : "Все работы включены в отчёт"}
+            </div>
           ) : (
             <div className="space-y-1">
               {data.work_types.map((w) => (

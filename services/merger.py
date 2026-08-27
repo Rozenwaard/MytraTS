@@ -46,9 +46,9 @@ MAIN_AFL_COLUMNS = [
 
 
 async def merge_to_main(db_session, upload_progress, upload_id, total_rows):
-    # Существующие строки: task_number → текущий reestr_number.
-    result = await db_session.execute(text("SELECT task_number, reestr_number FROM main_afl"))
-    existing = {row[0]: row[1] for row in result}
+    # Существующие строки: task_number → (текущий reestr_number, task_detail).
+    result = await db_session.execute(text("SELECT task_number, reestr_number, task_detail FROM main_afl"))
+    existing = {row[0]: (row[1], row[2]) for row in result}
 
     columns_str = ', '.join(f'"{c}"' for c in MAIN_AFL_COLUMNS)
     result = await db_session.execute(text(f"SELECT {columns_str} FROM raw_afl"))
@@ -56,15 +56,18 @@ async def merge_to_main(db_session, upload_progress, upload_id, total_rows):
 
     new_rows = [row for row in all_rows if row['task_number'] not in existing]
 
-    # Перезаписываем только строки без номера реестра (пусто или 'Отклонён').
-    # Строки с реальным номером реестра защищены и не обновляются.
+    # Перезаписываем только строки без номера реестра (пусто или 'Отклонён')
+    # и без пометки 'Разногласия'. Защищены от перезаписи: строки с реальным
+    # номером реестра и строки с task_detail = 'Разногласия'.
     update_rows = []
     reset_reestr_tasks = []
     for row in all_rows:
         tn = row['task_number']
         if tn not in existing:
             continue
-        rn = existing[tn]
+        rn, task_detail = existing[tn]
+        if task_detail == 'Разногласия':
+            continue
         if rn and rn != 'Отклонён':
             continue
         update_rows.append(row)

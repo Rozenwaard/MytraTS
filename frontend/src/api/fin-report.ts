@@ -33,3 +33,15 @@ export async function addToReport(period: string): Promise<{ success: boolean; u
   if (!res.ok) throw new Error("Ошибка добавления в отчёт");
   return res.json();
 }
+
+export async function uploadDiscrepancies(file: File): Promise<{ success: boolean; updated: number; not_found: number }> {
+  const fd = new FormData();
+  fd.append("data", file);
+  const res = await fetch("/api/fin-report/discrepancies", {
+    method: "POST",
+    credentials: "include",
+    body: fd,
+  });
+  if (!res.ok) throw new Error("Ошибка загрузки разногласий");
+  return res.json();
+}
