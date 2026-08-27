@@ -396,6 +396,17 @@ class StoryAfl(Base):
     report: Mapped[Optional[str]] = mapped_column(Text)
 
 
+class Tabel(Base):
+    __tablename__ = 'tabel'
+
+    id: Mapped[Optional[int]] = mapped_column(Integer, primary_key=True)
+    staff_id: Mapped[Optional[str]] = mapped_column(Text)   # табельный номер
+    period: Mapped[Optional[str]] = mapped_column(Text)     # «ГГГГ ММ» (с пробелом, как report)
+    minutes: Mapped[Optional[float]] = mapped_column(Float) # часы × 60
+    position: Mapped[Optional[str]] = mapped_column(Text)   # должность из файла (col4), для категорий и missing
+    name: Mapped[Optional[str]] = mapped_column(Text)       # ФИО из файла (col3), для missing
+
+
 class Calendar(Base):
     __tablename__ = 'calendar'
     

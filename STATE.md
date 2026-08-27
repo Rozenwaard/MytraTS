@@ -36,7 +36,7 @@ MytraTS/
 ├── sql.py                 # build_in_clause (общий SQL-хелпер для IN)
 ├── data/
 │   ├── config.py          # engine, SECRET_KEY из .env
-│   └── models.py          # RawAfl, MainAfl (+errors), StoryAfl, Calendar, User (+ ROLES, FIELD_ROLES, ADMIN_ROLES)
+│   └── models.py          # RawAfl, MainAfl (+errors), StoryAfl, Tabel, Calendar, User (+ ROLES, FIELD_ROLES, ADMIN_ROLES)
 ├── services/
 │   ├── uploader.py        # xlsx → raw_afl (чтение calamine, fallback openpyxl; async engine, run_sync)
 │   ├── processor.py       # классификация: словари групп признаков + data-driven правила (TASK_OUTPUT/COMMENT/TASK_REPORT_RULES)
@@ -50,13 +50,14 @@ MytraTS/
 │   ├── main_afl.py         # таблица реестров, статистика, смена вида работ
 │   ├── reestr.py           # формирование/сброс реестров, список, выгрузка
 │   ├── report.py           # формирование отчётного периода + выгрузка xlsx
-│   ├── fin_report.py       # «Отчёты» → Финотчёт (плашки/раскладка по locale, добавление в отчёт)
+│   ├── fin_report.py       # «Отчёты» → Финотчёт (плашки/раскладка по locale, добавление в отчёт, разногласия)
+│   ├── premium.py          # «Отчёты» → Премия (загрузка табеля в tabel, сводка по должностям)
 │   ├── story.py            # архив (перенос строк) + отклонение
 │   ├── dashboard.py        # обзор (сводка) + ошибки + отчёты дашборда
 │   └── lookups.py          # справочники (отделения, исполнители, виды работ)
 ├── frontend/
 │   └── src/
-│       ├── api/           # client.ts (fetch+cookie), main-afl.ts, dashboard.ts, fin-report.ts
+│       ├── api/           # client.ts (fetch+cookie), main-afl.ts, dashboard.ts, fin-report.ts, premium.ts
 │       ├── store/auth.tsx # AuthContext (user, login, logout)
 │       ├── hooks/         # use-main-afl.ts, use-dashboard.ts
 │       ├── routes/        # __root (navbar+тема), login, _authenticated/{main-afl, change-password, dashboard, reports}
@@ -67,6 +68,7 @@ MytraTS/
 │   └── КЛАССИФИКАЦИЯ-ОБРАБОТКИ.md  # пошаговая логика processor.py (правила, словари, известные пробелы)
 ├── _migrate_errors.py     # миграция: ALTER main_afl ADD errors + бэкфилл
 ├── _migrate_index.py      # миграция: индекс main_afl.task_number (ускоряет UPDATE при переносе/проверке)
+├── _migrate_tabel.py      # миграция: создание таблицы tabel (Base.metadata.create_all)
 └── DEPLOYMENT.md          # развёртывание в локалке (Apache2 + uv + systemd), особенности прод-окружения
 ```
 
@@ -120,13 +122,77 @@ MytraTS/
 - Виды работ для дашборда/отчётов — `DASHBOARD_WORK_TYPES` в services/dashboard.py (10 типов).
 
 ## Эндпоинты (routers/)
-Auth: `/api/login`, `/api/me`, `/api/logout`, `/api/change-password`, `/api/user/settings` (GET/POST)
-Данные: `/api/main-afl` (GET, параметры: page, per_page, sort, order, search, customer, task_report, task_type, executor_org, executor_filter, only_completed, only_without_reestr, reestr, done_day, exact), `/api/main-afl/ids` (GET, все task_number текущей фильтрации), `/api/main-afl/stats` (GET), `/api/users/search`
-Реестры: `/api/reestr` (POST, + возвращает blocked), `/api/reestr/reset` (POST), `/api/download-reestr/{reestr_number}`, `/api/reestr-list`, `/api/reestr/find` (GET, ?q= — поиск реестра по № задания/л/с), `/api/task-reports`, `/api/executor-organizations`, `/api/executors`, `/api/main-afl/task-report` (PATCH)
-Дашборд: `/api/dashboard/summary` (GET, ?dept=), `/api/dashboard/overview` (GET), `/api/dashboard/errors-report` (GET xlsx, ?dept=), `/api/dashboard/balance-report` (GET xlsx, ?dept=), `/api/dashboard/date-report` (GET xlsx, ?dept=), `/api/dashboard/verified-report` (GET xlsx, ?dept=)
-Отчёты (пункт меню, только администратор): `/api/fin-report` (GET, ?period=YYYY-MM — плашки + раскладка по locale и видам работ + стоимость + сумма по каждой плашке + разбивка суммы ПСК/РЛЭ; пустой period = «Выберите период» → только строки вне отчёта, period задан → строки этого периода), `/api/fin-report/add` (POST {period} — проставляет report = «ГГГГ ММ» строкам с реестром, пустым report и done_day <= конец периода), `/api/fin-report/discrepancies` (POST multipart .txt — по task_number сбрасывает в неисполненные: task_report/reestr_date/report = NULL, task_detail = «Разногласия», reestr_number = «Отклонён»), `/api/fin-report/download` (GET, ?period=YYYY-MM — ZIP с двумя xlsx: «Плановый»/«Внеплановый» по task_type; строки report = период; даты дд.мм.гггг; grid → название сети; task_report → нумерованный код)
-Загрузка: `/api/upload` (POST multipart), `/api/upload/progress/{upload_id}`
-Готово на бэке, нет UI: `/api/report` (POST), `/api/download-report/{period}`, `/api/story-afl` (GET), `/api/story-afl/reject` (POST)
+Все пути — с префиксом `/api`.
+
+### Auth
+| Метод | Путь | Что делает |
+|---|---|---|
+| POST | `/login` | вход (табельный номер + пароль); первый вход — пароль = табельный номер |
+| GET | `/me` | текущий пользователь |
+| POST | `/logout` | выход |
+| POST | `/change-password` | смена пароля |
+| GET | `/user/settings` | настройки пользователя |
+| POST | `/user/settings` | сохранить настройки |
+| GET | `/users/search?q=` | поиск пользователей (по ФИО, от 2 симв.) |
+
+### Данные (список заданий)
+| Метод | Путь | Что делает |
+|---|---|---|
+| GET | `/main-afl` | список строк; параметры: page, per_page, sort, order, search, customer, task_report, task_type, executor_org, executor_filter, only_completed, only_without_reestr, reestr, done_day, exact |
+| GET | `/main-afl/ids` | все task_number текущей фильтрации |
+| GET | `/main-afl/stats` | сводка для фильтров |
+| PATCH | `/main-afl/task-report` | смена вида работ |
+
+### Реестры и справочники
+| Метод | Путь | Что делает |
+|---|---|---|
+| POST | `/reestr` | формирование реестра (возвращает `blocked`) |
+| GET | `/download-reestr/{reestr_number}` | выгрузка реестра xlsx |
+| POST | `/reestr/reset` | сброс реестра |
+| GET | `/reestr-list` | список реестров |
+| GET | `/reestr/find?q=` | поиск реестра по № задания / лицевому счёту |
+| GET | `/task-reports` | виды работ |
+| GET | `/executor-organizations` | отделения |
+| GET | `/executors` | исполнители |
+
+### Дашборд
+| Метод | Путь | Что делает |
+|---|---|---|
+| GET | `/dashboard/summary?dept=` | сводка |
+| GET | `/dashboard/overview` | обзор |
+| GET | `/dashboard/errors-report?dept=` | xlsx: отчёт об ошибках |
+| GET | `/dashboard/balance-report?dept=` | xlsx: балансовая принадлежность |
+| GET | `/dashboard/date-report?dept=` | xlsx: дата работ |
+| GET | `/dashboard/verified-report?dept=` | xlsx: отметка о проверке |
+
+### Отчёты (Финотчёт, только администратор)
+| Метод | Путь | Что делает |
+|---|---|---|
+| GET | `/fin-report?period=YYYY-MM` | плашки + раскладка по locale и видам работ + стоимость + ПСК/РЛЭ; пустой period = строки вне отчёта, заданный — строки этого периода |
+| POST | `/fin-report/add` | `report = «ГГГГ ММ»` строкам с реестром, пустым report и done_day ≤ конца периода |
+| POST | `/fin-report/discrepancies` | multipart `.txt` с task_number → сброс в неисполненные: task_report/reestr_date/report = NULL, task_detail = «Разногласия», reestr_number = «Отклонён» |
+| GET | `/fin-report/download?period=YYYY-MM` | ZIP с двумя xlsx («Плановый»/«Внеплановый»); даты дд.мм.гггг; grid → название сети; task_report → нумерованный код |
+
+### Премия (только администратор)
+| Метод | Путь | Что делает |
+|---|---|---|
+| GET | `/premium/summary?period=YYYY MM` | список периодов + плашки по выбранному периоду (инженеры без ведущих / контролёры / водители автомобиля, по должности из файла): число и человекодни (целые); по умолчанию — последний по календарю; `missing` — лица (ФИО, должность, табельный номер) из tabel, отсутствующие в users (только инженеры/контролёры) |
+| POST | `/premium/tabel` | multipart .xlsx/.xls (табель) → таблица `tabel(табельный номер, период, минуты, должность, ФИО)`; хранит только инженеров (без ведущих), контролёров и водителей автомобиля, строки без часов пропускает |
+
+### Загрузка
+| Метод | Путь | Что делает |
+|---|---|---|
+| POST | `/upload` | multipart .xlsx → raw_afl |
+| GET | `/upload/progress/{upload_id}` | прогресс загрузки |
+
+### Готово на бэке, нет UI
+| Метод | Путь | Что делает |
+|---|---|---|
+| POST | `/report` | формирование отчётного периода |
+| GET | `/download-report/{period}` | выгрузка полного отчёта периода |
+| GET | `/story-afl` | архив (с фильтрами) |
+| POST | `/story-afl/reject` | отклонение строк архива |
+
 
 ## НЕ ДОДЕЛАНО (заглушки / TODO)
 1. **Архив (Story)** — страница `/story` в навбаре ведёт на `/main-afl` (заглушка). Бэкенд-эндпоинты готовы: `/api/story-afl` (GET с фильтрами), `/api/story-afl/reject` (POST). Нужно: страница архива + таблица с фильтрами.

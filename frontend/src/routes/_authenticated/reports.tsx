@@ -3,6 +3,7 @@ import { useEffect, useRef, useState } from "react";
 import { rootRoute } from "../__root";
 import { useAuth } from "../../store/auth";
 import { fetchFinReport, addToReport, uploadDiscrepancies, type FinReportData, type FinCardData } from "../../api/fin-report";
+import { fetchPremiumSummary, uploadTabel, type PremiumSummary } from "../../api/premium";
 
 export const reportsRoute = createRoute({
   getParentRoute: () => rootRoute,
@@ -41,7 +42,7 @@ function ReportsPage() {
     return <div className="p-6 text-base-content/60">Нет доступа</div>;
   }
 
-  const [tab, setTab] = useState<"fin">("fin");
+  const [tab, setTab] = useState<"fin" | "premium">("fin");
 
   return (
     <div className="flex flex-col h-[calc(100vh-68px)] p-3 gap-3">
@@ -55,10 +56,19 @@ function ReportsPage() {
           >
             Финотчёт
           </button>
+          <button
+            onClick={() => setTab("premium")}
+            className={`px-4 py-2 text-sm font-medium border-b-2 -mb-px ${
+              tab === "premium" ? "border-accent text-accent" : "border-transparent text-base-content/60 hover:text-base-content"
+            }`}
+          >
+            Премия
+          </button>
         </div>
       </div>
 
       {tab === "fin" && <FinReportTab />}
+      {tab === "premium" && <PremiumTab />}
     </div>
   );
 }
@@ -325,6 +335,145 @@ function FinCard({ label, card, expanded, onToggle }: { label: string; card: Fin
               </div>
             ))
           )}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function premiumPeriodLabel(period: string | null): string {
+  if (!period) return "нет данных";
+  const [year, month] = period.split(" ");
+  const mi = Number(month) - 1;
+  return mi >= 0 && mi < 12 ? `${MONTHS[mi]} ${year}` : period;
+}
+
+function PremiumTab() {
+  const [summary, setSummary] = useState<PremiumSummary | null>(null);
+  const [period, setPeriod] = useState("");
+  const [loading, setLoading] = useState(true);
+  const [uploading, setUploading] = useState(false);
+  const [toast, setToast] = useState<string | null>(null);
+  const toastTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const fileInput = useRef<HTMLInputElement>(null);
+
+  const showToast = (msg: string) => {
+    setToast(msg);
+    if (toastTimer.current) clearTimeout(toastTimer.current);
+    toastTimer.current = setTimeout(() => setToast(null), 4000);
+  };
+
+  const load = async (p: string) => {
+    setLoading(true);
+    try {
+      const data = await fetchPremiumSummary(p);
+      setSummary(data);
+      if (p === "") {
+        // бэкенд выбрал последний (самый свежий по календарю) период — фиксируем в селекторе
+        setPeriod(data.period ?? "");
+      }
+    } catch {
+      showToast("Ошибка загрузки премии");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    load("");
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  const openPicker = () => {
+    if (fileInput.current) {
+      fileInput.current.value = "";
+      fileInput.current.click();
+    }
+  };
+
+  const onFile = async (f?: File) => {
+    if (!f) return;
+    setUploading(true);
+    try {
+      const res = await uploadTabel(f);
+      showToast(`Табель загружен: ${res.stored} строк`);
+      await load("");
+    } catch (e) {
+      showToast(e instanceof Error ? e.message : "Ошибка загрузки табеля");
+    } finally {
+      setUploading(false);
+    }
+  };
+
+  const cardDefs = [
+    { key: "engineers" as const, label: "Инженеры" },
+    { key: "controllers" as const, label: "Контролёры" },
+    { key: "drivers" as const, label: "Водители" },
+  ];
+
+  return (
+    <div className="flex flex-col gap-3 overflow-auto">
+      <div className="flex-shrink-0 flex flex-wrap items-center gap-3">
+        <button className="btn btn-accent btn-sm" onClick={openPicker} disabled={uploading}>
+          {uploading ? <span className="loading loading-spinner loading-sm" /> : null}
+          {uploading ? "Загружаем…" : "Добавить табель"}
+        </button>
+        <input
+          ref={fileInput}
+          type="file"
+          accept=".xlsx,.xls"
+          className="hidden"
+          title="Выберите Excel-файл табеля"
+          onChange={(e) => onFile(e.target.files?.[0])}
+        />
+        <select
+          className="select select-bordered select-sm"
+          value={period}
+          disabled={loading}
+          onChange={(e) => {
+            const p = e.target.value;
+            setPeriod(p);
+            load(p);
+          }}
+        >
+          <option value="" disabled>Выберите период</option>
+          {summary?.periods.map((p) => (
+            <option key={p} value={p}>{premiumPeriodLabel(p)}</option>
+          ))}
+        </select>
+      </div>
+
+      <div className="flex flex-wrap gap-3">
+        {cardDefs.map((c) => {
+          const card = summary?.cards[c.key] ?? { count: 0, man_days: 0 };
+          return (
+            <div key={c.key} className="card bg-base-100 shadow-sm rounded-md min-w-[170px] p-4">
+              <div className="text-xs text-base-content/50">{c.label}</div>
+              <div className="text-2xl font-semibold tabular-nums mt-1">{card.count.toLocaleString("ru-RU")}</div>
+              <div className="text-sm text-base-content/70 tabular-nums mt-1">
+                человекодни: {card.man_days.toLocaleString("ru-RU")}
+              </div>
+            </div>
+          );
+        })}
+      </div>
+
+      {(summary?.missing.length ?? 0) > 0 && (
+        <div className="card bg-warning/10 border border-warning/30 rounded-md p-4">
+          <div className="text-sm font-medium text-warning-content">Отсутствуют в таблице работников следующие лица:</div>
+          <ul className="mt-2 space-y-1 text-sm text-base-content/80">
+            {(summary?.missing ?? []).map((m) => (
+              <li key={m.staff_id}>
+                {m.name || "—"}{m.position ? ` (${m.position})` : ""} — таб. № {m.staff_id}
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
+
+      {toast && (
+        <div className="toast toast-top toast-center z-50">
+          <div className="alert alert-info">{toast}</div>
         </div>
       )}
     </div>
