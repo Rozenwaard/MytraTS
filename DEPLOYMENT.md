@@ -11,14 +11,13 @@
 
 ## Требования
 - Debian/Ubuntu + Apache2, доступ в интернет.
-- **Системный Python 3.11** — обязателен (проект закреплён на `>=3.11,<3.13`).
+- **Системный Python 3.11** — обязателен (проект закреплён на `>=3.11`).
   В Ubuntu 24.04 «из коробки» только 3.12, поэтому 3.11 ставится из PPA deadsnakes (см. §1).
   Нельзя позволять `uv` скачивать собственный Python в `/home/<юзер>`: сервис `mytra`
   туда доступа не имеет и падает с `status=203/EXEC`.
 - `bun` — сборка фронтенда.
 - СУБД не нужна: SQLite-файл `mytra.db` (передаётся отдельно, в git его нет).
-- **Проверить CPU сервера** — на гипервизоре без x86-64-v2 критично, чтобы NumPy остался
-  версии 1.26.x. Подробно — раздел «Особенности окружения (прод-сервер)».
+- pandas/numpy удалены — привязки к CPU x86-64-v2 больше нет.
 
 ## 1. Подготовка сервера
 ```bash
@@ -154,27 +153,15 @@ curl http://localhost/api/login        # JSON (прокси работает)
 
 ## Особенности окружения (прод-сервер)
 
-### NumPy: baseline x86-64-v2 и старый гипервизор
-Прод-сервер работает на CPU/гипервизоре без набора инструкций **x86-64-v2**
-(SSSE3 / SSE4.1 / SSE4.2 / POPCNT). Начиная с версии 2.0 колёса NumPy собираются
-именно с этим baseline, поэтому на импорте бэкенд падает:
-```
-RuntimeError: NumPy was built with baseline optimizations:
-(X86_V2) but your machine doesn't support: (X86_V2).
-```
-- Baseline **нельзя отключить в рантайме**: `NPY_DISABLE_CPU_FEATURES` управляет только
-  опциональными (dispatchable) наборами вроде AVX-512, а baseline вкомпилен в колесо.
-- Поэтому в `pyproject.toml` жёстко зафиксировано **`numpy>=1.26.0,<2`** (у 1.26.x baseline — SSE3).
-  **Не поднимать до 2.x**, пока сервер не переедет на CPU с поддержкой x86-64-v2.
-- Из-за пина NumPy обязателен потолок `requires-python = ">=3.11,<3.13"`: без него `uv`
-  резолвит зависимости и для Python ≥3.14, где pandas требует `numpy>=2.3.3`, и выдаёт
-  `No solution found ... your project's requirements are unsatisfiable`.
-  Плюс колёса numpy 1.26.4 существуют только для cp39–cp312.
+### pandas / numpy удалены
+Раньше из-за pandas/numpy держали пин `numpy<2` и потолок `requires-python <3.13`
+(краш на импорте `RuntimeError: NumPy was built with baseline optimizations: (X86_V2)`
+на старом гипервизоре). Сейчас pandas/numpy в зависимостях нет — см. `STATE.md`.
 
 ### Чего НЕ делать
-- **Не «лечить» это руками на сервере.** `uv sync` приводит `.venv` в точное соответствие
-  с `uv.lock`, поэтому любой ручной `uv pip install "numpy<2"` будет снесён при первом же
-  обновлении. Пин обязан жить в `pyproject.toml` + закоммиченном `uv.lock`.
+- **Не «лечить» зависимости руками на сервере.** `uv sync` приводит `.venv` в точное
+  соответствие с `uv.lock`, поэтому любой ручной `uv pip install ...` будет снесён
+  при первом же обновлении.
 - **Не использовать `uv add --frozen`** для обхода ошибки резолвинга: `--frozen` пропускает
   пересчёт lock-файла, и `pyproject.toml` с `uv.lock` расходятся.
 - В venv, созданном `uv`, **нет `pip`** (`.venv/bin/pip: command not found` — это норма).
@@ -182,8 +169,8 @@ RuntimeError: NumPy was built with baseline optimizations:
 
 ### Если добавляете новые бинарные зависимости
 `pydantic-core`, `cryptography`, `python-calamine`, `uvloop`, `httptools` собраны под базовый
-x86-64 и работают. Но научные пакеты (`pyarrow`, `scipy`, новый `numpy`) собираются под
-x86-64-v2 и упадут так же — проверяйте перед добавлением.
+x86-64 и работают. Научные пакеты (`pyarrow`, `scipy`, `numpy`) собираются под x86-64-v2
+и могут упасть на старом гипервизоре — проверяйте перед добавлением.
 
 ## Обновление
 ```bash
@@ -211,7 +198,3 @@ sudo systemctl start mytra
 - **Права на БД** — `mytra.db` должен принадлежать пользователю `mytra`.
 - **`status=203/EXEC`** — `uv` создал venv на своём Python внутри `/home/<юзер>`, куда сервису
   `mytra` нет доступа. Лечится системным Python 3.11 (§1) и `uv sync --python-preference only-system`.
-- **`RuntimeError: NumPy was built with baseline optimizations: (X86_V2)`** — на сервер попал
-  NumPy 2.x. См. «Особенности окружения (прод-сервер)»: должен быть `numpy 1.26.x`.
-- **`No solution found when resolving dependencies` при `uv sync`/`uv add`** — снят потолок
-  `requires-python` в `pyproject.toml`; он обязан оставаться `">=3.11,<3.13"`.

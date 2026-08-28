@@ -42,16 +42,20 @@ export async function uploadTabel(file: File): Promise<TabelUploadResult> {
   return res.json();
 }
 
-export async function addNorms(period: string): Promise<{ success: boolean; period: string; rows: number }> {
+export async function aggregateNorms(): Promise<{ success: boolean; rows: number }> {
   const res = await fetch("/api/premium/norms", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     credentials: "include",
-    body: JSON.stringify({ period }),
+    body: "{}",
   });
   if (!res.ok) {
     const j = await res.json().catch(() => null);
-    throw new Error(j?.error || "Ошибка добавления нормативов");
+    throw new Error(j?.error || "Ошибка агрегации нормативов");
   }
   return res.json();
+}
+
+export function premiumDownloadUrl(period: string): string {
+  return `/api/premium/download?period=${encodeURIComponent(period)}`;
 }

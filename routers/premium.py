@@ -3,8 +3,9 @@ import json
 import re
 from collections import defaultdict
 
-import pandas as pd
 from litestar import Router
+from openpyxl import load_workbook
+from python_calamine import CalamineWorkbook
 from litestar.connection import Request
 from litestar.datastructures import UploadFile
 from litestar.enums import RequestEncodingType
@@ -13,19 +14,29 @@ from litestar.params import Body
 from litestar.response import Response
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
+from urllib.parse import quote
 
 from deps import get_current_user, require_auth
-from services.premium import aggregate_utalo
+from services.premium import aggregate_utalo, generate_premium_xlsx_bytes
 
 MAN_DAY_MINUTES = 480  # 8 часов в человеко-дне
 
 
-def _read_tabel_excel(content: bytes) -> pd.DataFrame:
+def _is_blank(value) -> bool:
+    """Пустая ячейка: None или '' (как NaN у pandas)."""
+    return value is None or value == ""
+
+
+def _read_tabel_rows(content: bytes) -> list[list]:
     """Читает табель без шапки (как в эталонном timer()): calamine, fallback openpyxl."""
     try:
-        return pd.read_excel(io.BytesIO(content), header=None, engine="calamine")
+        wb = CalamineWorkbook.from_filelike(io.BytesIO(content))
+        sheet = wb.get_sheet_by_index(0)
+        return [list(row) for row in sheet.to_python()]
     except Exception:
-        return pd.read_excel(io.BytesIO(content), header=None, engine="openpyxl")
+        wb = load_workbook(io.BytesIO(content), read_only=True, data_only=True)
+        ws = wb.active
+        return [list(row) for row in ws.iter_rows(values_only=True)]
 
 
 def _normalize_period(value) -> str | None:
@@ -45,24 +56,14 @@ def _normalize_period(value) -> str | None:
 
 
 def _blank_if_na(value) -> str:
-    if value is None:
+    if _is_blank(value):
         return ""
-    try:
-        if pd.isna(value):
-            return ""
-    except (TypeError, ValueError):
-        pass
     return str(value).strip()
 
 
 def _normalize_staff_id(value) -> str | None:
-    if value is None:
+    if _is_blank(value):
         return None
-    try:
-        if pd.isna(value):
-            return None
-    except (TypeError, ValueError):
-        pass
     if isinstance(value, float) and value.is_integer():
         return str(int(value))
     s = str(value).strip()
@@ -71,13 +72,8 @@ def _normalize_staff_id(value) -> str | None:
 
 def _parse_hours(value) -> float | None:
     """Из '18 (142,6)' достаёт часы 142.6."""
-    if value is None:
+    if _is_blank(value):
         return None
-    try:
-        if pd.isna(value):
-            return None
-    except (TypeError, ValueError):
-        pass
     if isinstance(value, (int, float)):
         return float(value)
     m = re.search(r"\(([0-9]+(?:[.,][0-9]+)?)\)", str(value))
@@ -166,37 +162,45 @@ async def api_premium_tabel(
 
     content = await data.read()
     try:
-        df = _read_tabel_excel(content)
+        rows = _read_tabel_rows(content)
     except Exception:
         return Response(content=json.dumps({"error": "Файл не является таблицей Excel"}, ensure_ascii=False), media_type="application/json", status_code=400)
 
-    df = df.dropna(axis=0, how="all")
-    if df.shape[0] <= 7 or df.shape[1] <= 6:
+    # Убираем полностью пустые строки
+    rows = [r for r in rows if any(not _is_blank(v) for v in r)]
+    num_rows = len(rows)
+    num_cols = max((len(r) for r in rows), default=0)
+    if num_rows <= 7 or num_cols <= 6:
         return Response(content=json.dumps({"error": "Файл не соответствует формату табеля"}, ensure_ascii=False), media_type="application/json", status_code=400)
 
-    period = _normalize_period(df.iat[2, 6])
+    period = _normalize_period(rows[2][6] if len(rows[2]) > 6 else None)
     if not period:
         return Response(content=json.dumps({"error": "Файл не соответствует формату табеля (не найден период)"}, ensure_ascii=False), media_type="application/json", status_code=400)
 
-    df = df.iloc[7:]
-    df = df.dropna(axis=1, how="all")
-    df.columns = [f"col{j + 1}" for j in range(df.shape[1])]
-    if "col2" not in df.columns or "col5" not in df.columns:
+    data = rows[7:]
+
+    # Убираем полностью пустые колонки (в строках данных)
+    keep = [c for c in range(num_cols) if any(c < len(r) and not _is_blank(r[c]) for r in data)]
+    if len(keep) < 5:
         return Response(content=json.dumps({"error": "Файл не соответствует формату табеля"}, ensure_ascii=False), media_type="application/json", status_code=400)
 
+    def cell(row, kept_idx):
+        pos = keep[kept_idx]
+        return row[pos] if pos < len(row) else None
+
     by_staff: dict[str, dict] = {}
-    for _, row in df.iterrows():
-        staff_id = _normalize_staff_id(row.get("col2"))
+    for row in data:
+        staff_id = _normalize_staff_id(cell(row, 1))
         if not staff_id:
             continue
-        hours = _parse_hours(row.get("col5"))
+        hours = _parse_hours(cell(row, 4))
         if hours is None or hours <= 0:
             continue
-        position = _blank_if_na(row.get("col4"))
+        position = _blank_if_na(cell(row, 3))
         if _categorize(position) is None:
             continue  # не нужные должности не храним
         if staff_id not in by_staff:
-            by_staff[staff_id] = {"name": _blank_if_na(row.get("col3")), "position": position, "minutes": 0.0}
+            by_staff[staff_id] = {"name": _blank_if_na(cell(row, 2)), "position": position, "minutes": 0.0}
         by_staff[staff_id]["minutes"] += round(hours * 60, 2)
 
     if not by_staff:
@@ -220,19 +224,43 @@ async def api_premium_norms(
     request: Request, db_session: AsyncSession,
     data: dict = Body(media_type=RequestEncodingType.JSON),
 ) -> Response:
-    """«Добавить нормативы»: агрегирует main_afl в utalo за выбранный период."""
+    """«Отчёт по нормативам»: агрегирует текущие main_afl в utalo (все строки с norm/extra)."""
     user = await get_current_user(request, db_session)
     if user.effective_role != "администратор":
         return Response(content=json.dumps({"error": "Нет прав"}, ensure_ascii=False), media_type="application/json", status_code=403)
 
-    period = (data.get("period") or "").strip()
+    rows = await aggregate_utalo(db_session)
+    return Response(content=json.dumps({"success": True, "rows": rows}, ensure_ascii=False), media_type="application/json")
+
+
+@get("/premium/download", guards=[require_auth])
+async def api_premium_download(request: Request, db_session: AsyncSession, period: str = "") -> Response:
+    """Скачивает отчёт по нормативам из utalo за период (вкладки: Алькор / Проект)."""
+    await get_current_user(request, db_session)
     if not period:
         return Response(content=json.dumps({"error": "Выберите период"}, ensure_ascii=False), media_type="application/json", status_code=400)
 
-    rows = await aggregate_utalo(db_session, period)
-    return Response(content=json.dumps({"success": True, "period": period, "rows": rows}, ensure_ascii=False), media_type="application/json")
+    alcor_rows = (await db_session.execute(text(
+        "SELECT full_name, position, dept, task_report, count, norm_sum FROM utalo "
+        "WHERE period = :p AND task_report IN (SELECT title FROM carte WHERE kind = 'base') "
+        "ORDER BY full_name, task_report"
+    ), {"p": period})).fetchall()
+
+    project_rows = (await db_session.execute(text(
+        "SELECT full_name, position, dept, task_report, count, norm_sum FROM utalo "
+        "WHERE period = :p AND task_report NOT IN (SELECT title FROM carte WHERE kind = 'base') "
+        "ORDER BY full_name, task_report"
+    ), {"p": period})).fetchall()
+
+    output = generate_premium_xlsx_bytes(alcor_rows, project_rows)
+    filename = f"Отчёт_по_нормативам_{period.replace(' ', '_')}.xlsx"
+    return Response(
+        content=output,
+        media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        headers={"Content-Disposition": f"attachment; filename*=UTF-8''{quote(filename)}"},
+    )
 
 
-premium_router = Router("/api", route_handlers=[api_premium_summary, api_premium_tabel, api_premium_norms])
+premium_router = Router("/api", route_handlers=[api_premium_summary, api_premium_tabel, api_premium_norms, api_premium_download])
 
 

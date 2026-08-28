@@ -88,8 +88,12 @@ async def api_main_afl(
 
     safe_sort = sort if sort in MAIN_AFL_DISPLAY_COLUMNS else ""
     where_sql = " AND ".join(clauses)
-    sort_sql = f" ORDER BY {safe_sort} {'ASC' if order == 'asc' else 'DESC'}" if safe_sort else ""
-    columns_sql = ", ".join(MAIN_AFL_DISPLAY_COLUMNS)
+    order_col = "COALESCE(norm, 0) + COALESCE(extra, 0)" if safe_sort == "norm" else safe_sort
+    sort_sql = f" ORDER BY {order_col} {'ASC' if order == 'asc' else 'DESC'}" if safe_sort else ""
+    columns_sql = ", ".join(
+        "COALESCE(norm, 0) + COALESCE(extra, 0) AS norm" if c == "norm" else c
+        for c in MAIN_AFL_DISPLAY_COLUMNS
+    )
 
     count_result = await db_session.execute(
         text(f"SELECT COUNT(*) FROM main_afl WHERE {where_sql}"), params)

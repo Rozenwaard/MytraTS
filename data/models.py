@@ -265,7 +265,8 @@ class MainAfl(Base):
     reestr_date: Mapped[Optional[str]] = mapped_column(Text)
     report: Mapped[Optional[str]] = mapped_column(Text)
     errors: Mapped[Optional[str]] = mapped_column(Text)
-    norm: Mapped[Optional[float]] = mapped_column(Float)  # норматив (минуты) из carte
+    norm: Mapped[Optional[int]] = mapped_column(Integer)  # база (основной вид работ)
+    extra: Mapped[Optional[int]] = mapped_column(Integer)  # доп. («Код …», «+5 Алькор»)
 
 
 class StoryAfl(Base):
@@ -431,7 +432,7 @@ class Utalo(Base):
     dept: Mapped[Optional[str]] = mapped_column(Text)
     task_report: Mapped[Optional[str]] = mapped_column(Text)
     count: Mapped[Optional[int]] = mapped_column(Integer)
-    norm_sum: Mapped[Optional[float]] = mapped_column(Float)
+    norm_sum: Mapped[Optional[int]] = mapped_column(Integer)
 
 
 class Calendar(Base):

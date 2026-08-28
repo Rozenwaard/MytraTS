@@ -3,7 +3,7 @@ import { useEffect, useRef, useState } from "react";
 import { rootRoute } from "../__root";
 import { useAuth } from "../../store/auth";
 import { fetchFinReport, addToReport, uploadDiscrepancies, type FinReportData, type FinCardData } from "../../api/fin-report";
-import { fetchPremiumSummary, uploadTabel, addNorms, type PremiumSummary } from "../../api/premium";
+import { fetchPremiumSummary, uploadTabel, aggregateNorms, premiumDownloadUrl, type PremiumSummary } from "../../api/premium";
 
 export const reportsRoute = createRoute({
   getParentRoute: () => rootRoute,
@@ -412,20 +412,28 @@ function PremiumTab() {
     { key: "drivers" as const, label: "Водители" },
   ];
 
-  const handleAddNorms = async () => {
+  const handleAggregate = async () => {
+    setAddingNorms(true);
+    try {
+      const res = await aggregateNorms();
+      showToast(`Нормативы агрегированы: ${res.rows} строк`);
+    } catch (e) {
+      showToast(e instanceof Error ? e.message : "Ошибка агрегации нормативов");
+    } finally {
+      setAddingNorms(false);
+    }
+  };
+
+  const handleDownload = () => {
     if (!period) {
       showToast("Выберите период");
       return;
     }
-    setAddingNorms(true);
-    try {
-      const res = await addNorms(period);
-      showToast(`Нормативы агрегированы: ${res.rows} строк`);
-    } catch (e) {
-      showToast(e instanceof Error ? e.message : "Ошибка добавления нормативов");
-    } finally {
-      setAddingNorms(false);
-    }
+    const a = document.createElement("a");
+    a.href = premiumDownloadUrl(period);
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
   };
 
   return (
@@ -460,16 +468,17 @@ function PremiumTab() {
         </select>
         <button
           className="btn btn-accent btn-sm"
-          onClick={handleAddNorms}
-          disabled={addingNorms || !period}
-          title={period ? undefined : "Выберите период"}
+          onClick={handleAggregate}
+          disabled={addingNorms}
         >
           {addingNorms ? <span className="loading loading-spinner loading-sm" /> : null}
-          {addingNorms ? "Агрегируем…" : "Добавить нормативы"}
+          {addingNorms ? "Агрегируем…" : "Отчёт по нормативам"}
         </button>
         <button
           className="btn btn-outline btn-sm"
-          onClick={() => showToast("Скачивание отчёта — скоро")}
+          onClick={handleDownload}
+          disabled={!period}
+          title={period ? undefined : "Выберите период"}
         >
           Скачать отчёт
         </button>

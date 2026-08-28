@@ -10,9 +10,8 @@
 - **Git**: https://github.com/Rozenwaard/MytraTS
 
 ### Ограничения зависимостей (важно)
-- **`numpy>=1.26.0,<2` — жёсткий пин, не поднимать.** NumPy 2.x собран с baseline x86-64-v2 (SSSE3/SSE4.1/SSE4.2/POPCNT), а CPU прод-сервера его не поддерживает → бэкенд падает на импорте с `RuntimeError: NumPy was built with baseline optimizations: (X86_V2)`. В рантайме baseline не отключается. Потолок `requires-python <3.13` обязателен, иначе резолвинг `uv` вообще не проходит (на Python ≥3.14 pandas требует `numpy>=2.3.3`). Симптомы и что НЕ делать — `DEPLOYMENT.md` → «Особенности окружения (прод-сервер)».
-- **pandas** держим только там, где он реально выигрывает у альтернатив. Сейчас это ровно одно место — `services/uploader.py` (`pd.read_excel` через calamine + `df.to_sql`). Все выгрузки xlsx (`reestr.py`, `dashboard.py`) уже на чистом `openpyxl`. Новый код на pandas без необходимости не писать.
-- `pandas>=3.0.5` — версия 3.0.4 отозвана (yanked) из-за segfault в datetime-функциях.
+- **pandas и numpy удалены.** Чтение xlsx — `python-calamine` (fallback `openpyxl`), выгрузки — `openpyxl`, массовая вставка — `executemany` (сырой SQL). Проблемы baseline x86-64-v2 и потолка `requires-python <3.13` больше нет: `requires-python = ">=3.11"`.
+- Новый код на pandas/numpy не писать; для xlsx — `python-calamine` / `openpyxl`.
 
 ## Запуск (dev)
 ```powershell
@@ -36,7 +35,7 @@ MytraTS/
 ├── sql.py                 # build_in_clause (общий SQL-хелпер для IN)
 ├── data/
 │   ├── config.py          # engine, SECRET_KEY из .env
-│   └── models.py          # RawAfl, MainAfl (+errors, +norm), StoryAfl, Tabel, Carte, Utalo, Calendar, User (+ ROLES, FIELD_ROLES, ADMIN_ROLES)
+│   └── models.py          # RawAfl, MainAfl (+errors, +norm, +extra), StoryAfl, Tabel, Carte, Utalo, Calendar, User (+ ROLES, FIELD_ROLES, ADMIN_ROLES)
 ├── services/
 │   ├── uploader.py        # xlsx → raw_afl (чтение calamine, fallback openpyxl; async engine, run_sync)
 │   ├── processor.py       # классификация: словари групп признаков + data-driven правила (TASK_OUTPUT/COMMENT/TASK_REPORT_RULES)
@@ -44,7 +43,7 @@ MytraTS/
 │   ├── reestr.py          # генерация xlsx реестра/отчёта, DEPT_PREFIXES, LOCALE_SUFFIXES
 │   ├── report_check.py    # правила проверки «Алькор» (check_row), recompute_errors, BALANCE_ERRORS, STOP_FACTOR_*
 │   ├── dashboard.py       # build_scope (виды работ+территории+видимость+отделение), WORK_TYPE_RATES, генераторы xlsx отчётов дашборда
-│   └── premium.py         # apply_norms / apply_manual_norm (norm из carte по kind/planned/detail), aggregate_utalo (агрегация в utalo)
+│   └── premium.py         # apply_norms / apply_manual_norm (norm=база, extra=доп. из carte), aggregate_utalo (агрегация в utalo), generate_premium_xlsx_bytes
 ├── routers/
 │   ├── auth.py             # логин/логаут, смена пароля, настройки, поиск пользователей
 │   ├── upload.py           # загрузка xlsx + прогресс загрузки
@@ -72,6 +71,7 @@ MytraTS/
 ├── _migrate_tabel.py      # миграция: создание таблицы tabel (Base.metadata.create_all)
 ├── _migrate_premium.py    # миграция: carte (заполнение справочника), utalo, main_afl.norm
 ├── _migrate_norm.py       # миграция: carte.kind/planned/detail + «Выполнение задания в Алькоре»
+├── _migrate_extra.py      # миграция: main_afl.norm/extra INTEGER, utalo.norm_sum INTEGER
 └── DEPLOYMENT.md          # развёртывание в локалке (Apache2 + uv + systemd), особенности прод-окружения
 ```
 
@@ -83,7 +83,6 @@ MytraTS/
   (В dev у Vite-прокси семантика обратная — он префикс сохраняет.)
 - Нужен **системный Python 3.11** + `uv sync --python-preference only-system`, иначе venv окажется
   в `/home/<юзер>` и сервис упадёт с `status=203/EXEC`.
-- **`numpy` только 1.26.x** — см. «Ограничения зависимостей» выше.
 
 ## Роли (5)
 Хранятся в `users.role` (явное поле). `User.effective_role` = role или derived (fallback из dept+position). Константы в models.py:
@@ -181,7 +180,7 @@ MytraTS/
 |---|---|---|
 | GET | `/premium/summary?period=YYYY MM` | список периодов + плашки по выбранному периоду (инженеры без ведущих / контролёры / водители автомобиля, по должности из файла): число и человекодни (целые); по умолчанию — последний по календарю; `missing` — лица (ФИО, должность, табельный номер) из tabel, отсутствующие в users (только инженеры/контролёры) |
 | POST | `/premium/tabel` | multipart .xlsx/.xls (табель) → таблица `tabel(табельный номер, период, минуты, должность, ФИО)`; хранит только инженеров (без ведущих), контролёров и водителей автомобиля, строки без часов пропускает |
-| POST | `/premium/norms` | `{period}` — «Добавить нормативы»: агрегирует main_afl (done_day в периоде, реестр реальный, норматив есть) в `utalo(период, табельный номер, ФИО, должность, подразделение, вид работ, количество, сумма норматива)`; повторно перезаписывает период |
+| POST | `/premium/norms` | «Отчёт по нормативам»: агрегирует все main_afl (norm != 0 или extra != 0) в `utalo(период, табельный номер, ФИО, должность, подразделение, вид работ, количество, сумма норматива)`; база → вид = task_report, доп. → вид = источник extra |
 
 ### Загрузка
 | Метод | Путь | Что делает |
@@ -201,12 +200,7 @@ MytraTS/
 ## НЕ ДОДЕЛАНО (заглушки / TODO)
 1. **Архив (Story)** — страница `/story` в навбаре ведёт на `/main-afl` (заглушка). Бэкенд-эндпоинты готовы: `/api/story-afl` (GET с фильтрами), `/api/story-afl/reject` (POST). Нужно: страница архива + таблица с фильтрами.
 2. **Формирование отчёта** — `/api/report` (POST) + `/api/download-report/{period}` готовы на бэке. Нужен UI (выбор месяца/года, кнопка «Сформировать», скачивание). Логика: строки с reestr_date → report=period, «Отклонён» → report=«Отклонён», перенос в story_afl, удаление из main_afl.
-3. **Вердикт по pandas / numpy** — решить окончательно: оставляем pandas или убираем совсем.
-   - Сейчас pandas нужен ровно в одном месте — `services/uploader.py` (`pd.read_excel` + `df.to_sql`), а `python-calamine` (уже прямая зависимость) умеет читать xlsx сам (`CalamineWorkbook.from_filelike` → `to_python`), вставку можно сделать через `executemany`.
-   - Если убрать — уходят `numpy + pandas + python-dateutil + tzdata` (~50 МБ) и **навсегда закрывается проблема baseline x86-64-v2** на прод-сервере, вместе с потолком `requires-python <3.13`.
-   - **Решаем после того, как в проект добавим выгрузку ещё пары xlsx-файлов** — тогда станет видно, где pandas реально выигрывает у openpyxl/calamine, а где он лишний.
-   - До вердикта действует пин `numpy>=1.26.0,<2`. Учесть: untracked-скрипт `rle.py` тоже использует pandas.
-4. **Премия — что осталось:**
+3. **Премия — что осталось:**
    - **Цена в carte**: перенести цену из `WORK_TYPE_RATES` в `carte.price` и читать оттуда везде (dashboard/fin_report/reestr) — сейчас дублируется.
    - **Фильтр работников**: заменить в `processor.py` отсев по организации (`executor_organization NOT IN users.dept`) на отсев по ФИО (фамилия + инициалы) из табеля ↔ users (с хардкод-переименованиями); чужих не пускать в main_afl.
    - **«Скачать отчёт»** в Премии — пока муляж, сделать выгрузку.
@@ -218,7 +212,8 @@ MytraTS/
 - Фильтры на бэке строятся из `clauses` + `params` dict.
 - Фронт: типы в `api/main-afl.ts`, запросы через `api<T>()` (client.ts, credentials:include).
 - Коммиты атомарные, ветка master, пушится на GitHub.
-- Зависимости: `numpy` держать `<2`, `requires-python` — с потолком `<3.13` (см. «Ограничения зависимостей»). Для xlsx по умолчанию `openpyxl` / `python-calamine`; pandas — только если он объективно лучше альтернатив.
+- Зависимости: pandas/numpy не используем. Для xlsx — `python-calamine` (чтение) / `openpyxl` (чтение fallback + выгрузки); вставка — сырой SQL `executemany`.
+- ORM/доступ к БД: SQLAlchemy оставляем как есть — фактически это «async engine + сессия + сырой SQL через `text()`/bindparams», ORM-слой не используется. Tortoise ORM и SQLModel рассмотрены и отвергнуты: Tortoise тянет за собой ORM-стиль, который проекту не нужен, а SQLModel — тот же SQLAlchemy + Pydantic (дублирует валидацию Litestar).
 - Документация обновляется вместе с кодом: любое изменение бизнес-логики, структуры, эндпоинтов или ролей должно отражаться в `docs/БИЗНЕС-ЛОГИКА.md` и `STATE.md` в том же коммите (теперь помимо кода на автомате обновляем и документацию).
 
 - **специалист**: как админ, но БЕЗ кнопки/списка смены вида работ. Тоже видит Отделения + скролл исполнителей.

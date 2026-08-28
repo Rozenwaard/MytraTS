@@ -1,5 +1,7 @@
 import io
-import pandas as pd
+
+from openpyxl import load_workbook
+from python_calamine import CalamineWorkbook
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -46,42 +48,67 @@ RAW_AFL_XLSX_COLUMNS = [
 ]
 
 
-def _read_excel(content: bytes) -> pd.DataFrame:
-    """Читает xlsx. calamine (Rust) в разы быстрее openpyxl; при сбое — fallback."""
+def _read_excel_rows(content: bytes) -> list[list]:
+    """Читает xlsx → список строк (список списков значений). calamine (Rust) → fallback openpyxl."""
     try:
-        return pd.read_excel(io.BytesIO(content), dtype=str, engine="calamine")
+        wb = CalamineWorkbook.from_filelike(io.BytesIO(content))
+        sheet = wb.get_sheet_by_index(0)
+        return [list(row) for row in sheet.to_python()]
     except Exception:
-        return pd.read_excel(io.BytesIO(content), dtype=str, engine="openpyxl")
+        wb = load_workbook(io.BytesIO(content), read_only=True, data_only=True)
+        ws = wb.active
+        return [list(row) for row in ws.iter_rows(values_only=True)]
+
+
+def _cell_to_str(value):
+    """Повторяет pandas dtype=str: пустая ячейка/'' → None, целочисленный float → '123', иначе str."""
+    if value is None or value == "":
+        return None
+    if isinstance(value, float) and value.is_integer():
+        return str(int(value))
+    return str(value)
 
 
 async def load_xlsx_to_raw(db_session: AsyncSession, content: bytes) -> tuple[bool, str, int]:
     try:
-        df = _read_excel(content)
+        rows = _read_excel_rows(content)
+        if not rows:
+            return False, "Файл пуст", 0
 
-        if len(df.columns) > len(RAW_AFL_XLSX_COLUMNS):
-            df = df.iloc[:, 1:]
+        header = rows[0]
+        data = rows[1:]
 
-        if len(df.columns) != len(RAW_AFL_XLSX_COLUMNS):
-            return False, f"Неверное количество колонок: {len(df.columns)} вместо {len(RAW_AFL_XLSX_COLUMNS)}", 0
+        # Если колонок больше, чем ожидаем, отбрасываем первую (служебный индекс)
+        if len(header) > len(RAW_AFL_XLSX_COLUMNS):
+            header = header[1:]
+            data = [row[1:] for row in data]
 
-        df.columns = RAW_AFL_XLSX_COLUMNS
-        total_rows = len(df)
+        if len(header) != len(RAW_AFL_XLSX_COLUMNS):
+            return False, f"Неверное количество колонок: {len(header)} вместо {len(RAW_AFL_XLSX_COLUMNS)}", 0
 
+        total_rows = len(data)
         if total_rows == 0:
             return False, "Файл пуст", 0
 
-        # Удаляем старую таблицу и создаём новую через async engine
+        records = []
+        for row in data:
+            rec = {}
+            for i, name in enumerate(RAW_AFL_XLSX_COLUMNS):
+                rec[name] = _cell_to_str(row[i]) if i < len(row) else None
+            records.append(rec)
+
+        # Удаляем старую таблицу и создаём новую
         await db_session.execute(text("DROP TABLE IF EXISTS raw_afl"))
         await db_session.commit()
 
         async with engine.begin() as conn:
             await conn.run_sync(Base.metadata.create_all)
 
-        # Вставка через pandas to_sql + async engine (run_sync)
+        columns = ", ".join(f'"{c}"' for c in RAW_AFL_XLSX_COLUMNS)
+        placeholders = ", ".join(f":{c}" for c in RAW_AFL_XLSX_COLUMNS)
+        insert_sql = f"INSERT INTO raw_afl ({columns}) VALUES ({placeholders})"
         async with engine.begin() as conn:
-            await conn.run_sync(lambda sync_conn: df.to_sql(
-                'raw_afl', sync_conn, if_exists='append', index=False
-            ))
+            await conn.execute(text(insert_sql), records)
 
         return True, "", total_rows
 
