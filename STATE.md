@@ -40,11 +40,11 @@ MytraTS/
 ├── services/
 │   ├── uploader.py        # xlsx → raw_afl (чтение calamine, fallback openpyxl; async engine, run_sync)
 │   ├── processor.py       # классификация: словари групп признаков + data-driven правила (TASK_OUTPUT/COMMENT/TASK_REPORT_RULES)
-│   ├── merger.py          # raw → main (INSERT новых + UPDATE пустых/'Отклонён'; защищены строки с номером реестра и с task_detail='Разногласия')
+│   ├── merger.py          # raw → main (INSERT новых + UPDATE пустых/'Отклонён'; защищены строки с номером реестра и с task_detail='Разногласия'; проставляет norm)
 │   ├── reestr.py          # генерация xlsx реестра/отчёта, DEPT_PREFIXES, LOCALE_SUFFIXES
 │   ├── report_check.py    # правила проверки «Алькор» (check_row), recompute_errors, BALANCE_ERRORS, STOP_FACTOR_*
 │   ├── dashboard.py       # build_scope (виды работ+территории+видимость+отделение), WORK_TYPE_RATES, генераторы xlsx отчётов дашборда
-│   └── premium.py         # apply_norms (проставление main_afl.norm из carte), aggregate_utalo (агрегация в utalo)
+│   └── premium.py         # apply_norms / apply_manual_norm (norm из carte по kind/planned/detail), aggregate_utalo (агрегация в utalo)
 ├── routers/
 │   ├── auth.py             # логин/логаут, смена пароля, настройки, поиск пользователей
 │   ├── upload.py           # загрузка xlsx + прогресс загрузки
@@ -71,6 +71,7 @@ MytraTS/
 ├── _migrate_index.py      # миграция: индекс main_afl.task_number (ускоряет UPDATE при переносе/проверке)
 ├── _migrate_tabel.py      # миграция: создание таблицы tabel (Base.metadata.create_all)
 ├── _migrate_premium.py    # миграция: carte (заполнение справочника), utalo, main_afl.norm
+├── _migrate_norm.py       # миграция: carte.kind/planned/detail + «Выполнение задания в Алькоре»
 └── DEPLOYMENT.md          # развёртывание в локалке (Apache2 + uv + systemd), особенности прод-окружения
 ```
 

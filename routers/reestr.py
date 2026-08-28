@@ -13,7 +13,6 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from deps import get_current_user, require_auth
 from sql import build_in_clause
-from services.premium import apply_norms
 from services.reestr import DEPT_PREFIXES, LOCALE_SUFFIXES, generate_reestr_xlsx_bytes
 from services.report_check import is_stop_blocked
 
@@ -96,7 +95,6 @@ async def api_reestr(
         reestrs.append({"task_report": display_name, "reestr_number": reestr_number,
                        "count": len(new_tasks), "skipped": len(already), "rejected": 0})
 
-    await apply_norms(db_session)
     await db_session.commit()
     return Response(content=json.dumps({"success": True, "reestrs": reestrs, "reestr_date": reestr_date, "blocked": blocked}, ensure_ascii=False), media_type="application/json")
 

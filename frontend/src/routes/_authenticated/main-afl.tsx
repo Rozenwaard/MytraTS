@@ -41,6 +41,7 @@ const columns: ColumnDef<MainAflRow>[] = [
   { accessorKey: "done_day", header: "Дата" },
   { accessorKey: "reestr_number", header: "Реестр" },
   { accessorKey: "errors", header: "Ошибки" },
+  { accessorKey: "norm", header: "Норматив" },
 ];
 
 

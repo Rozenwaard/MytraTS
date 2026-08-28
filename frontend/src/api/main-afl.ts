@@ -24,6 +24,7 @@ export interface MainAflRow {
   reestr_number: string | null;
   reestr_date: string | null;
   errors: string | null;
+  norm: number | null;
 }
 
 export interface MainAflResponse {

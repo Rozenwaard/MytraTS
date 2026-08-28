@@ -11,7 +11,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from deps import get_current_user, require_auth
 from sql import build_in_clause
-from services.premium import apply_norms
+from services.premium import apply_manual_norm
 
 MAIN_AFL_DISPLAY_COLUMNS = [
     "task_number", "task_source", "task_type", "work_type_in_task",
@@ -19,7 +19,7 @@ MAIN_AFL_DISPLAY_COLUMNS = [
     "service_object_type", "subscriber_name", "meter_installation_place",
     "meter_status", "meter_ownership", "violations", "comment",
     "executor", "visit_reason", "customer", "task_output", "task_report",
-    "grid", "done_day", "reestr_number", "reestr_date", "errors"
+    "grid", "done_day", "reestr_number", "reestr_date", "errors", "norm"
 ]
 
 
@@ -141,7 +141,7 @@ async def api_update_task_report(
     bind_params["tr_val"] = task_report if task_report else None
     result = await db_session.execute(
         text(f"UPDATE main_afl SET task_report = :tr_val, task_detail = 'Ручная правка' WHERE task_number IN ({names})"), bind_params)
-    await apply_norms(db_session, task_numbers)
+    await apply_manual_norm(db_session, task_numbers)
     await db_session.commit()
     return Response(content=json.dumps({"success": True, "updated": result.rowcount}, ensure_ascii=False), media_type="application/json")
 

@@ -2,6 +2,7 @@ from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from sql import build_in_clause
+from services.premium import apply_norms
 
 MAIN_AFL_COLUMNS = [
     'task_number', 'task_source', 'task_type', 'work_type_in_task',
@@ -112,6 +113,11 @@ async def merge_to_main(db_session, upload_progress, upload_id, total_rows):
             params
         )
 
+    affected = [row['task_number'] for row in new_rows + update_rows]
+    if affected:
+        # Норматив ставим по факту загрузки строки; номер реестра лишь защищает её от перезаписи.
+        await apply_norms(db_session, affected)
+
     await db_session.commit()
 
     upload_progress[upload_id] = {
@@ -119,5 +125,4 @@ async def merge_to_main(db_session, upload_progress, upload_id, total_rows):
         "inserted": inserted, "updated": updated
     }
 
-    affected = [row['task_number'] for row in new_rows + update_rows]
     return inserted, updated, affected

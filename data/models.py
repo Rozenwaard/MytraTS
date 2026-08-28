@@ -415,6 +415,9 @@ class Carte(Base):
     title: Mapped[str] = mapped_column(Text)
     absolute: Mapped[Optional[float]] = mapped_column(Float)  # норматив, минуты
     price: Mapped[Optional[float]] = mapped_column(Float)     # цена, ₽
+    kind: Mapped[Optional[str]] = mapped_column(Text)         # 'base' | 'replacement' | 'additional'
+    planned: Mapped[Optional[float]] = mapped_column(Float)   # норматив при «Плановый» (NULL = как absolute)
+    detail: Mapped[Optional[str]] = mapped_column(Text)       # task_detail для кодов/причин (NULL у base)
 
 
 class Utalo(Base):
