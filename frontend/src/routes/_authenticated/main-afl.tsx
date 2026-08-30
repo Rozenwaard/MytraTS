@@ -1,11 +1,11 @@
 import { createRoute } from "@tanstack/react-router";
-import { useCallback, useEffect, useRef, useState } from "react";
+import { memo, useCallback, useEffect, useRef, useState } from "react";
 import type { ColumnDef } from "@tanstack/react-table";
 import { rootRoute } from "../__root";
 import { useAuth } from "../../store/auth";
 import { useMainAfl, useMainAflStats } from "../../hooks/use-main-afl";
 import { DataTable } from "../../components/table/data-table";
-import type { MainAflRow, MainAflParams } from "../../api/main-afl";
+import type { MainAflRow, MainAflParams, MainAflStats } from "../../api/main-afl";
 import { createReestr, resetReestr, fetchReestrList, downloadReestrUrl, fetchAllTaskNumbers, findReestr } from "../../api/main-afl";
 
 const NO_REESTR = "\u0000";
@@ -45,6 +45,37 @@ const columns: ColumnDef<MainAflRow>[] = [
 ];
 
 
+const SearchInput = memo(function SearchInput({ onSearch, resetSignal }: { onSearch: (value: string) => void; resetSignal: number }) {
+  const [value, setValue] = useState("");
+  const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  useEffect(() => () => { if (timer.current) clearTimeout(timer.current); }, []);
+
+  useEffect(() => {
+    setValue("");
+    if (timer.current) clearTimeout(timer.current);
+  }, [resetSignal]);
+
+  const handleChange = (v: string) => {
+    setValue(v);
+    if (timer.current) clearTimeout(timer.current);
+    timer.current = setTimeout(() => {
+      onSearch(v);
+    }, 300);
+  };
+
+  return (
+    <input
+      type="text"
+      placeholder="Поиск по адресу, № задания или л/с"
+      className="input input-bordered input-sm flex-1 min-w-[220px]"
+      value={value}
+      onChange={(e) => handleChange(e.target.value)}
+    />
+  );
+});
+
+
 function MainAflPage() {
   const { user } = useAuth();
   const [tab, setTab] = useState<"upload" | "add" | "list" | "settings">("add");
@@ -58,10 +89,12 @@ function MainAflPage() {
   const [reportOptions, setReportOptions] = useState<string[]>([]);
   const [selectedReport, setSelectedReport] = useState("");
   const [selecting, setSelecting] = useState(false);
+  const [searchResetKey, setSearchResetKey] = useState(0);
   const toastTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const searchSeq = useRef(0);
 
   const { data, isLoading, refetch } = useMainAfl(params);
+  const { data: stats } = useMainAflStats();
   const rows = data?.rows ?? [];
   const total = data?.total ?? 0;
 
@@ -134,7 +167,11 @@ function MainAflPage() {
     } catch { showToast("Ошибка сброса реестра"); }
   };
 
-  const handleResetFilters = () => { setParams({ page: 1, per_page: 50 }); setSelected(new Set()); };
+  const handleResetFilters = () => {
+    setParams({ page: 1, per_page: 50 });
+    setSelected(new Set());
+    setSearchResetKey((k) => k + 1);
+  };
 
   const handleSelectAll = async () => {
     setSelecting(true);
@@ -152,6 +189,10 @@ function MainAflPage() {
   const handleSelectReestr = (rn: string) => {
     setParams({ ...params, reestr: rn, page: 1 });
   };
+
+  const handleSearchParams = useCallback((value: string) => {
+    setParams((prev) => ({ ...prev, search: value || undefined, page: 1 }));
+  }, []);
 
   const handleSearch = async (q: string) => {
     const seq = ++searchSeq.current;
@@ -200,10 +241,11 @@ function MainAflPage() {
           </div>
 
           <div className="py-2 px-3">
-            {tab === "upload" && <UploadTab />}
-            {tab === "add" && <AddTab params={params} setParams={setParams} onReset={handleResetFilters} onCreate={handleCreateReestr} role={user.role} onChangeReport={handleChangeReport} reportOptions={reportOptions} selectedReport={selectedReport} setSelectedReport={setSelectedReport} onSelectAll={handleSelectAll} selecting={selecting} />}
-            {tab === "list" && <ListTab reestrs={reestrs} activeReestr={activeReestr} setActiveReestr={setActiveReestr} emptyReestrs={emptyReestrs} toggleEmpty={toggleEmpty} onReset={handleResetReestr} onSelectReestr={handleSelectReestr} onSearch={handleSearch} meta={reestrMeta} />}
-            {tab === "settings" && <SettingsTab />}
+            {tab === "add" && <SearchInput resetSignal={searchResetKey} onSearch={handleSearchParams} />}
+            {tab === "upload" ? <UploadTab key="upload-tab" />
+              : tab === "add" ? <div key="add-tab"><AddTab params={params} setParams={setParams} stats={stats} onReset={handleResetFilters} onCreate={handleCreateReestr} role={user.role} onChangeReport={handleChangeReport} reportOptions={reportOptions} selectedReport={selectedReport} setSelectedReport={setSelectedReport} onSelectAll={handleSelectAll} selecting={selecting} /></div>
+              : tab === "list" ? <ListTab key="list-tab" reestrs={reestrs} activeReestr={activeReestr} setActiveReestr={setActiveReestr} emptyReestrs={emptyReestrs} toggleEmpty={toggleEmpty} onReset={handleResetReestr} onSelectReestr={handleSelectReestr} onSearch={handleSearch} meta={reestrMeta} />
+              : <SettingsTab key="settings-tab" />}
           </div>
         </div>
       </div>
@@ -241,13 +283,13 @@ function ExecutorCol({ list, onSelect, tabular }: { list: ExecutorItem[]; onSele
   );
 }
 
-function AddTab({ params, setParams, onReset, onCreate, role, onChangeReport, reportOptions, selectedReport, setSelectedReport, onSelectAll, selecting }: {
+function AddTab({ params, setParams, stats, onReset, onCreate, role, onChangeReport, reportOptions, selectedReport, setSelectedReport, onSelectAll, selecting }: {
   params: MainAflParams; setParams: (p: MainAflParams) => void;
+  stats: MainAflStats | undefined;
   onReset: () => void; onCreate: () => void; role: string; onChangeReport: () => void;
   reportOptions: string[]; selectedReport: string; setSelectedReport: (v: string) => void;
   onSelectAll: () => void; selecting: boolean;
 }) {
-  const { data: stats } = useMainAflStats();
   const isAdmin = role === "администратор";
   const isSpecialist = role === "специалист";
   const showDepts = isAdmin || isSpecialist;
@@ -259,30 +301,9 @@ function AddTab({ params, setParams, onReset, onCreate, role, onChangeReport, re
   for (let i = 0; i < executors.length; i += chunk) executorCols.push(executors.slice(i, i + chunk));
   const deptLabel = (d: string) => d.replace(/ отделение$/, "");
 
-  // Локальное состояние поиска + дебаунс, чтобы не дёргать запрос/перерисовку на каждый символ
-  // (иначе поле теряет фокус из-за смены ключа запроса useQuery).
-  const [search, setSearch] = useState(params.search ?? "");
-  const searchTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
-
-  useEffect(() => () => { if (searchTimer.current) clearTimeout(searchTimer.current); }, []);
-
-  useEffect(() => {
-    setSearch(params.search ?? "");
-  }, [params.search]);
-
-  const handleSearch = (value: string) => {
-    setSearch(value);
-    if (searchTimer.current) clearTimeout(searchTimer.current);
-    searchTimer.current = setTimeout(() => {
-      setParams({ ...params, search: value || undefined, page: 1 });
-    }, 300);
-  };
-
   return (
     <div className="space-y-2">
       <div className="flex flex-wrap gap-2 items-center">
-        <input type="text" placeholder="Поиск по адресу, № задания или л/с" className="input input-bordered input-sm flex-1 min-w-[220px]"
-          value={search} onChange={(e) => handleSearch(e.target.value)} />
         <select className={`select select-bordered select-sm w-[150px] ${!((params as Record<string, string>).done_day) ? "text-base-content/50" : ""}`} value={(params as Record<string, string>).done_day ?? ""}
           onChange={(e) => setParams({ ...params, done_day: e.target.value || undefined } as MainAflParams)}>
           <option value="">Выберите дату</option>

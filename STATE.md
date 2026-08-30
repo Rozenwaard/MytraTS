@@ -7,6 +7,7 @@
 ## Стек
 - **Бэкенд**: Python 3.11 (закреплено `requires-python = ">=3.11,<3.13"`), Litestar 2.24, SQLAlchemy 2 (async + aiosqlite), `uv` для зависимостей. БД — SQLite `mytra.db`.
 - **Фронтенд**: Vite + React 19 + TypeScript (strict), Tailwind v4 + DaisyUI 5, TanStack Router/Query/Table. Менеджер — `bun`.
+- **План (оценка)**: возможный переход фронта на Svelte 5 — черновик в `docs/SVELTE-MIGRATION.md` (не начато).
 - **Git**: https://github.com/Rozenwaard/MytraTS
 
 ### Ограничения зависимостей (важно)
@@ -39,10 +40,10 @@ MytraTS/
 ├── services/
 │   ├── uploader.py        # xlsx → raw_afl (чтение calamine, fallback openpyxl; async engine, run_sync)
 │   ├── processor.py       # классификация: словари групп признаков + data-driven правила (TASK_OUTPUT/COMMENT/TASK_REPORT_RULES)
-│   ├── merger.py          # raw → main (INSERT новых + UPDATE пустых/'Отклонён'; защищены строки с номером реестра и с task_detail='Разногласия'; проставляет norm)
+│   ├── merger.py          # raw → main (INSERT новых + UPDATE пустых/'Отклонён'; защищены строки с номером реестра и с task_detail='Разногласия'; проставляет norm; строки со status IS NULL не переносит)
 │   ├── reestr.py          # генерация xlsx реестра/отчёта, DEPT_PREFIXES, LOCALE_SUFFIXES
 │   ├── report_check.py    # правила проверки «Алькор» (check_row), recompute_errors, BALANCE_ERRORS, STOP_FACTOR_*
-│   ├── dashboard.py       # build_scope (виды работ+территории+видимость+отделение), WORK_TYPE_RATES, генераторы xlsx отчётов дашборда
+│   ├── dashboard.py       # build_scope (виды работ из carte.kind='base'+территории+видимость+отделение), генераторы xlsx отчётов дашборда
 │   └── premium.py         # apply_norms / apply_manual_norm (norm=база, extra=доп. из carte), aggregate_utalo (агрегация в utalo), generate_premium_xlsx_bytes
 ├── routers/
 │   ├── auth.py             # логин/логаут, смена пароля, настройки, поиск пользователей
@@ -72,6 +73,8 @@ MytraTS/
 ├── _migrate_premium.py    # миграция: carte (заполнение справочника), utalo, main_afl.norm
 ├── _migrate_norm.py       # миграция: carte.kind/planned/detail + «Выполнение задания в Алькоре»
 ├── _migrate_extra.py      # миграция: main_afl.norm/extra INTEGER, utalo.norm_sum INTEGER
+├── _backfill_norms.py     # бэкфилл: main_afl.norm/extra по текущим правилам (apply_norms)
+├── _backfill_errors.py    # бэкфилл: main_afl.errors по текущим правилам (recompute_errors)
 └── DEPLOYMENT.md          # развёртывание в локалке (Apache2 + uv + systemd), особенности прод-окружения
 ```
 
@@ -109,7 +112,7 @@ MytraTS/
 - Тема light/dark (autumn/dracula), кнопка в навбаре.
 
 ## Дашборд (стартовая страница `/dashboard`)
-После логина открывается Дашборд с двумя вкладками. «Обзор» — лента плашек: Заданий (число строк), ПСК/РЛЭ, План/Внеплан, Выполнено/Не выполнено, С ошибками/Без ошибок (из выполненного), Стоимость (строки с присвоенным реестром, кроме заблокированных стоп-фактором — не-балансовая ошибка в зоне, по расценкам WORK_TYPE_RATES). «Ошибки»:
+После логина открывается Дашборд с двумя вкладками. «Обзор» — лента плашек (только завершённые Завершено/Закрыто строки без отчёта, report пуст): Заданий (число строк), ПСК/РЛЭ, План/Внеплан, Выполнено/Не выполнено, С ошибками/Без ошибок (из выполненного), Стоимость (по расценкам carte.price). «Ошибки»:
 - Карточки-счётчики: заданий в зоне, с ошибками, отправлено в биллинг (из числа ошибок), на исправлении (не отправлено и не закрыто), всего ошибок (в строках «на исправлении»).
 - Сетка частоты ошибок — расклад по видам ошибок из строк «на исправлении».
 - Фильтр по отделениям (выпадающий список) — только для администратора/специалиста.
@@ -121,7 +124,7 @@ MytraTS/
 - Всего 25 типов ошибок, все — стоп-факторы (включая 2 балансовые: «Балансовая принадлежность», «Балансовая принадлежность нового ПУ»).
 - Стоп-фактор (любая ошибка) блокирует присвоение номера реестра; активен для region='СПб' или municipal_district='ЛО Гатчинский муниципальный район'. В `api_reestr` такие строки исключаются и возвращаются в `blocked`.
 - Балансовые ошибки дополнительно выносятся в отдельные отчёты дашборда.
-- Виды работ для дашборда/отчётов — `DASHBOARD_WORK_TYPES` в services/dashboard.py (10 типов).
+- Виды работ для дашборда/отчётов — `carte.kind='base'` (26 тарифов; в загруженных данных пока только потребительские).
 
 ## Эндпоинты (routers/)
 Все пути — с префиксом `/api`.
@@ -170,9 +173,9 @@ MytraTS/
 ### Отчёты (Финотчёт, только администратор)
 | Метод | Путь | Что делает |
 |---|---|---|
-| GET | `/fin-report?period=YYYY-MM` | плашки + раскладка по locale и видам работ + стоимость + ПСК/РЛЭ; пустой period = строки вне отчёта, заданный — строки этого периода |
-| POST | `/fin-report/add` | `report = «ГГГГ ММ»` строкам с реестром, пустым report и done_day ≤ конца периода |
-| POST | `/fin-report/discrepancies` | multipart `.txt` с task_number → сброс в неисполненные: task_report/reestr_date/report = NULL, task_detail = «Разногласия», reestr_number = «Отклонён» |
+| GET | `/fin-report?period=YYYY-MM` | плашки + раскладка по locale и видам работ + стоимость + ПСК/РЛЭ; пустой period = строки вне отчёта, заданный — строки этого периода; все плашки — только статус Завершено/Закрыто, «с ошибками» — в зоне стоп-фактора (СПб+Гатчина) |
+| POST | `/fin-report/add` | с period: `report = «ГГГГ ММ»` строкам с реестром, пустым report и done_day ≤ конца периода; без period: все строки «Готово к отчёту» → следующий период после последнего в main_afl |
+| POST | `/fin-report/discrepancies` | multipart `.txt` с task_number → сброс в неисполненные: task_report/reestr_date/report/norm/extra = NULL, task_detail = «Разногласия», reestr_number = «Отклонён» |
 | GET | `/fin-report/download?period=YYYY-MM` | ZIP с двумя xlsx («Плановый»/«Внеплановый»); даты дд.мм.гггг; grid → название сети; task_report → нумерованный код |
 
 ### Премия (только администратор)
@@ -201,7 +204,6 @@ MytraTS/
 1. **Архив (Story)** — страница `/story` в навбаре ведёт на `/main-afl` (заглушка). Бэкенд-эндпоинты готовы: `/api/story-afl` (GET с фильтрами), `/api/story-afl/reject` (POST). Нужно: страница архива + таблица с фильтрами. **План:** горячая зона `main_afl` ≤200K строк, остальное уходит в архив; в будущем архив вынесем в отдельный SQLite `archive.db` (`ATTACH DATABASE ... AS archive`) — отдельный файл не конкурирует за лок с `mytra.db` и не раздувает основную БД. `main_afl` на две таблицы не делим (решили — выигрыша по производительности нет).
 2. **Формирование отчёта** — `/api/report` (POST) + `/api/download-report/{period}` готовы на бэке. Нужен UI (выбор месяца/года, кнопка «Сформировать», скачивание). Логика: строки с reestr_date → report=period, «Отклонён» → report=«Отклонён», перенос в story_afl, удаление из main_afl.
 3. **Премия — что осталось:**
-   - **Цена в carte**: перенести цену из `WORK_TYPE_RATES` в `carte.price` и читать оттуда везде (dashboard/fin_report/reestr) — сейчас дублируется.
    - **Фильтр работников**: заменить в `processor.py` отсев по организации (`executor_organization NOT IN users.dept`) на отсев по ФИО (фамилия + инициалы) из табеля ↔ users (с хардкод-переименованиями); чужих не пускать в main_afl.
    - **Формула премии**: как сочетаются норматив (минуты) и цена (₽) с табелем; непрямой матчинг «Фамилия И. О.» ↔ `users.full_name` для расхождений.
 

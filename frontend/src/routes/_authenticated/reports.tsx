@@ -80,6 +80,7 @@ function FinReportTab() {
   const [data, setData] = useState<FinReportData | null>(null);
   const [loading, setLoading] = useState(true);
   const [downloading, setDownloading] = useState(false);
+  const [adding, setAdding] = useState(false);
   const [uploadingDiscrepancies, setUploadingDiscrepancies] = useState(false);
   const [toast, setToast] = useState<string | null>(null);
   const [expanded, setExpanded] = useState<Set<string>>(new Set());
@@ -153,13 +154,15 @@ function FinReportTab() {
   };
 
   const handleAdd = async () => {
-    if (!period) return;
+    setAdding(true);
     try {
       const res = await addToReport(period);
-      showToast(`Добавлено в отчёт: ${res.updated}`);
+      showToast(`Добавлено в отчёт ${res.period}: ${res.updated}`);
       await load(period);
     } catch {
       showToast("Ошибка добавления в отчёт");
+    } finally {
+      setAdding(false);
     }
   };
 
@@ -207,35 +210,43 @@ function FinReportTab() {
         <button
           className="btn btn-accent btn-sm"
           onClick={handleAdd}
-          disabled={!reportOpen || !period}
-          title={!reportOpen ? "Отчёт закрыт — откройте переключателем" : !period ? "Выберите период" : undefined}
+          disabled={adding || (period !== "" && !reportOpen)}
+          title={period !== "" && !reportOpen ? "Заблокировано — включите «Разблокировать»" : undefined}
         >
-          Добавить в отчёт
+          {adding ? <span className="loading loading-spinner loading-sm" /> : null}
+          {adding ? "Добавляем…" : "Добавить в отчёт"}
         </button>
-        <button
-          className="btn btn-outline btn-sm"
-          onClick={handleToggleReport}
-          title={reportOpen ? "Закрыть отчёт (заблокирует «Добавить»)" : "Открыть отчёт (разблокирует «Добавить»)"}
-        >
-          {reportOpen ? "Закрыть отчёт" : "Открыть отчёт"}
-        </button>
-        <button
-          className="btn btn-outline btn-sm"
-          onClick={openDiscrepancies}
-          disabled={uploadingDiscrepancies}
-        >
-          {uploadingDiscrepancies ? <span className="loading loading-spinner loading-sm" /> : null}
-          {uploadingDiscrepancies ? "Обрабатываем…" : "Разногласия"}
-        </button>
-        <button
-          className="btn btn-outline btn-sm"
-          onClick={handleDownload}
-          disabled={downloading || !period}
-          title={period ? undefined : "Выберите период"}
-        >
-          {downloading ? <span className="loading loading-spinner loading-sm" /> : null}
-          {downloading ? "Формируем…" : "Скачать отчёт"}
-        </button>
+        {period && (
+          <label className="flex items-center gap-2 cursor-pointer select-none" title="Разблокировать кнопку «Добавить в отчёт»">
+            <input
+              type="checkbox"
+              className="toggle toggle-sm toggle-accent"
+              checked={reportOpen}
+              onChange={handleToggleReport}
+            />
+            <span className="text-sm">Разблокировать</span>
+          </label>
+        )}
+        {period && (
+          <>
+            <button
+              className="btn btn-outline btn-sm"
+              onClick={openDiscrepancies}
+              disabled={uploadingDiscrepancies}
+            >
+              {uploadingDiscrepancies ? <span className="loading loading-spinner loading-sm" /> : null}
+              {uploadingDiscrepancies ? "Обрабатываем…" : "Разногласия"}
+            </button>
+            <button
+              className="btn btn-outline btn-sm"
+              onClick={handleDownload}
+              disabled={downloading}
+            >
+              {downloading ? <span className="loading loading-spinner loading-sm" /> : null}
+              {downloading ? "Формируем…" : "Скачать отчёт"}
+            </button>
+          </>
+        )}
         <input
           ref={discrepanciesInput}
           type="file"

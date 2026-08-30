@@ -52,7 +52,7 @@ async def merge_to_main(db_session, upload_progress, upload_id, total_rows):
     existing = {row[0]: (row[1], row[2]) for row in result}
 
     columns_str = ', '.join(f'"{c}"' for c in MAIN_AFL_COLUMNS)
-    result = await db_session.execute(text(f"SELECT {columns_str} FROM raw_afl"))
+    result = await db_session.execute(text(f"SELECT {columns_str} FROM raw_afl WHERE status IS NOT NULL"))
     all_rows = [dict(row._mapping) for row in result]
 
     new_rows = [row for row in all_rows if row['task_number'] not in existing]

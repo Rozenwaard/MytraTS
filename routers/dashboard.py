@@ -11,8 +11,8 @@ from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from deps import get_current_user, require_auth
-from services.dashboard import build_scope, generate_errors_xlsx, generate_balance_xlsx, generate_task_numbers_xlsx, pick_pu_type, WORK_TYPE_RATES
-from services.report_check import split_errors, join_errors, BALANCE_ERRORS, is_stop_blocked
+from services.dashboard import build_scope, generate_errors_xlsx, generate_balance_xlsx, generate_task_numbers_xlsx, pick_pu_type
+from services.report_check import split_errors, join_errors, BALANCE_ERRORS
 
 
 @get("/dashboard/summary", guards=[require_auth])
@@ -55,9 +55,9 @@ async def api_dashboard_summary(request: Request, db_session: AsyncSession, dept
 
 @get("/dashboard/overview", guards=[require_auth])
 async def api_dashboard_overview(request: Request, db_session: AsyncSession) -> Response:
-    """Общая сводка для вкладки «Обзор»: все строки в зоне видимости пользователя."""
+    """Общая сводка для вкладки «Обзор»: завершённые (Завершено/Закрыто) строки без отчёта (report пуст) в зоне видимости пользователя."""
     user = await get_current_user(request, db_session)
-    base_where = "1=1"
+    base_where = "(report IS NULL OR report = '') AND status IN ('Завершено','Закрыто')"
     params: dict = {}
 
     if user.effective_role in ("оператор", "работник"):
@@ -88,15 +88,10 @@ async def api_dashboard_overview(request: Request, db_session: AsyncSession) -> 
         text(f"SELECT COUNT(*) FROM main_afl WHERE {completed_where} AND (errors IS NOT NULL AND errors != '')"), params)).scalar()
     without_errors = completed - with_errors
 
-    # Стоимость = строки с присвоенным реестром (пойдут в отчёт), кроме заблокированных
-    # стоп-фактором (не-балансовая ошибка в зоне стоп-фактора — is_stop_blocked).
-    cost_result = await db_session.execute(
-        text(f"SELECT task_report, errors, region, municipal_district FROM main_afl WHERE {completed_where} AND reestr_number IS NOT NULL AND reestr_number != 'Отклонён'"),
-        params)
-    cost = 0.0
-    for tr, errors_text, region, mdist in cost_result:
-        if not is_stop_blocked({"errors": errors_text, "region": region, "municipal_district": mdist}):
-            cost += WORK_TYPE_RATES.get(tr, 0.0)
+    # Стоимость = завершённые (status Завершено/Закрыто) строки без отчёта, по carte.price.
+    cost = (await db_session.execute(
+        text(f"SELECT COALESCE(SUM(COALESCE((SELECT price FROM carte WHERE carte.title = main_afl.task_report LIMIT 1), 0)), 0) FROM main_afl WHERE {base_where}"),
+        params)).scalar()
 
     return Response(content=json.dumps({
         "total": total,

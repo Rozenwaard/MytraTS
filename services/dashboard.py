@@ -6,33 +6,9 @@ from openpyxl import Workbook
 
 from services.report_check import STOP_FACTOR_REGIONS, STOP_FACTOR_DISTRICTS
 
-# Виды работ, которые учитываются в дашборде/отчётах (остальные не важны).
-DASHBOARD_WORK_TYPES = [
-    "Бытовые заявки",
-    "План лестница",
-    "План квартира",
-    "Периодический контроль БП",
-    "Допуск ПУ в МКД",
-    "Допуск ПУ в ИЖС",
-    "План ИЖС",
-    "Выявление безучетного потребления БП",
-    "Инструментальная проверка",
-    "Контроль СП",
-]
-
-# Расценки (₽) по видам работ — для плашки «Стоимость» на вкладке «Обзор».
-WORK_TYPE_RATES = {
-    "Инструментальная проверка": 2967.01,
-    "Бытовые заявки": 1000.06,
-    "Периодический контроль БП": 657.23,
-    "Выявление безучетного потребления БП": 401.71,
-    "Допуск ПУ в ИЖС": 819.11,
-    "Допуск ПУ в МКД": 256.83,
-}
-
 
 def build_scope(user, dept: str = "") -> tuple[list, dict]:
-    """Зона видимости: территории стоп-фактора + 10 видов работ + (отделение) + видимость по роли (все заказчики)."""
+    """Зона видимости: территории стоп-фактора + виды работ из carte.kind='base' + (отделение) + видимость по роли (все заказчики)."""
     clauses: list[str] = []
     params: dict = {}
 
@@ -40,10 +16,7 @@ def build_scope(user, dept: str = "") -> tuple[list, dict]:
         clauses.append("executor_organization = :dept_filter")
         params["dept_filter"] = dept
 
-    wt_names = [f"wt{i}" for i in range(len(DASHBOARD_WORK_TYPES))]
-    params.update(zip(wt_names, DASHBOARD_WORK_TYPES))
-    wt_in = ", ".join(f":{n}" for n in wt_names)
-    clauses.append(f"task_report IN ({wt_in})")
+    clauses.append("task_report IN (SELECT title FROM carte WHERE kind = 'base')")
 
     regions = sorted(STOP_FACTOR_REGIONS)
     districts = sorted(STOP_FACTOR_DISTRICTS)
