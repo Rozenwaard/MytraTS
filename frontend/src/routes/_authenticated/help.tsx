@@ -99,9 +99,10 @@ function HelpPage() {
                 />
               </>
             )}
-            <a href={`/api/help/${tab}/download`} className="btn btn-outline btn-sm">
+            <a href={`/api/help/${tab}/download`} className="btn btn-outline btn-sm" title="Сохранить файл для печати">
               Скачать
             </a>
+            <span className="text-xs text-base-content/50">— сохраняется HTML-файл: откройте его и распечатайте (Ctrl+P → «Сохранить как PDF»)</span>
             {data?.updated_at && <span className="text-xs text-base-content/50 ml-auto">Обновлено: {data.updated_at}</span>}
           </div>
         )}
@@ -127,6 +128,7 @@ function HelpPage() {
 interface Section {
   id: string;
   title: string;
+  menu?: string;
   blocks: HelpBlock[];
 }
 
@@ -137,7 +139,7 @@ function splitBlocks(blocks: HelpBlock[]): { title: string | null; sections: Sec
   let cur: Section | null = null;
   for (const b of rest) {
     if (b.type === "h") {
-      cur = { id: `sec-${sections.length}`, title: b.text ?? "", blocks: [] };
+      cur = { id: `sec-${sections.length}`, title: b.text ?? "", menu: b.menu, blocks: [] };
       sections.push(cur);
     } else if (cur) {
       cur.blocks.push(b);
@@ -178,7 +180,7 @@ function Blocks({ blocks }: { blocks: HelpBlock[] }) {
             {sections.filter((s) => s.title).map((s) => (
               <li key={s.id}>
                 <a href={`#${s.id}`} className="block text-sm text-base-content/70 hover:text-accent py-1.5 border-l-2 border-transparent hover:border-accent pl-2">
-                  {s.title}
+                  {s.menu ?? s.title}
                 </a>
               </li>
             ))}

@@ -2,6 +2,7 @@ export interface HelpBlock {
   type: "p" | "table" | "h";
   text?: string;
   rows?: string[][];
+  menu?: string;
 }
 
 export interface HelpPageData {
