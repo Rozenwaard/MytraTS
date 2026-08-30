@@ -37,7 +37,7 @@ MytraTS/
 ├── sql.py                 # build_in_clause (общий SQL-хелпер для IN)
 ├── data/
 │   ├── config.py          # engine, SECRET_KEY из .env
-│   └── models.py          # RawAfl, MainAfl (+errors, +norm, +extra), StoryAfl, Tabel, Carte, Utalo, Calendar, User (+ ROLES, FIELD_ROLES, ADMIN_ROLES)
+│   └── models.py          # RawAfl, MainAfl (+errors, +norm, +extra), StoryAfl, Tabel, Carte, Utalo, Calendar, User, HelpPage (+ ROLES, FIELD_ROLES, ADMIN_ROLES)
 ├── services/
 │   ├── uploader.py        # xlsx → raw_afl (чтение calamine, fallback openpyxl; async engine, run_sync)
 │   ├── processor.py       # классификация: словари групп признаков + data-driven правила (TASK_OUTPUT/COMMENT/TASK_REPORT_RULES)
@@ -45,7 +45,8 @@ MytraTS/
 │   ├── reestr.py          # генерация xlsx реестра/отчёта, DEPT_PREFIXES, LOCALE_SUFFIXES
 │   ├── report_check.py    # правила проверки «Алькор» (check_row), recompute_errors, BALANCE_ERRORS, STOP_FACTOR_*
 │   ├── dashboard.py       # build_scope (виды работ из carte.kind='base'+территории+видимость+отделение), генераторы xlsx отчётов дашборда
-│   └── premium.py         # apply_norms / apply_manual_norm (norm=база, extra=доп. из carte), aggregate_utalo (агрегация в utalo), generate_premium_xlsx_bytes
+│   ├── premium.py         # apply_norms / apply_manual_norm (norm=база, extra=доп. из carte), aggregate_utalo (агрегация в utalo), generate_premium_xlsx_bytes
+│   └── help.py            # «Помощь»: парсинг docx/xlsx в блоки, HTML для печати, контент «Операторы»
 ├── routers/
 │   ├── auth.py             # логин/логаут, смена пароля, настройки, поиск пользователей
 │   ├── upload.py           # загрузка xlsx + прогресс загрузки
@@ -56,13 +57,14 @@ MytraTS/
 │   ├── premium.py          # «Отчёты» → Премия (загрузка табеля в tabel, сводка по должностям, агрегация нормативов в utalo)
 │   ├── story.py            # архив (перенос строк) + отклонение
 │   ├── dashboard.py        # обзор (сводка) + ошибки + отчёты дашборда
-│   └── lookups.py          # справочники (отделения, исполнители, виды работ)
+│   ├── lookups.py          # справочники (отделения, исполнители, виды работ)
+│   └── help.py             # «Помощь»: GET/загрузка/скачивание страниц (instruction, tariffs, operators)
 ├── frontend/
 │   └── src/
-│       ├── api/           # client.ts (fetch+cookie), main-afl.ts, dashboard.ts, fin-report.ts, premium.ts
+│       ├── api/           # client.ts (fetch+cookie), main-afl.ts, dashboard.ts, fin-report.ts, premium.ts, help.ts
 │       ├── store/auth.tsx # AuthContext (user, login, logout)
 │       ├── hooks/         # use-main-afl.ts, use-dashboard.ts
-│       ├── routes/        # __root (navbar+тема), login, _authenticated/{main-afl, change-password, dashboard, reports}
+│       ├── routes/        # __root (navbar+тема), login, _authenticated/{main-afl, change-password, dashboard, reports, help}
 │       ├── components/    # data-table.tsx (клик-выбор строк), logo.tsx
 │       └── lib/use-theme.ts
 ├── docs/

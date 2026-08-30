@@ -99,10 +99,9 @@ function HelpPage() {
                 />
               </>
             )}
-            <a href={`/api/help/${tab}/download`} className="btn btn-outline btn-sm" title="Сохранить файл для печати">
+            <a href={`/api/help/${tab}/download`} className="btn btn-outline btn-sm">
               Скачать
             </a>
-            <span className="text-xs text-base-content/50">— сохраняется HTML-файл: откройте его и распечатайте (Ctrl+P → «Сохранить как PDF»)</span>
             {data?.updated_at && <span className="text-xs text-base-content/50 ml-auto">Обновлено: {data.updated_at}</span>}
           </div>
         )}
