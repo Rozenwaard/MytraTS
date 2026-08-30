@@ -7,7 +7,7 @@ from sqlalchemy import text
 
 from data.config import engine
 from data.models import Base
-from services.help import parse_docx_to_blocks, parse_xlsx_to_blocks
+from services.help import OPERATOR_BLOCKS, parse_instruction_docx, parse_xlsx_to_blocks
 
 
 async def migrate():
@@ -20,7 +20,7 @@ async def migrate():
     async with engine.begin() as conn:
         docx = root / "Инструкция.docx"
         if docx.exists():
-            blocks = parse_docx_to_blocks(docx.read_bytes())
+            blocks = parse_instruction_docx(docx.read_bytes())
             await conn.execute(
                 text("INSERT OR REPLACE INTO help_pages (key, title, content, updated_at) VALUES (:k, :t, :c, :u)"),
                 {"k": "instruction", "t": "Инструкция",
@@ -36,7 +36,13 @@ async def migrate():
                  "c": json.dumps({"blocks": blocks}, ensure_ascii=False), "u": now},
             )
 
-    print("help_pages: таблица создана и заполнена из Инструкция.docx / Тарифы.xlsx")
+        await conn.execute(
+            text("INSERT OR REPLACE INTO help_pages (key, title, content, updated_at) VALUES (:k, :t, :c, :u)"),
+            {"k": "operators", "t": "Операторы",
+             "c": json.dumps({"blocks": OPERATOR_BLOCKS}, ensure_ascii=False), "u": now},
+        )
+
+    print("help_pages: таблица создана и заполнена (инструкция, тарифы, операторы)")
 
 
 asyncio.run(migrate())

@@ -1,5 +1,5 @@
 export interface HelpBlock {
-  type: "p" | "table";
+  type: "p" | "table" | "h";
   text?: string;
   rows?: string[][];
 }

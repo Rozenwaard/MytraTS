@@ -15,6 +15,7 @@ from python_calamine import CalamineWorkbook
 HELP_KEYS = {
     "instruction": "Инструкция",
     "tariffs": "Тарифы",
+    "operators": "Операторы",
 }
 
 
@@ -24,7 +25,10 @@ def _unescape(text: str) -> str:
 
 def _paragraph_text(p_xml: str) -> str:
     p_xml = re.sub(r"<w:br[^>]*/>", "\n", p_xml)
-    return _unescape("".join(re.findall(r"<w:t[^>]*>(.*?)</w:t>", p_xml, re.S)))
+    texts = re.findall(r"<w:t[^>]*>(.*?)</w:t>", p_xml, re.S)
+    joined = "".join(re.sub(r"<[^>]+>", "", t) for t in texts)  # убрать «протёкшие» xml-теги
+    joined = re.sub(r"(?<=\S)–", " –", joined)                   # пробел перед тире после кода
+    return _unescape(joined)
 
 
 def _cell_text(tc_xml: str) -> str:
@@ -60,6 +64,56 @@ def parse_docx_to_blocks(content: bytes) -> list[dict]:
             if rows:
                 blocks.append({"type": "table", "rows": rows})
     return blocks
+
+
+def _postprocess_instruction(blocks: list[dict]) -> list[dict]:
+    """Разметка разделов инструкции + удаление строки версии."""
+    out: list[dict] = []
+    started = False
+    for b in blocks:
+        if b["type"] == "p":
+            t = b["text"].strip()
+            if re.match(r"^версия\s+от", t, re.I):
+                continue
+            if t.startswith("Приложение 1"):
+                out.append({"type": "h", "text": "Интеллектуальные ПУ (приложение 1)"})
+                continue
+            if t.startswith("Приложение 2"):
+                out.append({"type": "h", "text": "Коды проверки (приложение 2)"})
+                continue
+            if not started and re.match(r"^\d+\.", t):
+                out.append({"type": "h", "text": "Действия на линии"})
+                started = True
+        out.append(b)
+    return out
+
+
+def parse_instruction_docx(content: bytes) -> list[dict]:
+    """Инструкция: docx → блоки с разделами (h) и без строки версии."""
+    return _postprocess_instruction(parse_docx_to_blocks(content))
+
+
+# Контент вкладки «Операторы» (статический, без загрузки/скачивания).
+OPERATOR_BLOCKS = [
+    {"type": "p", "text": "Инструкция для операторов"},
+    {"type": "h", "text": "Обзор"},
+    {"type": "p", "text": "Вкладка «Обзор» — основной рабочий список заданий, доступных вашей точке учёта. Здесь вы можете:"},
+    {"type": "p", "text": "— искать задание по адресу, номеру задания или лицевому счёту (поле поиска сверху);"},
+    {"type": "p", "text": "— фильтровать по дате выполнения (список «Выберите дату»);"},
+    {"type": "p", "text": "— фильтровать по заказчику (ПСК/РЛЭ), типу задания (плановый/внеплановый), по статусу выполнения и по наличию реестра — кликом по показателям статистики;"},
+    {"type": "p", "text": "— фильтровать по виду работ и по исполнителю — кликом по строкам в списках «Вид работ» и «Исполнители»;"},
+    {"type": "p", "text": "— выделять строки кликом по таблице; кнопка «Выбрать всё» выделяет все строки текущей выборки;"},
+    {"type": "p", "text": "— отправлять выделенные строки в реестр кнопкой «В реестр»."},
+    {"type": "h", "text": "Загрузка"},
+    {"type": "p", "text": "Вкладка «Загрузка» — загрузка файла «Отчёт по заданиям ФЛ» (.xlsx). Выберите файл и дождитесь завершения; по итогу появится сводка «Загружено / Новых / Обновлено». После загрузки задания появляются во вкладке «Обзор»."},
+    {"type": "h", "text": "Список"},
+    {"type": "p", "text": "Вкладка «Список» — сформированные реестры. Здесь можно:"},
+    {"type": "p", "text": "— выбрать реестр (плашки с номерами; пометка «(П)» — пустой реестр);"},
+    {"type": "p", "text": "— найти задание по номеру или лицевому счёту (поиск с кнопкой «Сброс» переключает на реестр найденной строки);"},
+    {"type": "p", "text": "— распечатать реестр, отметить реестр пустым или удалить строки из реестра."},
+    {"type": "h", "text": "Настройка"},
+    {"type": "p", "text": "Вкладка «Настройка» — настройка таблицы: порядок и видимость колонок (перетаскивание строк, изменения сохраняются автоматически)."},
+]
 
 
 def _cell_to_str(value) -> str:

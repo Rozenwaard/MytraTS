@@ -13,7 +13,7 @@ from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from deps import get_current_user, require_auth
-from services.help import HELP_KEYS, parse_docx_to_blocks, parse_xlsx_to_blocks, render_help_html
+from services.help import HELP_KEYS, parse_instruction_docx, parse_xlsx_to_blocks, render_help_html
 
 
 async def _load_page(db_session: AsyncSession, key: str) -> dict | None:
@@ -55,12 +55,15 @@ async def api_help_upload(request: Request, db_session: AsyncSession, key: str,
         if not filename.endswith(".docx"):
             return Response(content=json.dumps({"error": "Нужен файл .docx"}, ensure_ascii=False),
                             media_type="application/json", status_code=400)
-        blocks = parse_docx_to_blocks(raw)
-    else:
+        blocks = parse_instruction_docx(raw)
+    elif key == "tariffs":
         if not filename.endswith(".xlsx"):
             return Response(content=json.dumps({"error": "Нужен файл .xlsx"}, ensure_ascii=False),
                             media_type="application/json", status_code=400)
         blocks = parse_xlsx_to_blocks(raw)
+    else:
+        return Response(content=json.dumps({"error": "Для этой страницы загрузка недоступна"}, ensure_ascii=False),
+                        media_type="application/json", status_code=400)
 
     if not blocks:
         return Response(content=json.dumps({"error": "Файл пуст или не прочитан"}, ensure_ascii=False),
