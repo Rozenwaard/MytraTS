@@ -16,6 +16,7 @@ from data.config import sqlalchemy_plugin, SECRET_KEY
 from routers.auth import auth_router
 from routers.dashboard import dashboard_router
 from routers.fin_report import fin_report_router
+from routers.help import help_router
 from routers.lookups import lookups_router
 from routers.main_afl import main_afl_router
 from routers.premium import premium_router
@@ -41,6 +42,7 @@ app = Litestar(
         dashboard_router,
         lookups_router,
         fin_report_router,
+        help_router,
     ],
     plugins=[sqlalchemy_plugin],
     middleware=[session_config.middleware],

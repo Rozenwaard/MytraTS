@@ -479,3 +479,12 @@ class User(Base):
     @property
     def effective_role(self) -> str:
         return self.role or self.derived_role
+
+
+class HelpPage(Base):
+    __tablename__ = 'help_pages'
+
+    key: Mapped[str] = mapped_column(Text, primary_key=True)
+    title: Mapped[str] = mapped_column(Text)
+    content: Mapped[str] = mapped_column(Text)   # JSON: {"blocks": [...]}
+    updated_at: Mapped[Optional[str]] = mapped_column(Text)

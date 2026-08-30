@@ -43,8 +43,8 @@ function RootLayout() {
                 Отчёты
               </Link>
             )}
-            <Link to="/main-afl" className="btn btn-ghost btn-sm">
-              Архив
+            <Link to="/help" className="btn btn-ghost btn-sm" activeProps={{ className: "btn-active" }}>
+              Помощь
             </Link>
           </div>
         )}
