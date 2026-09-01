@@ -45,3 +45,26 @@ export async function uploadDiscrepancies(file: File): Promise<{ success: boolea
   if (!res.ok) throw new Error("Ошибка загрузки разногласий");
   return res.json();
 }
+
+export function startFinReportDownload(period: string): Promise<{ download_id: string }> {
+  return fetch("/api/fin-report/download", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    credentials: "include",
+    body: JSON.stringify({ period }),
+  }).then((res) => {
+    if (!res.ok) throw new Error("Ошибка запуска выгрузки");
+    return res.json();
+  });
+}
+
+export function fetchFinReportDownloadProgress(downloadId: string): Promise<{ status: string; done: number; total: number; progress: number; message?: string }> {
+  return fetch(`/api/fin-report/download/progress/${downloadId}`, { credentials: "include" }).then((res) => {
+    if (!res.ok) throw new Error("Ошибка прогресса");
+    return res.json();
+  });
+}
+
+export function finReportDownloadResultUrl(downloadId: string): string {
+  return `/api/fin-report/download/result/${downloadId}`;
+}

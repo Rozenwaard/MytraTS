@@ -1,6 +1,8 @@
+import asyncio
 import io as io_module
 from datetime import datetime
 from openpyxl import Workbook
+from openpyxl.cell import WriteOnlyCell
 from openpyxl.utils import get_column_letter
 from openpyxl.styles import Font, Alignment, Border, Side, PatternFill
 from sqlalchemy import text
@@ -433,17 +435,10 @@ def _transform_value(col, header, val):
     return val
 
 
-async def generate_fin_report_xlsx_bytes(db_session, period, task_type):
-    """Генерирует xlsx финансового отчёта за период (только строки с task_type)."""
-    columns_str = ", ".join(REPORT_COLUMNS)
-    result = await db_session.execute(
-        text(f"SELECT {columns_str} FROM main_afl WHERE report = :period AND task_type = :task_type ORDER BY task_number"),
-        {"period": period, "task_type": task_type})
-    rows = [dict(r._mapping) for r in result]
-
-    wb = Workbook()
-    ws = wb.active
-    ws.title = "Отчёт"
+def _build_fin_report_xlsx(rows) -> bytes:
+    """Detail-xlsx: write_only + append (быстро, без поячейковых стилей)."""
+    wb = Workbook(write_only=True)
+    ws = wb.create_sheet("Отчёт")
     ws.page_setup.orientation = "landscape"
 
     header_fill = PatternFill(start_color="D9E1F2", end_color="D9E1F2", fill_type="solid")
@@ -451,23 +446,133 @@ async def generate_fin_report_xlsx_bytes(db_session, period, task_type):
         left=Side(style="thin"), right=Side(style="thin"),
         top=Side(style="thin"), bottom=Side(style="thin"))
 
-    for i, header in enumerate(FIN_REPORT_HEADERS, 1):
-        cell = ws.cell(row=1, column=i, value=header)
-        cell.font = Font(bold=True, size=8)
-        cell.fill = header_fill
-        cell.border = thin_border
-        cell.alignment = Alignment(horizontal="center", vertical="center", wrap_text=True)
+    header_cells = []
+    for header in FIN_REPORT_HEADERS:
+        c = WriteOnlyCell(ws, value=header)
+        c.font = Font(bold=True, size=8)
+        c.fill = header_fill
+        c.border = thin_border
+        c.alignment = Alignment(horizontal="center", vertical="center", wrap_text=True)
+        header_cells.append(c)
+    ws.append(header_cells)
 
-    for r, row_data in enumerate(rows, 2):
-        for c, (col, header) in enumerate(zip(REPORT_COLUMNS, FIN_REPORT_HEADERS), 1):
-            cell = ws.cell(row=r, column=c, value=_transform_value(col, header, row_data.get(col)))
-            cell.font = Font(size=8)
-            cell.border = thin_border
-
-    for col in range(1, len(FIN_REPORT_HEADERS) + 1):
-        ws.column_dimensions[get_column_letter(col)].width = 12
+    for row_data in rows:
+        ws.append([_transform_value(col, header, row_data.get(col))
+                   for col, header in zip(REPORT_COLUMNS, FIN_REPORT_HEADERS)])
 
     output = io_module.BytesIO()
     wb.save(output)
     output.seek(0)
     return output.read()
+
+
+async def generate_fin_report_xlsx_bytes(db_session, period, task_type, region) -> bytes:
+    """Генерирует xlsx финансового отчёта за период (по task_type + region)."""
+    columns_str = ", ".join(REPORT_COLUMNS)
+    result = await db_session.execute(
+        text(f"SELECT {columns_str} FROM main_afl WHERE report = :period AND task_type = :task_type AND region = :region ORDER BY task_number"),
+        {"period": period, "task_type": task_type, "region": region})
+    rows = [dict(r._mapping) for r in result]
+    return await asyncio.to_thread(_build_fin_report_xlsx, rows)
+
+
+def _format_rekvizity(reestr_number, reestr_date) -> str:
+    """«Реквизиты сопроводительного документа»: № реестра + дата (пусто, если нет)."""
+    if not reestr_number or reestr_number == "Отклонён" or not reestr_date:
+        return ""
+    return f"№ {reestr_number} от {_format_date(reestr_date)}"
+
+
+def _grid_name(grid) -> str:
+    return GRID_NAMES.get(grid, "")
+
+
+DOP_COMMON_HEADERS = [
+    "Заказчик (ПСК, ЛЭ)", "№ п/п", "Субъект РФ (СПб или ЛО)", "Филиал Заказчика", "Адрес",
+    "Реквизиты сопроводительного документа для размещения на хранение",
+    "Отделение или участок", "Кол-во снятых показаний",
+]
+
+DOP_IZHS_HEADERS = [
+    "Заказчик (ПСК, ЛЭ)", "№ п/п", "Субъект РФ (СПб или ЛО)", "Филиал Заказчика",
+    "Адрес (населенный пункт, улица)",
+    "Реквизиты сопроводительного документа для размещения на хранение",
+    "Отделение или участок", "Абонентский номер", "Дата проверки",
+]
+
+
+def _build_dop_report_xlsx(kvart_rows, lestn_rows, izhs_rows) -> bytes:
+    """Допотчёт по плану: 3 вкладки (кварт/лестн агрегированы, ИЖС построчно)."""
+    wb = Workbook(write_only=True)
+
+    ws = wb.create_sheet("1.1 БП кварт")
+    ws.append(DOP_COMMON_HEADERS)
+    for i, r in enumerate(kvart_rows, 1):
+        ws.append([
+            r.get("customer"), i, r.get("region"), _grid_name(r.get("grid")),
+            r.get("addr"), _format_rekvizity(r.get("reestr_number"), r.get("reestr_date")),
+            r.get("executor_organization"), r.get("cnt"),
+        ])
+
+    ws = wb.create_sheet("1.2 БП лестн")
+    ws.append(DOP_COMMON_HEADERS)
+    for i, r in enumerate(lestn_rows, 1):
+        ws.append([
+            r.get("customer"), i, r.get("region"), _grid_name(r.get("grid")),
+            r.get("addr"), _format_rekvizity(r.get("reestr_number"), r.get("reestr_date")),
+            r.get("executor_organization"), r.get("cnt"),
+        ])
+
+    ws = wb.create_sheet("1.3 БП частный сектор")
+    ws.append(DOP_IZHS_HEADERS)
+    for i, r in enumerate(izhs_rows, 1):
+        ws.append([
+            r.get("customer"), i, r.get("region"), _grid_name(r.get("grid")),
+            r.get("address"), _format_rekvizity(r.get("reestr_number"), r.get("reestr_date")),
+            r.get("executor_organization"), r.get("personal_account"),
+            _format_date(r.get("done_day")),
+        ])
+
+    output = io_module.BytesIO()
+    wb.save(output)
+    output.seek(0)
+    return output.read()
+
+
+_AGG_SQL = """
+    SELECT
+        MAX(customer) AS customer,
+        MAX(region) AS region,
+        MAX(grid) AS grid,
+        MAX(executor_organization) AS executor_organization,
+        MAX(reestr_number) AS reestr_number,
+        MAX(reestr_date) AS reestr_date,
+        SUBSTR(address, 1, INSTR(address, 'кв.') - 1) AS addr,
+        COUNT(*) AS cnt
+    FROM main_afl
+    WHERE report = :period AND region = :region AND task_report = :task_report
+    GROUP BY municipal_district, SUBSTR(address, 1, INSTR(address, 'кв.') - 1)
+    ORDER BY municipal_district, addr
+"""
+
+
+async def generate_dop_report_xlsx_bytes(db_session, period, region) -> bytes:
+    """Допотчёт по плану (3 вкладки) для региона."""
+    async def fetch_agg(task_report):
+        result = await db_session.execute(
+            text(_AGG_SQL), {"period": period, "region": region, "task_report": task_report})
+        return [dict(r._mapping) for r in result]
+
+    kvart = await fetch_agg("План квартира")
+    lestn = await fetch_agg("План лестница")
+
+    result = await db_session.execute(text("""
+        SELECT customer, region, grid, executor_organization, reestr_number, reestr_date,
+               address, personal_account, done_day
+        FROM main_afl
+        WHERE report = :period AND region = :region AND task_report = 'План ИЖС'
+        ORDER BY task_number
+    """), {"period": period, "region": region})
+    izhs = [dict(r._mapping) for r in result]
+
+    return await asyncio.to_thread(_build_dop_report_xlsx, kvart, lestn, izhs)

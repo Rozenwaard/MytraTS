@@ -2,7 +2,7 @@ import { createRoute } from "@tanstack/react-router";
 import { useEffect, useRef, useState } from "react";
 import { rootRoute } from "../__root";
 import { useAuth } from "../../store/auth";
-import { fetchFinReport, addToReport, uploadDiscrepancies, type FinReportData, type FinCardData } from "../../api/fin-report";
+import { fetchFinReport, addToReport, uploadDiscrepancies, startFinReportDownload, fetchFinReportDownloadProgress, finReportDownloadResultUrl, type FinReportData, type FinCardData } from "../../api/fin-report";
 import { fetchPremiumSummary, uploadTabel, aggregateNorms, premiumDownloadUrl, type PremiumSummary } from "../../api/premium";
 
 export const reportsRoute = createRoute({
@@ -80,6 +80,7 @@ function FinReportTab() {
   const [data, setData] = useState<FinReportData | null>(null);
   const [loading, setLoading] = useState(true);
   const [downloading, setDownloading] = useState(false);
+  const [downloadProgress, setDownloadProgress] = useState<{ done: number; total: number } | null>(null);
   const [adding, setAdding] = useState(false);
   const [uploadingDiscrepancies, setUploadingDiscrepancies] = useState(false);
   const [toast, setToast] = useState<string | null>(null);
@@ -169,8 +170,20 @@ function FinReportTab() {
   const handleDownload = async () => {
     if (downloading || !period) return;
     setDownloading(true);
+    setDownloadProgress({ done: 0, total: 6 });
     try {
-      const res = await fetch(`/api/fin-report/download?period=${encodeURIComponent(period)}`, { credentials: "include" });
+      const { download_id } = await startFinReportDownload(period);
+      for (;;) {
+        await new Promise((r) => setTimeout(r, 400));
+        const p = await fetchFinReportDownloadProgress(download_id);
+        if (p.status === "error") {
+          showToast(p.message || "Ошибка формирования отчёта");
+          return;
+        }
+        setDownloadProgress({ done: p.done, total: p.total });
+        if (p.status === "complete") break;
+      }
+      const res = await fetch(finReportDownloadResultUrl(download_id), { credentials: "include" });
       if (!res.ok) {
         showToast("Ошибка скачивания отчёта");
         return;
@@ -188,6 +201,7 @@ function FinReportTab() {
       showToast("Ошибка скачивания отчёта");
     } finally {
       setDownloading(false);
+      setDownloadProgress(null);
     }
   };
 
@@ -243,7 +257,7 @@ function FinReportTab() {
               disabled={downloading}
             >
               {downloading ? <span className="loading loading-spinner loading-sm" /> : null}
-              {downloading ? "Формируем…" : "Скачать отчёт"}
+              {downloading ? `Формируем… ${downloadProgress ? `${downloadProgress.done}/${downloadProgress.total}` : ""}` : "Скачать отчёт"}
             </button>
           </>
         )}

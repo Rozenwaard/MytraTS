@@ -179,7 +179,7 @@ MytraTS/
 | GET | `/fin-report?period=YYYY-MM` | плашки + раскладка по locale и видам работ + стоимость + ПСК/РЛЭ; пустой period = строки вне отчёта, заданный — строки этого периода; все плашки — только статус Завершено/Закрыто, «с ошибками» — в зоне стоп-фактора (СПб+Гатчина) |
 | POST | `/fin-report/add` | с period: `report = «ГГГГ ММ»` строкам с реестром, пустым report и done_day ≤ конца периода; без period: все строки «Готово к отчёту» → следующий период после последнего в main_afl |
 | POST | `/fin-report/discrepancies` | multipart `.txt` с task_number → сброс в неисполненные: task_report/reestr_date/report/norm/extra = NULL, task_detail = «Разногласия», reestr_number = «Отклонён» |
-| GET | `/fin-report/download?period=YYYY-MM` | ZIP с двумя xlsx («Плановый»/«Внеплановый»); даты дд.мм.гггг; grid → название сети; task_report → нумерованный код |
+| POST | `/fin-report/download` (старт) + `/fin-report/download/progress/{id}` + `/fin-report/download/result/{id}` | ZIP с 6 xlsx: 4 detail (спбплан/лоплан/спбвнеплан/ловнеплан) + 2 допотчёта по плану (спб/ло, 3 вкладки: кварт/лестн агрегированы по адресу, ИЖС построчно); генерация фоновая, прогресс опрашивается фронтом |
 
 ### Премия (только администратор)
 | Метод | Путь | Что делает |

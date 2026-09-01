@@ -1,6 +1,8 @@
+import asyncio
 import calendar
 import io
 import json
+import uuid
 import zipfile
 from datetime import datetime
 from urllib.parse import quote
@@ -16,7 +18,7 @@ from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from deps import get_current_user, require_auth
-from services.reestr import generate_fin_report_xlsx_bytes
+from services.reestr import generate_dop_report_xlsx_bytes, generate_fin_report_xlsx_bytes
 from services.report_check import STOP_FACTOR_REGIONS, STOP_FACTOR_DISTRICTS
 
 
@@ -230,27 +232,84 @@ async def api_fin_report_discrepancies(
     return Response(content=json.dumps({"success": True, "updated": updated, "not_found": not_found}, ensure_ascii=False), media_type="application/json")
 
 
-@get("/fin-report/download", guards=[require_auth])
-async def api_fin_report_download(request: Request, db_session: AsyncSession, period: str = "") -> Response:
-    """«Скачать отчёт»: ZIP с двумя xlsx (Плановый/Внеплановый по task_type)."""
+download_progress: dict[str, dict] = {}
+download_results: dict[str, bytes] = {}
+
+
+@post("/fin-report/download", guards=[require_auth])
+async def api_fin_report_download_start(request: Request, db_session: AsyncSession, data: dict = Body(media_type=RequestEncodingType.JSON)) -> Response:
+    """Старт генерации отчёта: возвращает download_id, файлы собираются в фоне."""
     user = await get_current_user(request, db_session)
     if user.effective_role != "администратор":
         return Response(content=json.dumps({"error": "Нет прав"}, ensure_ascii=False), media_type="application/json", status_code=403)
 
+    period = (data or {}).get("period", "")
     period_fmt = period.strip().replace("-", " ") if period else ""
     if not period_fmt:
         return Response(content=json.dumps({"error": "Выберите период"}, ensure_ascii=False), media_type="application/json", status_code=400)
 
-    buf = io.BytesIO()
-    with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as zf:
-        for task_type in ("Плановый", "Внеплановый"):
-            data = await generate_fin_report_xlsx_bytes(db_session, period_fmt, task_type)
-            zf.writestr(f"Отчёт_{period_fmt.replace(' ', '-')}_{task_type}.xlsx", data)
-    buf.seek(0)
+    download_id = str(uuid.uuid4())
+    download_progress[download_id] = {"status": "starting", "done": 0, "total": 6, "progress": 0}
+    asyncio.create_task(_run_download(download_id, period_fmt))
+    return Response(content=json.dumps({"download_id": download_id}, ensure_ascii=False), media_type="application/json")
 
-    filename = f"Отчёт_{period_fmt.replace(' ', '-')}.zip"
-    return Response(content=buf.read(), media_type="application/zip",
+
+@get("/fin-report/download/progress/{download_id:str}", guards=[require_auth])
+async def api_fin_report_download_progress(download_id: str) -> Response:
+    if download_id not in download_progress:
+        return Response(content=json.dumps({"status": "not_found"}, ensure_ascii=False), media_type="application/json", status_code=404)
+    return Response(content=json.dumps(download_progress[download_id], ensure_ascii=False), media_type="application/json")
+
+
+@get("/fin-report/download/result/{download_id:str}", guards=[require_auth])
+async def api_fin_report_download_result(download_id: str) -> Response:
+    data = download_results.pop(download_id, None)
+    if data is None:
+        return Response(content=json.dumps({"error": "Ещё не готово"}, ensure_ascii=False), media_type="application/json", status_code=404)
+    meta = download_progress.pop(download_id, {})
+    filename = meta.get("filename", "Отчёт.zip")
+    return Response(content=data, media_type="application/zip",
                     headers={"Content-Disposition": f"attachment; filename*=UTF-8''{quote(filename)}"})
 
 
-fin_report_router = Router("/api", route_handlers=[api_fin_report, api_fin_report_add, api_fin_report_discrepancies, api_fin_report_download])
+async def _run_download(download_id: str, period_fmt: str):
+    from data.config import async_session_factory
+    try:
+        async with async_session_factory() as db_session:
+            period_tag = period_fmt.replace(" ", "-")
+            detail_files = [
+                ("Плановый", "СПб", "спбплан"),
+                ("Плановый", "ЛО", "лоплан"),
+                ("Внеплановый", "СПб", "спбвнеплан"),
+                ("Внеплановый", "ЛО", "ловнеплан"),
+            ]
+            total = 6
+            done = 0
+            buf = io.BytesIO()
+            with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as zf:
+                for task_type, region, name in detail_files:
+                    data = await generate_fin_report_xlsx_bytes(db_session, period_fmt, task_type, region)
+                    zf.writestr(f"Отчёт_{period_tag}_{name}.xlsx", data)
+                    done += 1
+                    download_progress[download_id] = {"status": "generating", "done": done, "total": total, "progress": int(done / total * 100)}
+
+                for region, name in (("СПб", "спб"), ("ЛО", "ло")):
+                    data = await generate_dop_report_xlsx_bytes(db_session, period_fmt, region)
+                    zf.writestr(f"Допотчёт_{period_tag}_{name}.xlsx", data)
+                    done += 1
+                    download_progress[download_id] = {"status": "generating", "done": done, "total": total, "progress": int(done / total * 100)}
+
+            buf.seek(0)
+            filename = f"Отчёт_{period_tag}.zip"
+            download_results[download_id] = buf.read()
+            download_progress[download_id] = {"status": "complete", "done": total, "total": total, "progress": 100, "filename": filename}
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        download_progress[download_id] = {"status": "error", "done": 0, "total": 6, "progress": 0, "message": str(e)}
+
+
+fin_report_router = Router("/api", route_handlers=[
+    api_fin_report, api_fin_report_add, api_fin_report_discrepancies,
+    api_fin_report_download_start, api_fin_report_download_progress, api_fin_report_download_result,
+])
