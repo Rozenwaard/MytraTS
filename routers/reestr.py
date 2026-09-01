@@ -52,7 +52,7 @@ async def api_reestr(
 
     today = date.today()
     reestr_date = today.isoformat()
-    invalid_reports = {"Дубли", "Ручная проверка"}
+    invalid_reports = {"Дубли"}
     reestrs = []
 
     for (dept, customer, grid_val, task_report, locale_val), group in groups.items():

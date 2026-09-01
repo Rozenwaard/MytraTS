@@ -40,7 +40,7 @@ async def api_executors(request: Request, db_session: AsyncSession) -> Response:
 async def api_task_reports(request: Request, db_session: AsyncSession) -> Response:
     user = await get_current_user(request, db_session)
     query = """SELECT DISTINCT task_report FROM main_afl WHERE task_report IS NOT NULL
-            AND task_report NOT IN ('Диспетчеризация', 'Дубли', 'Ручная проверка')"""
+            AND task_report NOT IN ('Диспетчеризация', 'Дубли')"""
     params = {}
     if user.effective_role in ("оператор", "работник"):
         query += " AND executor IN (SELECT full_name FROM users WHERE locale = :locale)"

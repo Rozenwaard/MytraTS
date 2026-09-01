@@ -78,9 +78,10 @@ async def apply_norms(db_session: AsyncSession, task_numbers: list[str] | None =
     )
 
     # 5. «Выполнение задания в Алькоре» +5 → extra
+    # (дублям по task_report не начисляем, даже если их task_detail был позже перезаписан)
     await run(
         f"extra = extra + (SELECT absolute FROM carte WHERE carte.title = '{ALCOR_TITLE}' LIMIT 1)",
-        "task_detail NOT IN ('Дубли', 'Ручная правка') AND (norm IS NOT NULL OR extra IS NOT NULL)",
+        "COALESCE(task_report, '') <> 'Дубли' AND task_detail NOT IN ('Дубли', 'Ручная правка') AND (norm IS NOT NULL OR extra IS NOT NULL)",
     )
 
 

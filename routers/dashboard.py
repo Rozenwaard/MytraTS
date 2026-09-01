@@ -78,11 +78,11 @@ async def api_dashboard_overview(request: Request, db_session: AsyncSession) -> 
         text(f"SELECT task_type, COUNT(*) FROM main_afl WHERE {base_where} AND task_type IN ('Плановый','Внеплановый') GROUP BY task_type"), params)
     plan_counts = {row[0]: row[1] for row in plan_result}
 
-    completed_where = f"{base_where} AND task_report IS NOT NULL AND task_report NOT IN ('Дубли','Ручная проверка')"
+    completed_where = f"{base_where} AND task_report IS NOT NULL AND task_report NOT IN ('Дубли')"
     completed = (await db_session.execute(
         text(f"SELECT COUNT(*) FROM main_afl WHERE {completed_where}"), params)).scalar()
     uncompleted = (await db_session.execute(
-        text(f"SELECT COUNT(*) FROM main_afl WHERE {base_where} AND (task_report IS NULL OR task_report = '' OR task_report IN ('Дубли','Ручная проверка'))"), params)).scalar()
+        text(f"SELECT COUNT(*) FROM main_afl WHERE {base_where} AND (task_report IS NULL OR task_report = '' OR task_report IN ('Дубли'))"), params)).scalar()
 
     with_errors = (await db_session.execute(
         text(f"SELECT COUNT(*) FROM main_afl WHERE {completed_where} AND (errors IS NOT NULL AND errors != '')"), params)).scalar()

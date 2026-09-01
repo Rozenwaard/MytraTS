@@ -47,7 +47,7 @@ def _build_main_afl_clauses(user, search, customer, task_report, executor_org,
         clauses.append("task_report = :task_report")
         params["task_report"] = task_report
     if only_completed:
-        clauses.append("task_report IS NOT NULL AND task_report NOT IN ('Дубли', 'Ручная проверка')")
+        clauses.append("task_report IS NOT NULL AND task_report NOT IN ('Дубли')")
     if only_without_reestr:
         clauses.append("reestr_number IS NULL")
     if reestr:
@@ -177,9 +177,9 @@ async def api_main_afl_stats(request: Request, db_session: AsyncSession) -> Resp
         text(f"SELECT COUNT(*) FROM main_afl WHERE {base_where} AND reestr_number IS NULL"), params)
 
     completed = await db_session.execute(
-        text(f"SELECT COUNT(*) FROM main_afl WHERE {base_where} AND task_report IS NOT NULL AND task_report NOT IN ('Дубли', 'Ручная проверка')"), params)
+        text(f"SELECT COUNT(*) FROM main_afl WHERE {base_where} AND task_report IS NOT NULL AND task_report NOT IN ('Дубли')"), params)
     uncompleted = await db_session.execute(
-        text(f"SELECT COUNT(*) FROM main_afl WHERE {base_where} AND (task_report IS NULL OR task_report = '' OR task_report IN ('Дубли', 'Ручная проверка'))"), params)
+        text(f"SELECT COUNT(*) FROM main_afl WHERE {base_where} AND (task_report IS NULL OR task_report = '' OR task_report IN ('Дубли'))"), params)
 
     tr_result = await db_session.execute(
         text(f"SELECT COALESCE(task_report, 'Не выполнено'), COUNT(*) FROM main_afl WHERE {base_where} GROUP BY task_report ORDER BY COUNT(*) DESC"), params)

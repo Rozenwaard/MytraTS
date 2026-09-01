@@ -41,7 +41,7 @@ MytraTS/
 ├── services/
 │   ├── uploader.py        # xlsx → raw_afl (чтение calamine, fallback openpyxl; async engine, run_sync)
 │   ├── processor.py       # классификация: словари групп признаков + data-driven правила (TASK_OUTPUT/COMMENT/TASK_REPORT_RULES)
-│   ├── merger.py          # raw → main (INSERT новых + UPDATE пустых/'Отклонён'; защищены строки с номером реестра и с task_detail='Разногласия'; проставляет norm; строки со status IS NULL не переносит)
+│   ├── merger.py          # raw → main (INSERT новых + UPDATE пустых/'Отклонён'; защищены строки с номером реестра и с task_detail='Разногласия'; проставляет norm; не переносит: status IS NULL, task_number IS NULL, status LIKE 'З%' И done_day IS NULL)
 │   ├── reestr.py          # генерация xlsx реестра/отчёта, DEPT_PREFIXES, LOCALE_SUFFIXES
 │   ├── report_check.py    # правила проверки «Алькор» (check_row), recompute_errors, BALANCE_ERRORS, STOP_FACTOR_*
 │   ├── dashboard.py       # build_scope (виды работ из carte.kind='base'+территории+видимость+отделение), генераторы xlsx отчётов дашборда
@@ -102,7 +102,7 @@ MytraTS/
 ## Что сделано (вкладка «Обзор»)
 - Таблица main_afl: поиск (адрес/№/лс), сортировка (серверная), пагинация, выбор строк кликом (подсветка).
 - Статистика-фильтры (4 колонки для админ/спец, 3 для менеджер/оператор):
-  1. Статистика: ПСК, РЛЭ, План, Внеплан (по task_type), Выполнено, Не выполнено (включает Дубли+Ручная проверка), С реестром, Без реестра.
+  1. Статистика: ПСК, РЛЭ, План, Внеплан (по task_type), Выполнено, Не выполнено (включает Дубли), С реестром, Без реестра.
   2. Вид работ (по task_report, «Не выполнено» = NULL/'').
   3. Отделения (по executor_organization, прилагательное без «отделение») — только админ/спец.
   4. Исполнители (алфавит, с locale) — скролл по 12 строк для админ/спец, простой список для менеджер/оператор.

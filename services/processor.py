@@ -112,6 +112,10 @@ TASK_OUTPUT_RULES = [
     ("task_output = 'Контроль', task_detail = '1'",
      f"{_in('work_type_in_task', CONTROL_WORK_TYPES)} AND work_result = 'Работа выполнена'", 40),
 
+    # Недопуск: «Допуск ПУ» + старый серийник = новый + «невозможно выполнить допуск ПУ» + есть показания
+    ("task_output = 'Недопуск', task_detail = 'Недопуск ПУ'",
+     "work_type_in_task = 'Допуск ПУ' AND meter_serial_number = meter_serial_number_2 AND work_result LIKE '%невозможно выполнить допуск ПУ%' AND (t1 <> '-' OR t1_1 <> '-') AND task_output IS NULL", None),
+
     # Допуск 2 / 3
     ("task_output = 'Допуск', task_detail = '2'",
      f"{_in('work_type_in_task', ADMISSION_WORK_TYPES_EXT)} AND {_in('work_type', ADMISSION_WORK_TYPES)} AND t1_1 <> '-' AND task_output IS NULL", None),
@@ -150,6 +154,9 @@ TASK_OUTPUT_RULES = [
      "meter_status = 'Исправен' AND work_type = 'Проверка, осмотр ПУ' AND t1 = '-' AND task_output IS NULL", None),
     ("task_output = 'Не исполнено', task_detail = 'Не подтверждено отсутствие учёта, не указано наличие учёта'",
      "work_type_in_task = 'Проверка, осмотр ПУ' AND meter_status = 'Неисправен' AND violations = 'Нет' AND work_type = 'Проверка, осмотр ПУ' AND task_output IS NULL", None),
+
+    ("task_output = 'Не исполнено', task_detail = 'Не подтверждено отсутствие учёта, не указано наличие учёта'",
+     "work_type_in_task = 'Проверка, осмотр ПУ' AND meter_status IS NULL AND violations = 'Нет' AND work_type = 'Проверка, осмотр ПУ' AND task_output IS NULL", None),
 
     ("task_output = 'Проверка', task_detail = '6'",
      "meter_status IS NULL AND work_result = 'Работа выполнена' AND task_output IS NULL", None),
@@ -228,8 +235,6 @@ TASK_REPORT_RULES = [
      f"work_type_in_task = 'Проверка, осмотр ПУ' AND {_in('task_output', RESULT_OUTPUTS)} AND task_type = 'Плановый' AND {_in('service_object_type', MKD_OBJECT_TYPES)} AND {_in('meter_installation_place', PLAN_INDOOR_PLACES)} AND task_report IS NULL", None),
     ("task_report = 'Бытовые заявки'",
      f"work_type_in_task = 'Проверка, осмотр ПУ' AND {_in('task_output', RESULT_OUTPUTS)} AND task_type = 'Внеплановый' AND task_report IS NULL", None),
-    ("task_report = 'Ручная проверка'",
-     f"{_in('work_type', ADMISSION_WORK_TYPES)} AND task_report IS NULL", 82),
 ]
 
 
@@ -254,9 +259,6 @@ async def process_raw_afl(db_session: AsyncSession, upload_progress: dict, uploa
 
         await db_session.execute(
             text("DELETE FROM raw_afl WHERE executor_organization NOT IN (SELECT DISTINCT dept FROM users)")
-        )
-        await db_session.execute(
-            text("DELETE FROM raw_afl WHERE task_number is null")
         )
         await db_session.execute(text(
             "UPDATE raw_afl SET executor = 'Загуменнова Алёна Юрьевна' WHERE executor = 'Жагорова Алёна Юрьевна'"
@@ -310,7 +312,7 @@ async def process_raw_afl(db_session: AsyncSession, upload_progress: dict, uploa
             "UPDATE raw_afl SET task_report_id = "
             "SUBSTR(work_end_date, 7, 4) || '-' || SUBSTR(work_end_date, 4, 2) || '-' || "
             "SUBSTR(work_end_date, 1, 2) || '-' || metering_point "
-            "WHERE task_report IS NOT NULL AND task_report <> 'Ручная проверка'"
+            "WHERE task_report IS NOT NULL"
         ))
 
         # Форматирование created_at
