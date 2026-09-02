@@ -44,6 +44,21 @@ const columns: ColumnDef<MainAflRow>[] = [
   { accessorKey: "norm", header: "Норматив" },
 ];
 
+type ColumnSetting = { key: string; visible: boolean; order: number };
+
+function applyColumnSettings(saved: ColumnSetting[] | undefined): ColumnDef<MainAflRow>[] {
+  if (!saved || saved.length === 0) return columns;
+  return columns
+    .map((c, i) => {
+      const key = (c as { accessorKey?: string }).accessorKey ?? "";
+      const sc = saved.find((s) => s.key === key);
+      return { col: c, visible: sc?.visible ?? true, order: sc?.order ?? i };
+    })
+    .filter((m) => m.visible)
+    .sort((a, b) => a.order - b.order)
+    .map((m) => m.col);
+}
+
 
 const SearchInput = memo(function SearchInput({ onSearch, resetSignal }: { onSearch: (value: string) => void; resetSignal: number }) {
   const [value, setValue] = useState("");
@@ -90,6 +105,7 @@ function MainAflPage() {
   const [selectedReport, setSelectedReport] = useState("");
   const [selecting, setSelecting] = useState(false);
   const [searchResetKey, setSearchResetKey] = useState(0);
+  const [tableColumns, setTableColumns] = useState<ColumnDef<MainAflRow>[]>(columns);
   const toastTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const searchSeq = useRef(0);
 
@@ -125,6 +141,15 @@ function MainAflPage() {
   };
 
   useEffect(() => { loadReestrs(); }, []);
+
+  const loadColumnSettings = useCallback(() => {
+    fetch("/api/user/settings", { credentials: "include" })
+      .then((r) => r.json())
+      .then((data) => setTableColumns(applyColumnSettings(data.settings?.columns)))
+      .catch(() => {});
+  }, []);
+
+  useEffect(() => { loadColumnSettings(); }, [loadColumnSettings]);
 
   useEffect(() => {
     fetch("/api/task-reports", { credentials: "include" })
@@ -232,6 +257,7 @@ function MainAflPage() {
                 setTab(t);
                 if (t === "list") { loadReestrs(); setParams({ page: 1, per_page: 50, reestr: activeReestr || reestrs[0] || undefined }); }
                 if (t === "add" || t === "upload") { setParams({ page: 1, per_page: 50, reestr: undefined }); }
+                if (t === "add" || t === "list") { loadColumnSettings(); }
               }}
                 className={`px-4 py-2 text-sm font-medium border-b-2 transition-colors -mb-px
                   ${tab === t ? "border-accent text-accent" : "border-transparent text-base-content/50 hover:text-base-content"}`}>
@@ -255,7 +281,7 @@ function MainAflPage() {
           {isLoading && !data ? (
             <div className="flex justify-center py-12"><span className="loading loading-spinner loading-lg text-accent" /></div>
           ) : (
-            <DataTable columns={columns} data={rows} total={total}
+            <DataTable columns={tableColumns} data={rows} total={total}
               page={params.page ?? 1} perPage={params.per_page ?? 50}
               selectedIds={selected} onRowClick={toggleRow} onCopy={handleCopy}
               onSort={(sort, order) => setParams({ ...params, sort, order })}

@@ -1,9 +1,10 @@
 import { createRoute } from "@tanstack/react-router";
-import { useEffect, useRef, useState } from "react";
+import { Fragment, useEffect, useRef, useState } from "react";
 import { rootRoute } from "../__root";
 import { useAuth } from "../../store/auth";
 import { fetchFinReport, addToReport, uploadDiscrepancies, startFinReportDownload, fetchFinReportDownloadProgress, finReportDownloadResultUrl, type FinReportData, type FinCardData } from "../../api/fin-report";
 import { fetchPremiumSummary, uploadTabel, aggregateNorms, premiumDownloadUrl, type PremiumSummary } from "../../api/premium";
+import { fetchRle, rleDownloadUrl, type RleData } from "../../api/rle";
 
 export const reportsRoute = createRoute({
   getParentRoute: () => rootRoute,
@@ -42,7 +43,7 @@ function ReportsPage() {
     return <div className="p-6 text-base-content/60">Нет доступа</div>;
   }
 
-  const [tab, setTab] = useState<"fin" | "premium">("fin");
+  const [tab, setTab] = useState<"fin" | "rle" | "premium">("fin");
 
   return (
     <div className="flex flex-col h-[calc(100vh-68px)] p-3 gap-3">
@@ -57,6 +58,14 @@ function ReportsPage() {
             Финотчёт
           </button>
           <button
+            onClick={() => setTab("rle")}
+            className={`px-4 py-2 text-sm font-medium border-b-2 -mb-px ${
+              tab === "rle" ? "border-accent text-accent" : "border-transparent text-base-content/60 hover:text-base-content"
+            }`}
+          >
+            РЛЭ
+          </button>
+          <button
             onClick={() => setTab("premium")}
             className={`px-4 py-2 text-sm font-medium border-b-2 -mb-px ${
               tab === "premium" ? "border-accent text-accent" : "border-transparent text-base-content/60 hover:text-base-content"
@@ -68,6 +77,7 @@ function ReportsPage() {
       </div>
 
       {tab === "fin" && <FinReportTab />}
+      {tab === "rle" && <RleTab />}
       {tab === "premium" && <PremiumTab />}
     </div>
   );
@@ -360,6 +370,178 @@ function FinCard({ label, card, expanded, onToggle }: { label: string; card: Fin
               </div>
             ))
           )}
+        </div>
+      )}
+    </div>
+  );
+}
+
+const RLE_VISIBLE_WEEKS = 5;
+
+function fmtNum(v: number): string {
+  return v.toLocaleString("ru-RU", { minimumFractionDigits: 1, maximumFractionDigits: 1 });
+}
+
+interface RleCard {
+  label: string;
+  value: number;
+  note: string;
+  integer?: boolean;
+}
+
+function computeRleCards(data: RleData): RleCard[] {
+  const weeks = data.weeks;
+  const totals = data.totals;
+  if (weeks.length === 0) return [];
+
+  let maxExec = { value: -Infinity, week: weeks[0].week };
+  let minExec = { value: Infinity, week: weeks[0].week };
+  totals.forEach((t, i) => {
+    if (t.executors > maxExec.value) maxExec = { value: t.executors, week: weeks[i].week };
+    if (t.executors < minExec.value) minExec = { value: t.executors, week: weeks[i].week };
+  });
+
+  let maxWork = { value: -Infinity, week: weeks[0].week };
+  let minWork = { value: Infinity, week: weeks[0].week };
+  totals.forEach((t, i) => {
+    if (t.count > maxWork.value) maxWork = { value: t.count, week: weeks[i].week };
+    if (t.count < minWork.value) minWork = { value: t.count, week: weeks[i].week };
+  });
+
+  let maxDay = { value: -Infinity, week: weeks[0].week, grid: "" };
+  let minDay = { value: Infinity, week: weeks[0].week, grid: "" };
+  data.rows.forEach((row) => {
+    row.values.forEach((v, i) => {
+      if (v.per_day > maxDay.value) maxDay = { value: v.per_day, week: weeks[i].week, grid: row.grid };
+      if (v.per_day < minDay.value) minDay = { value: v.per_day, week: weeks[i].week, grid: row.grid };
+    });
+  });
+
+  return [
+    { label: "Max Работников", value: maxExec.value, note: `Неделя ${maxExec.week}` },
+    { label: "Min Работников", value: minExec.value, note: `Неделя ${minExec.week}` },
+    { label: "Max Работ", value: maxWork.value, note: `Неделя ${maxWork.week}`, integer: true },
+    { label: "Min Работ", value: minWork.value, note: `Неделя ${minWork.week}`, integer: true },
+    { label: "Max В день", value: maxDay.value, note: `Неделя ${maxDay.week} · ${maxDay.grid}` },
+    { label: "Min В день", value: minDay.value, note: `Неделя ${minDay.week} · ${minDay.grid}` },
+  ];
+}
+
+function RleTab() {
+  const [data, setData] = useState<RleData | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [toast, setToast] = useState<string | null>(null);
+  const toastTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const showToast = (msg: string) => {
+    setToast(msg);
+    if (toastTimer.current) clearTimeout(toastTimer.current);
+    toastTimer.current = setTimeout(() => setToast(null), 3000);
+  };
+
+  useEffect(() => {
+    (async () => {
+      try {
+        setData(await fetchRle());
+      } catch {
+        showToast("Ошибка загрузки РЛЭ");
+      } finally {
+        setLoading(false);
+      }
+    })();
+  }, []);
+
+  const handleDownload = () => {
+    const a = document.createElement("a");
+    a.href = rleDownloadUrl();
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+  };
+
+  const allWeeks = data?.weeks ?? [];
+  const start = Math.max(0, allWeeks.length - RLE_VISIBLE_WEEKS);
+  const weeks = allWeeks.slice(start);
+  const cards = data ? computeRleCards(data) : [];
+
+  return (
+    <div className="flex flex-col gap-3 overflow-auto">
+      {loading || !data ? (
+        <div className="flex items-center gap-2 text-base-content/60">
+          <span className="loading loading-spinner loading-sm text-accent" />
+          Загружаем…
+        </div>
+      ) : (
+        <div className="card bg-base-100 shadow-sm rounded-md flex flex-col min-w-0">
+          <div className="flex items-start justify-between gap-3 p-3 border-b border-base-200 flex-wrap">
+            <div className="flex flex-wrap gap-3">
+              {cards.map((c) => (
+                <div key={c.label} className="card bg-base-200/60 rounded-md px-3 py-2 min-w-[130px]">
+                  <div className="text-xs text-base-content/50 whitespace-nowrap">{c.label}</div>
+                  <div className="text-lg font-semibold tabular-nums leading-tight">
+                    {c.integer ? c.value.toLocaleString("ru-RU") : fmtNum(c.value)}
+                  </div>
+                  <div className="text-[11px] text-base-content/60 whitespace-nowrap">{c.note}</div>
+                </div>
+              ))}
+            </div>
+            <button className="btn btn-outline btn-sm" onClick={handleDownload}>Скачать</button>
+          </div>
+          <div className="overflow-auto">
+            <table className="table table-sm">
+              <thead>
+                <tr>
+                  <th className="sticky left-0 bg-base-100 z-10 whitespace-nowrap">Филиал</th>
+                  {weeks.map((w) => (
+                    <th key={w.week} colSpan={3} className="text-center border-l border-base-300 bg-base-200 whitespace-nowrap">
+                      Неделя {w.week}
+                      <span className="block text-[10px] font-normal text-base-content/50">{w.range}</span>
+                    </th>
+                  ))}
+                </tr>
+                <tr>
+                  <th className="sticky left-0 bg-base-100 z-10" />
+                  {weeks.map((w) => (
+                    <Fragment key={w.week}>
+                      <th className="text-right whitespace-nowrap">Работы</th>
+                      <th className="text-right whitespace-nowrap">Удельно</th>
+                      <th className="text-right whitespace-nowrap">В день</th>
+                    </Fragment>
+                  ))}
+                </tr>
+              </thead>
+              <tbody>
+                {data.rows.map((row) => (
+                  <tr key={row.grid}>
+                    <td className="sticky left-0 bg-base-100 z-10 font-semibold whitespace-nowrap">{row.grid}</td>
+                    {row.values.slice(start).map((v, i) => (
+                      <Fragment key={i}>
+                        <td className="text-right tabular-nums">{v.count.toLocaleString("ru-RU")}</td>
+                        <td className="text-right tabular-nums">{fmtNum(v.per_executor)}</td>
+                        <td className="text-right tabular-nums">{fmtNum(v.per_day)}</td>
+                      </Fragment>
+                    ))}
+                  </tr>
+                ))}
+                <tr>
+                  <td className="sticky left-0 bg-base-100 z-10 font-bold whitespace-nowrap">Всего работ</td>
+                  {data.totals.slice(start).map((t, i) => (
+                    <Fragment key={i}>
+                      <td className="text-right tabular-nums font-bold">{t.count.toLocaleString("ru-RU")}</td>
+                      <td className="text-right text-base-content/60 italic">Работников</td>
+                      <td className="text-right tabular-nums font-bold">{fmtNum(t.executors)}</td>
+                    </Fragment>
+                  ))}
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
+
+      {toast && (
+        <div className="toast toast-top toast-center z-50">
+          <div className="alert alert-info">{toast}</div>
         </div>
       )}
     </div>
