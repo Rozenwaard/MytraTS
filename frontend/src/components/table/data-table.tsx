@@ -81,7 +81,7 @@ export function DataTable<TData>({
               return (
                 <tr
                   key={id}
-                  title="ПКМ — скопировать № задания"
+                  title="ПКМ — скопировать номер задания"
                   className={`cursor-pointer ${selectedIds.has(id) ? "bg-accent/15 hover:bg-accent/20" : "hover:bg-base-200"}`}
                   onClick={() => onRowClick(id)}
                   onContextMenu={(e) => {

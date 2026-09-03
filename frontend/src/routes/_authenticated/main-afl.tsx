@@ -7,6 +7,7 @@ import { useMainAfl, useMainAflStats } from "../../hooks/use-main-afl";
 import { DataTable } from "../../components/table/data-table";
 import type { MainAflRow, MainAflParams, MainAflStats } from "../../api/main-afl";
 import { createReestr, resetReestr, fetchReestrList, downloadReestrUrl, fetchAllTaskNumbers, findReestr } from "../../api/main-afl";
+import { copyText } from "../../lib/clipboard";
 
 const NO_REESTR = "\u0000";
 
@@ -17,7 +18,7 @@ export const mainAflRoute = createRoute({
 });
 
 const columns: ColumnDef<MainAflRow>[] = [
-  { accessorKey: "task_number", header: "№ задания" },
+  { accessorKey: "task_number", header: "Номер задания" },
   { accessorKey: "task_source", header: "Источник" },
   { accessorKey: "task_type", header: "Вид задания" },
   { accessorKey: "work_type_in_task", header: "Поручение" },
@@ -128,7 +129,7 @@ function MainAflPage() {
 
   const handleCopy = (id: string) => {
     if (!id) return;
-    navigator.clipboard.writeText(id).catch(() => {});
+    copyText(id).catch(() => {});
   };
 
   const loadReestrs = async () => {
