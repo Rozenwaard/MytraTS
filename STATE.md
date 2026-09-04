@@ -41,7 +41,7 @@ MytraTS/
 ├── services/
 │   ├── uploader.py        # xlsx → raw_afl (чтение calamine, fallback openpyxl; async engine, run_sync)
 │   ├── processor.py       # классификация: словари групп признаков + data-driven правила (TASK_OUTPUT/COMMENT/TASK_REPORT_RULES)
-│   ├── merger.py          # raw → main (INSERT новых + UPDATE пустых/'Отклонён'; защищены строки с номером реестра и с task_detail='Разногласия'; проставляет norm; не переносит: status IS NULL, task_number IS NULL, status LIKE 'З%' И done_day IS NULL)
+│   ├── merger.py          # raw → main (INSERT новых + UPDATE пустых/'Отклонён'; защищены строки с номером реестра и с task_detail='Разногласия'; проставляет norm; не переносит: status IS NULL, task_number IS NULL, status LIKE 'З%' И done_day IS NULL; дедупликация по task_report_id — активная строка одна, проигравшие → Дубли/Отклонён/norm=0)
 │   ├── reestr.py          # генерация xlsx реестра/отчёта, DEPT_PREFIXES, LOCALE_SUFFIXES
 │   ├── report_check.py    # правила проверки «Алькор» (check_row), recompute_errors, BALANCE_ERRORS, STOP_FACTOR_*
 │   ├── dashboard.py       # build_scope (виды работ из carte.kind='base'+территории+видимость+отделение), генераторы xlsx отчётов дашборда
@@ -214,8 +214,8 @@ MytraTS/
 ## НЕ ДОДЕЛАНО (заглушки / TODO)
 1. **Архив (Story)** — страница `/story` в навбаре ведёт на `/main-afl` (заглушка). Бэкенд-эндпоинты готовы: `/api/story-afl` (GET с фильтрами), `/api/story-afl/reject` (POST). Нужно: страница архива + таблица с фильтрами. **План:** горячая зона `main_afl` ≤200K строк, остальное уходит в архив; в будущем архив вынесем в отдельный SQLite `archive.db` (`ATTACH DATABASE ... AS archive`) — отдельный файл не конкурирует за лок с `mytra.db` и не раздувает основную БД. `main_afl` на две таблицы не делим (решили — выигрыша по производительности нет).
 2. **Премия — что осталось:**
-   - **Фильтр работников**: заменить в `processor.py` отсев по организации (`executor_organization NOT IN users.dept`) на отсев по ФИО (фамилия + инициалы) из табеля ↔ users (с хардкод-переименованиями); чужих не пускать в main_afl.
-   - **Формула премии**: как сочетаются норматив (минуты) и цена (₽) с табелем; непрямой матчинг «Фамилия И. О.» ↔ `users.full_name` для расхождений.
+   - ✅ **Фильтр работников**: отсев по организации заменён на отсев по ФИО — в `processor.py` (стадия `raw_afl`) исполнитель обязан быть в `users.full_name` (хардкод-переименования выполняются до отсева). Чужие в main_afl не попадают.
+   - **Формула премии** (₽): пока не нужна — двигаемся к ней постепенно. Остаётся непрямой матчинг «Фамилия И. О.» ↔ `users.full_name` (сверка только контролёров и инженеров 1/2 категории; `staff_id` есть и в табеле, и в users — использовать его).
 
 ## Конвенции
 - SQL: только bindparams (`:name`), без f-string-инъекций. Для IN — `build_in_clause(prefix, values)` в sql.py.

@@ -257,15 +257,18 @@ async def process_raw_afl(db_session: AsyncSession, upload_progress: dict, uploa
         async with async_engine.begin() as conn:
             await conn.run_sync(setup_regexp)
 
-        await db_session.execute(
-            text("DELETE FROM raw_afl WHERE executor_organization NOT IN (SELECT DISTINCT dept FROM users)")
-        )
+        # Хардкод-переименования исполнителей ДО отсева (чтобы «свои» под новым ФИО прошли проверку)
         await db_session.execute(text(
             "UPDATE raw_afl SET executor = 'Загуменнова Алёна Юрьевна' WHERE executor = 'Жагорова Алёна Юрьевна'"
         ))
         await db_session.execute(text(
             "UPDATE raw_afl SET executor = 'Петрова Юлия Сергеевна' WHERE executor = 'Петрова Юлия Сергеевна (ПЭК)'"
         ))
+
+        # Отсев чужих исполнителей по ФИО: оставляем только тех, чьё полное ФИО есть в users.
+        await db_session.execute(
+            text("DELETE FROM raw_afl WHERE executor IS NULL OR executor NOT IN (SELECT full_name FROM users)")
+        )
 
         # === Шаг 1: region из municipal_district ===
         await db_session.execute(text(
@@ -321,19 +324,7 @@ async def process_raw_afl(db_session: AsyncSession, upload_progress: dict, uploa
             "SUBSTR(created_at, 7, 4) || '-' || SUBSTR(created_at, 4, 2) || '-' || SUBSTR(created_at, 1, 2)"
         ))
 
-        # Дедубликация: оставляем самую новую строку (по work_start_date) для каждого task_report_id.
-        await db_session.execute(text("""
-            UPDATE raw_afl SET task_report = 'Дубли', task_detail = 'Дубли'
-            WHERE id IN (
-                SELECT id FROM (
-                    SELECT id,
-                        ROW_NUMBER() OVER (PARTITION BY task_report_id ORDER BY work_start_date DESC, id DESC) AS rn
-                    FROM raw_afl
-                    WHERE task_report_id IS NOT NULL
-                )
-                WHERE rn > 1
-            )
-        """))
+        # Дедупликация перенесена в merger.merge_to_main (учитывает серию загрузок).
 
         progress = 85
         upload_progress[upload_id] = {"status": "processing", "progress": progress, "total": total_rows}
