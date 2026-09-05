@@ -7,7 +7,7 @@
 ## Стек
 - **Бэкенд**: Python 3.11 (закреплено `requires-python = ">=3.11,<3.13"`), Litestar 2.24, SQLAlchemy 2 (async + aiosqlite), `uv` для зависимостей. БД — SQLite `mytra.db`.
 - **Фронтенд (текущий, React)**: Vite + React 19 + TypeScript (strict), Tailwind v4 + DaisyUI 5, TanStack Router/Query/Table. Менеджер — `bun`.
-- **Фронтенд (новый, «Руны»)**: SvelteKit + Svelte 5 Runes + Tailwind v4 + shadcn-svelte + TanStack Table v8 + TanStack Query, менеджер `bun`. Живёт в `frontend-svelte/` (порт 5174). Переезжаем по частям, бэкенд не трогаем. Начато: каркас (auth + shell + тема) + «Реестры → Обзор» (таблица).
+- **Фронтенд (новый, «Руны»)**: SvelteKit + Svelte 5 Runes + Tailwind v4 + shadcn-svelte + TanStack Table v8 + TanStack Query, менеджер `bun`. Живёт в `frontend-svelte/` (порт 5174). Переезжаем по частям, бэкенд не трогаем. Начато: каркас (auth + shell + тема) + «Реестры → Обзор» (таблица). Детали (запуск, грабли сборки, дизайн-решения) — `frontend-svelte/STATE.md`.
 - **План (оценка)**: переход фронта на Svelte 5 — начат (проект «Руны»), черновик в `docs/SVELTE-MIGRATION.md`.
 - **Косметика (известно)**: `AddTab` ремоунтится при каждом ре-рендере `MainAflPage` — безвредно (поиск вынесен в `MainAflPage`, сеть не дублируется, состояния в `AddTab` нет). Не помогло: версия React (19.1/19.2), `key`, тернарник/`&&`, StrictMode. Надёжный фикс (если понадобится) — рендерить вкладки всегда и скрывать через CSS, а не монтировать условно.
 - **Git**: https://github.com/Rozenwaard/MytraTS

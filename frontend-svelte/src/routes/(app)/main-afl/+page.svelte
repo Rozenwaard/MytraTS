@@ -164,7 +164,7 @@
 								<TableCell onclick={(e) => e.stopPropagation()}>
 									<Checkbox checked={selected.has(id)} onclick={() => toggleSelected(id)} aria-label="Выбрать строку" />
 								</TableCell>
-								{#each row.getVisibleCells() as cell (cell.id)}
+								{#each row.getAllCells() as cell (cell.id)}
 									<TableCell class="whitespace-nowrap text-sm">{cell.getValue() ?? ''}</TableCell>
 								{/each}
 							</TableRow>
