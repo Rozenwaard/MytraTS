@@ -6,8 +6,9 @@
 
 ## Стек
 - **Бэкенд**: Python 3.11 (закреплено `requires-python = ">=3.11,<3.13"`), Litestar 2.24, SQLAlchemy 2 (async + aiosqlite), `uv` для зависимостей. БД — SQLite `mytra.db`.
-- **Фронтенд**: Vite + React 19 + TypeScript (strict), Tailwind v4 + DaisyUI 5, TanStack Router/Query/Table. Менеджер — `bun`.
-- **План (оценка)**: возможный переход фронта на Svelte 5 — черновик в `docs/SVELTE-MIGRATION.md` (не начато).
+- **Фронтенд (текущий, React)**: Vite + React 19 + TypeScript (strict), Tailwind v4 + DaisyUI 5, TanStack Router/Query/Table. Менеджер — `bun`.
+- **Фронтенд (новый, «Руны»)**: SvelteKit + Svelte 5 Runes + Tailwind v4 + shadcn-svelte + TanStack Table v8 + TanStack Query, менеджер `bun`. Живёт в `frontend-svelte/` (порт 5174). Переезжаем по частям, бэкенд не трогаем. Начато: каркас (auth + shell + тема) + «Реестры → Обзор» (таблица).
+- **План (оценка)**: переход фронта на Svelte 5 — начат (проект «Руны»), черновик в `docs/SVELTE-MIGRATION.md`.
 - **Косметика (известно)**: `AddTab` ремоунтится при каждом ре-рендере `MainAflPage` — безвредно (поиск вынесен в `MainAflPage`, сеть не дублируется, состояния в `AddTab` нет). Не помогло: версия React (19.1/19.2), `key`, тернарник/`&&`, StrictMode. Надёжный фикс (если понадобится) — рендерить вкладки всегда и скрывать через CSS, а не монтировать условно.
 - **Git**: https://github.com/Rozenwaard/MytraTS
 
@@ -21,11 +22,15 @@
 cd C:\Users\ASUS\MaterialThought\MytraTS
 uv run uvicorn app:app --reload --port 8000
 
-# фронтенд (порт 5173, прокси /api → :8000)
+# фронтенд React (порт 5173, прокси /api → :8000)
 cd C:\Users\ASUS\MaterialThought\MytraTS\frontend
 bun run dev
+
+# фронтенд Svelte «Руны» (порт 5174, прокси /api → :8000)
+cd C:\Users\ASUS\MaterialThought\MytraTS\frontend-svelte
+bun run dev
 ```
-Браузер: http://localhost:5173. Логин: табельный номер + пароль (первый вход — пароль = табельный номер, потом смена). Тестовый юзер staff_id=2190.
+Браузер: http://localhost:5173 (React) / http://localhost:5174 («Руны»). Логин: табельный номер + пароль (первый вход — пароль = табельный номер, потом смена). Тестовый юзер staff_id=2190.
 
 ## Структура
 ```
