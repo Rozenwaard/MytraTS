@@ -25,7 +25,7 @@ async def apply_norms(db_session: AsyncSession, task_numbers: list[str] | None =
 
     norm — основной вид работ (carte.kind='base'); extra — остальное
     («Код …», «Причина…», «+5 Выполнение задания в Алькоре»).
-    «Дубли» и «Ручная правка» → norm=0, extra=0.
+    «Дубли» и «Ручная проверка» → norm=0, extra=0.
     """
     scope = ""
     scope_params: dict = {}
@@ -43,20 +43,20 @@ async def apply_norms(db_session: AsyncSession, task_numbers: list[str] | None =
     # Сброс
     await run("norm = NULL, extra = NULL", "1=1")
 
-    # 0. Дубли / Ручная правка → 0
-    await run("norm = 0, extra = 0", "task_detail IN ('Дубли', 'Ручная правка')")
+    # 0. Дубли / Ручная проверка → 0
+    await run("norm = 0, extra = 0", "task_detail IN ('Дубли', 'Ручная проверка')")
 
     # 1. Базовый тариф (norm)
     await run(
         "norm = (SELECT absolute FROM carte WHERE carte.kind = 'base' AND carte.title = main_afl.task_report LIMIT 1), extra = 0",
-        "task_report IS NOT NULL AND task_detail NOT IN ('Дубли', 'Ручная правка')",
+        "task_report IS NOT NULL AND task_detail NOT IN ('Дубли', 'Ручная проверка')",
     )
 
     # 2. МКД-разбивка (norm = 40)
     await run(
         f"norm = {BP_MKD}, extra = 0",
         "task_report = 'Выявление безучетного потребления БП' "
-        f"AND service_object_type IN ({MKD_IN}) AND task_detail NOT IN ('Дубли', 'Ручная правка')",
+        f"AND service_object_type IN ({MKD_IN}) AND task_detail NOT IN ('Дубли', 'Ручная проверка')",
     )
 
     # 3. Замещающие тарифы: norm=0, extra=тариф
@@ -81,22 +81,31 @@ async def apply_norms(db_session: AsyncSession, task_numbers: list[str] | None =
     # (дублям по task_report не начисляем, даже если их task_detail был позже перезаписан)
     await run(
         f"extra = extra + (SELECT absolute FROM carte WHERE carte.title = '{ALCOR_TITLE}' LIMIT 1)",
-        "COALESCE(task_report, '') <> 'Дубли' AND task_detail NOT IN ('Дубли', 'Ручная правка') AND (norm IS NOT NULL OR extra IS NOT NULL)",
+        "COALESCE(task_report, '') <> 'Дубли' AND task_detail NOT IN ('Дубли', 'Ручная проверка') AND (norm IS NOT NULL OR extra IS NOT NULL)",
     )
 
 
 async def apply_manual_norm(db_session: AsyncSession, task_numbers: list[str]) -> None:
-    """Норматив после ручной смены вида работ: norm = базовый тариф, extra = «+5 Алькор»."""
+    """Норматив после ручной смены вида работ: norm = базовый тариф, extra = «+5 Алькор».
+
+    При пустом `task_report` (смена на «без вида работ») норматив не начисляем:
+    norm=0, extra=0 — иначе строка получала бы +5 «Выполнение задания в Алькоре»
+    без основного вида работ.
+    """
     names, params = build_in_clause("n", task_numbers)
     await db_session.execute(text(f"""
         UPDATE main_afl SET
             norm = CASE
+                WHEN task_report IS NULL THEN 0
                 WHEN task_report = 'Выявление безучетного потребления БП'
                      AND service_object_type IN ({MKD_IN}) THEN {BP_MKD}
                 WHEN task_report = 'Выявление безучетного потребления БП' THEN {BP_IZHS}
                 ELSE (SELECT absolute FROM carte WHERE carte.kind = 'base' AND carte.title = main_afl.task_report LIMIT 1)
             END,
-            extra = (SELECT absolute FROM carte WHERE carte.title = '{ALCOR_TITLE}' LIMIT 1)
+            extra = CASE
+                WHEN task_report IS NULL THEN 0
+                ELSE (SELECT absolute FROM carte WHERE carte.title = '{ALCOR_TITLE}' LIMIT 1)
+            END
         WHERE task_number IN ({names})
     """), params)
 

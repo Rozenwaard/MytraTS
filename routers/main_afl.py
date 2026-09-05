@@ -144,7 +144,7 @@ async def api_update_task_report(
     names, bind_params = build_in_clause("tr", task_numbers)
     bind_params["tr_val"] = task_report if task_report else None
     result = await db_session.execute(
-        text(f"UPDATE main_afl SET task_report = :tr_val, task_detail = 'Ручная правка' WHERE task_number IN ({names})"), bind_params)
+        text(f"UPDATE main_afl SET task_report = :tr_val, task_detail = 'Ручная проверка' WHERE task_number IN ({names})"), bind_params)
     await apply_manual_norm(db_session, task_numbers)
     await db_session.commit()
     return Response(content=json.dumps({"success": True, "updated": result.rowcount}, ensure_ascii=False), media_type="application/json")
