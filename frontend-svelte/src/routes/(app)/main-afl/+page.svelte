@@ -192,15 +192,15 @@
 	}
 </script>
 
-<div class="flex h-full flex-col gap-3">
-	<div class="flex min-h-0 flex-1 flex-col overflow-hidden rounded-md border">
+<div class="flex h-full flex-col gap-4">
+	<div class="flex min-h-0 flex-1 flex-col overflow-hidden rounded-md border bg-card">
 		<Table containerClass="min-h-0 flex-1 overflow-auto">
 				<TableHeader>
 					<TableRow class="hover:bg-transparent">
 						{#each VISIBLE_COLUMNS as col (col.key)}
 							{@const Icon = HEADER_ICONS[col.key]}
 							<TableHead
-								class="sticky top-0 z-10 cursor-pointer select-none whitespace-nowrap bg-background text-center"
+								class="sticky top-0 z-10 cursor-pointer select-none whitespace-nowrap bg-muted text-center"
 								onclick={() => setSort(col.key)}
 							>
 								{#if Icon}
@@ -235,11 +235,21 @@
 							{@const id = row.original.task_number ?? ''}
 							<TableRow class="cursor-pointer" onclick={() => toggleExpanded(id)}>
 								{#each row.getAllCells() as cell (cell.id)}
-									<TableCell class="whitespace-nowrap text-sm">
+									<TableCell class={cell.column.id === 'norm' ? 'whitespace-nowrap text-center text-sm' : 'whitespace-nowrap text-sm'}>
 										{#if cell.column.id === 'reestr_number'}
-											{cell.getValue() ? 'Р' : '-'}
+											{#if cell.getValue() === 'Отклонён'}
+												<span class="font-bold text-[#ffeccc]">Р</span>
+											{:else if cell.getValue()}
+												<span class="font-bold text-brand-brown">Р</span>
+											{:else}
+												-
+											{/if}
 										{:else if cell.column.id === 'errors'}
-											{cell.getValue() ? 'О' : '-'}
+											{#if cell.getValue()}
+												<span class="font-bold text-destructive">О</span>
+											{:else}
+												-
+											{/if}
 										{:else}
 											{cell.getValue() ?? ''}
 										{/if}
@@ -247,7 +257,7 @@
 								{/each}
 							</TableRow>
 							{#if expanded.has(id)}
-								<TableRow class="bg-muted/40 hover:bg-muted/40">
+								<TableRow class="bg-muted hover:bg-muted">
 									<TableCell colspan={VISIBLE_COLUMNS.length}>
 										<div class="grid grid-cols-1 gap-x-6 gap-y-4 py-2 sm:grid-cols-2 lg:grid-cols-4">
 											{#each EXPAND_GROUPS as group (group.title)}
@@ -265,7 +275,7 @@
 											{#if row.original.reestr_number && row.original.reestr_number !== 'Отклонён'}
 												<Button
 													size="sm"
-													variant="outline"
+													variant="destructive"
 													onclick={() => resetReestr(row.original)}
 												>
 													<Trash2 class="size-4" />
@@ -287,7 +297,7 @@
 												</select>
 												<Button
 													size="sm"
-													variant="outline"
+													variant="default"
 													disabled={!reportChoice[id]}
 													onclick={() => changeReport(row.original)}
 												>

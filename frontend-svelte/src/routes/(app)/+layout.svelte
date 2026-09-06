@@ -73,7 +73,7 @@
 	</aside>
 
 	<div class="flex min-w-0 flex-1 flex-col">
-		<header class="flex h-14 shrink-0 items-center justify-between gap-4 border-b px-4">
+		<header class="flex h-14 shrink-0 items-center justify-between gap-4 border-b bg-[#ffeccc] px-4 text-foreground">
 			<div class="flex min-w-0 flex-1 items-center gap-2">
 				<Button
 					variant="ghost"
@@ -89,7 +89,7 @@
 				</Button>
 				<div class="relative w-full max-w-xs">
 					<Search class="pointer-events-none absolute left-2.5 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
-					<Input bind:value={search.value} placeholder="Поиск по адресу, № задания или л/с" class="pl-8" />
+					<Input bind:value={search.value} placeholder="Поиск по адресу, № задания или л/с" class="bg-card pl-8 text-foreground" />
 				</div>
 			</div>
 			<div class="flex shrink-0 items-center gap-1.5">
@@ -98,7 +98,7 @@
 					<Moon class="hidden size-4 dark:block" />
 				</Button>
 				{#if user}
-					<span class="hidden text-sm text-muted-foreground sm:inline">{user.full_name}</span>
+					<span class="hidden text-sm sm:inline">{user.full_name}</span>
 					<Button variant="ghost" size="icon" onclick={handleLogout} aria-label="Выйти">
 						<LogOut class="size-4" />
 					</Button>
@@ -113,7 +113,7 @@
 
 	{#each toasts as t (t.id)}
 		<div
-			class="fixed bottom-4 right-4 z-50 max-w-sm rounded-md border bg-background px-4 py-2 text-sm shadow-lg"
+			class="fixed bottom-4 right-4 z-50 max-w-sm rounded-md border bg-card px-4 py-2 text-sm shadow-lg"
 		>
 			{t.text}
 		</div>

@@ -6,7 +6,7 @@
 
 <div
 	class={cn(
-		'flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-primary text-primary-foreground',
+		'flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-brand-logo text-primary-foreground',
 		className
 	)}
 >
