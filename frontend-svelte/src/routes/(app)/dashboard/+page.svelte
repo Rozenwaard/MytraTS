@@ -1,11 +1,5 @@
 <script lang="ts">
-	import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '$lib/components/ui/card';
+	import Placeholder from '$lib/components/placeholder.svelte';
 </script>
 
-<Card>
-	<CardHeader>
-		<CardTitle>Дашборд</CardTitle>
-		<CardDescription>Заглушка — будет перенесён позже.</CardDescription>
-	</CardHeader>
-	<CardContent class="text-sm text-muted-foreground">Раздел в разработке.</CardContent>
-</Card>
+<Placeholder title="Дашборд" />

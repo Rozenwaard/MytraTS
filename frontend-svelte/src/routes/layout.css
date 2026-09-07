@@ -38,7 +38,7 @@
 	--sidebar-ring: #1E5B45;
 	--brand-brown: #87643e;
 	--brand-logo: #fea201;
-	--brand-yellow: #ffe02a;
+	--brand-reestr-rejected: #ffe3b3;
 }
 
 .dark {
@@ -111,7 +111,7 @@
 	--color-sidebar-ring: var(--sidebar-ring);
 	--color-brand-brown: var(--brand-brown);
 	--color-brand-logo: var(--brand-logo);
-	--color-brand-yellow: var(--brand-yellow);
+	--color-brand-reestr-rejected: var(--brand-reestr-rejected);
 	--radius-sm: calc(var(--radius) - 4px);
 	--radius-md: calc(var(--radius) - 2px);
 	--radius-lg: var(--radius);

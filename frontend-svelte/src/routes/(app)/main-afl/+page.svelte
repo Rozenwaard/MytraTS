@@ -34,6 +34,8 @@
 	import { queryClient } from '$lib/query';
 	import { toast } from '$lib/store/toast.svelte';
 	import { auth } from '$lib/store/auth.svelte';
+	import { Input } from '$lib/components/ui/input';
+	import Search from '@lucide/svelte/icons/search';
 
 	const HEADER_ICONS: Partial<Record<keyof MainAflRow, Component>> = {
 		reestr_number: ListChecks,
@@ -192,7 +194,16 @@
 	}
 </script>
 
-<div class="flex h-full flex-col gap-4">
+<div class="flex h-full flex-col gap-3 p-3">
+	<div class="shrink-0 rounded-md border bg-card p-3">
+		<div class="flex flex-wrap items-center gap-3">
+			<div class="relative w-full max-w-sm">
+				<Search class="pointer-events-none absolute left-2.5 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
+				<Input bind:value={search.value} placeholder="Поиск по адресу, № задания или л/с" class="bg-background pl-8" />
+			</div>
+			<span class="text-xs text-muted-foreground">Фильтры и статистика — в разработке</span>
+		</div>
+	</div>
 	<div class="flex min-h-0 flex-1 flex-col overflow-hidden rounded-md border bg-card">
 		<Table containerClass="min-h-0 flex-1 overflow-auto">
 				<TableHeader>
@@ -238,7 +249,7 @@
 									<TableCell class={cell.column.id === 'norm' ? 'whitespace-nowrap text-center text-sm' : 'whitespace-nowrap text-sm'}>
 										{#if cell.column.id === 'reestr_number'}
 											{#if cell.getValue() === 'Отклонён'}
-												<span class="font-bold text-[#ffeccc]">Р</span>
+												<span class="font-bold text-brand-reestr-rejected">Р</span>
 											{:else if cell.getValue()}
 												<span class="font-bold text-brand-brown">Р</span>
 											{:else}

@@ -2,4 +2,4 @@
 	import Placeholder from '$lib/components/placeholder.svelte';
 </script>
 
-<Placeholder title="Помощь" />
+<Placeholder title="Тарифы" />
