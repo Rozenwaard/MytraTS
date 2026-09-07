@@ -484,17 +484,40 @@ def _in_clause(prefix: str, values: list) -> tuple[str, dict]:
     return names, params
 
 
+_IN_CHUNK = 32500
+
+
 async def recompute_errors(db_session: AsyncSession, task_numbers: list | None = None) -> int:
-    """Пересчитывает и сохраняет ошибки в main_afl.errors (все заказчики)."""
+    """Пересчитывает и сохраняет ошибки только для строк со status LIKE 'З%'."""
+    # Ошибки считаются только для закрытых/завершённых заданий (status LIKE 'З%').
+    # У остальных очищаем, чтобы не оставалось устаревших ошибок.
+    await db_session.execute(
+        text("UPDATE main_afl SET errors = NULL WHERE status NOT LIKE 'З%'")
+    )
+
     if task_numbers is not None and not task_numbers:
+        await db_session.commit()
         return 0
 
+    total = 0
+    if task_numbers is not None:
+        # Бьём на чанки, чтобы не упереться в лимит SQLite по числу bind-параметров.
+        for i in range(0, len(task_numbers), _IN_CHUNK):
+            total += await _recompute_errors_chunk(db_session, task_numbers[i:i + _IN_CHUNK])
+    else:
+        total = await _recompute_errors_chunk(db_session, None)
+
+    await db_session.commit()
+    return total
+
+
+async def _recompute_errors_chunk(db_session: AsyncSession, task_numbers: list | None) -> int:
     if task_numbers is not None:
         names, params = _in_clause("ce", task_numbers)
         result = await db_session.execute(
-            text(f"SELECT * FROM main_afl WHERE task_number IN ({names})"), params)
+            text(f"SELECT * FROM main_afl WHERE task_number IN ({names}) AND status LIKE 'З%'"), params)
     else:
-        result = await db_session.execute(text("SELECT * FROM main_afl"))
+        result = await db_session.execute(text("SELECT * FROM main_afl WHERE status LIKE 'З%'"))
 
     rows = [dict(r._mapping) for r in result]
     updates = [{"e": join_errors(check_row(row)), "tn": row["task_number"]} for row in rows]
@@ -502,5 +525,4 @@ async def recompute_errors(db_session: AsyncSession, task_numbers: list | None =
     if updates:
         await db_session.execute(text("UPDATE main_afl SET errors = :e WHERE task_number = :tn"), updates)
 
-    await db_session.commit()
     return len(updates)

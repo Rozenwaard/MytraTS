@@ -30,6 +30,9 @@ def _build_main_afl_clauses(user, search, customer, task_report, executor_org,
     clauses = ["1=1"]
     params: dict = {}
 
+    # В разделе «Реестры» показываем только закрытые/завершённые задания (status LIKE 'З%').
+    clauses.append("status LIKE 'З%'")
+
     if user.effective_role in ("оператор", "работник"):
         clauses.append("executor IN (SELECT full_name FROM users WHERE locale = :locale)")
         params["locale"] = user.locale
@@ -155,6 +158,7 @@ async def api_main_afl_stats(request: Request, db_session: AsyncSession) -> Resp
     user = await get_current_user(request, db_session)
     base_where = "1=1"
     params = {}
+    base_where += " AND status LIKE 'З%'"
 
     if user.effective_role in ("оператор", "работник"):
         base_where += " AND executor IN (SELECT full_name FROM users WHERE locale = :locale)"

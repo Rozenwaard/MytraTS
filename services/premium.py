@@ -20,6 +20,9 @@ BP_IZHS = 60  # «Выявление безучетного потреблени
 ALCOR_TITLE = "Выполнение задания в Алькоре"
 
 
+_IN_CHUNK = 32500
+
+
 async def apply_norms(db_session: AsyncSession, task_numbers: list[str] | None = None) -> None:
     """Проставляет main_afl.norm (база) и main_afl.extra (доп.) по «Тарифы.xlsx».
 
@@ -27,6 +30,15 @@ async def apply_norms(db_session: AsyncSession, task_numbers: list[str] | None =
     («Код …», «Причина…», «+5 Выполнение задания в Алькоре»).
     «Дубли» и «Ручная проверка» → norm=0, extra=0.
     """
+    if task_numbers:
+        # Бьём на чанки, чтобы не упереться в лимит SQLite по числу bind-параметров.
+        for i in range(0, len(task_numbers), _IN_CHUNK):
+            await _apply_norms_scoped(db_session, task_numbers[i:i + _IN_CHUNK])
+    else:
+        await _apply_norms_scoped(db_session, None)
+
+
+async def _apply_norms_scoped(db_session: AsyncSession, task_numbers: list[str] | None) -> None:
     scope = ""
     scope_params: dict = {}
     if task_numbers:

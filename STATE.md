@@ -46,7 +46,7 @@ MytraTS/
 ├── services/
 │   ├── uploader.py        # xlsx → raw_afl (чтение calamine, fallback openpyxl; async engine, run_sync)
 │   ├── processor.py       # классификация: словари групп признаков + data-driven правила (TASK_OUTPUT/COMMENT/TASK_REPORT_RULES)
-│   ├── merger.py          # raw → main (INSERT новых + UPDATE пустых/'Отклонён'; защищены строки с номером реестра и с task_detail='Разногласия'; проставляет norm; не переносит: status IS NULL, task_number IS NULL, status LIKE 'З%' И done_day IS NULL; дедупликация по task_report_id — активная строка одна, проигравшие → Дубли/Отклонён/norm=0)
+│   ├── merger.py          # raw → main (INSERT новых + UPDATE пустых/'Отклонён'; защищены строки с номером реестра и с task_detail='Разногласия'; проставляет norm; не переносит: status IS NULL, task_number IS NULL (в «Реестры» показывает только статусы 'З%'); дедупликация по task_report_id — активная строка одна, проигравшие → Дубли/Отклонён/norm=0)
 │   ├── reestr.py          # генерация xlsx реестра/отчёта, DEPT_PREFIXES, LOCALE_SUFFIXES
 │   ├── report_check.py    # правила проверки «Алькор» (check_row), recompute_errors, BALANCE_ERRORS, STOP_FACTOR_*
 │   ├── dashboard.py       # build_scope (виды работ из carte.kind='base'+территории+видимость+отделение), генераторы xlsx отчётов дашборда
@@ -130,7 +130,7 @@ MytraTS/
 - Зона (карточки): территории стоп-фактора (region='СПб' или municipal_district='ЛО Гатчинский муниципальный район') + зона видимости пользователя + только 10 видов работ (task_report). Выгрузки — дополнительно только не отправленные в биллинг и не закрытые (sent_to_billing='Нет' AND status != 'Закрыто').
 
 ## Проверка отчёта «Алькор» (ошибки и стоп-фактор)
-- `main_afl.errors` — колонка с найденными ошибками (через `; `). Пересчитывается при загрузке (`recompute_errors`, все заказчики) и миграцией `_migrate_errors.py`.
+- `main_afl.errors` — колонка с найденными ошибками (через `; `). Пересчитывается при загрузке (`recompute_errors`, только для `status LIKE 'З%'`) и миграцией `_migrate_errors.py`.
 - Всего 25 типов ошибок, все — стоп-факторы (включая 2 балансовые: «Балансовая принадлежность», «Балансовая принадлежность нового ПУ»).
 - Стоп-фактор (любая ошибка) блокирует присвоение номера реестра; активен для region='СПб' или municipal_district='ЛО Гатчинский муниципальный район'. В `api_reestr` такие строки исключаются и возвращаются в `blocked`.
 - Балансовые ошибки дополнительно выносятся в отдельные отчёты дашборда.
@@ -220,7 +220,7 @@ MytraTS/
 1. **Архив (Story)** — страница `/story` в навбаре ведёт на `/main-afl` (заглушка). Бэкенд-эндпоинты готовы: `/api/story-afl` (GET с фильтрами), `/api/story-afl/reject` (POST). Нужно: страница архива + таблица с фильтрами. **План:** горячая зона `main_afl` ≤200K строк, остальное уходит в архив; в будущем архив вынесем в отдельный SQLite `archive.db` (`ATTACH DATABASE ... AS archive`) — отдельный файл не конкурирует за лок с `mytra.db` и не раздувает основную БД. `main_afl` на две таблицы не делим (решили — выигрыша по производительности нет).
 
 ## Конвенции
-- SQL: только bindparams (`:name`), без f-string-инъекций. Для IN — `build_in_clause(prefix, values)` в sql.py.
+- SQL: только bindparams (`:name`), без f-string-инъекций. Для IN — `build_in_clause(prefix, values)` в sql.py. Большие списки (десятки тысяч) бить на чанки `_IN_CHUNK = 32500` — лимит SQLite на число переменных (32766).
 - Роли проверяются через `user.effective_role`.
 - Фильтры на бэке строятся из `clauses` + `params` dict.
 - Фронт: типы в `api/main-afl.ts`, запросы через `api<T>()` (client.ts, credentials:include).

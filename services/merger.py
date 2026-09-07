@@ -84,8 +84,7 @@ async def merge_to_main(db_session, upload_progress, upload_id, total_rows):
     result = await db_session.execute(text(
         f"SELECT {columns_str} FROM raw_afl "
         "WHERE status IS NOT NULL "
-        "AND task_number IS NOT NULL "
-        "AND NOT (status LIKE 'З%' AND done_day IS NULL)"
+        "AND task_number IS NOT NULL"
     ))
     all_rows = [dict(row._mapping) for row in result]
 

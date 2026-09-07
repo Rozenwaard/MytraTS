@@ -266,8 +266,9 @@ async def process_raw_afl(db_session: AsyncSession, upload_progress: dict, uploa
         ))
 
         # Отсев чужих исполнителей по ФИО: оставляем только тех, чьё полное ФИО есть в users.
+        # Пустых исполнителей (executor IS NULL) не удаляем.
         await db_session.execute(
-            text("DELETE FROM raw_afl WHERE executor IS NULL OR executor NOT IN (SELECT full_name FROM users)")
+            text("DELETE FROM raw_afl WHERE executor NOT IN (SELECT full_name FROM users)")
         )
 
         # === Шаг 1: region из municipal_district ===
