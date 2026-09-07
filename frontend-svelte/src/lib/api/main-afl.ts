@@ -1,3 +1,5 @@
+import { api } from './client';
+
 export interface MainAflRow {
 	task_number: string | null;
 	task_source: string | null;
@@ -72,4 +74,80 @@ export function buildMainAflQuery(params: MainAflParams): string {
 	if (params.only_uncompleted) q.set('only_uncompleted', '1');
 	if (params.exact) q.set('exact', params.exact);
 	return q.toString();
+}
+
+export interface ReestrResult {
+	task_report: string;
+	reestr_number: string;
+	count: number;
+	skipped: number;
+	rejected: number;
+}
+
+export interface ReestrResponse {
+	success: boolean;
+	reestrs: ReestrResult[];
+	reestr_date: string;
+	blocked: string[];
+}
+
+export async function fetchAllTaskNumbers(params: MainAflParams = {}): Promise<string[]> {
+	const data = await api<{ task_numbers: string[] }>(
+		`/api/main-afl/ids?${buildMainAflQuery(params)}`
+	);
+	return data.task_numbers;
+}
+
+export async function createReestr(taskNumbers: string[]): Promise<ReestrResponse> {
+	return api<ReestrResponse>('/api/reestr', {
+		method: 'POST',
+		body: JSON.stringify({ task_numbers: taskNumbers })
+	});
+}
+
+export interface MainAflStats {
+	customers: Record<string, number>;
+	plan: number;
+	unplan: number;
+	with_reestr: number;
+	without_reestr: number;
+	completed: number;
+	uncompleted: number;
+	task_reports: { label: string; count: number }[];
+	executors: { label: string; count: number; locale: string | null }[];
+	depts: { label: string; count: number }[];
+	done_days: string[];
+}
+
+export async function fetchMainAflStats(): Promise<MainAflStats> {
+	return api<MainAflStats>('/api/main-afl/stats');
+}
+
+export interface ReestrListResponse {
+	reestrs: string[];
+	meta: Record<string, { task_report: string | null; customer: string | null }>;
+}
+
+export async function fetchReestrList(): Promise<ReestrListResponse> {
+	return api<ReestrListResponse>('/api/reestr-list');
+}
+
+export function downloadReestrUrl(rn: string): string {
+	return `/api/download-reestr/${encodeURIComponent(rn)}`;
+}
+
+export async function findReestr(q: string): Promise<string | null> {
+	const data = await api<{ found: boolean; reestr_number?: string }>(
+		`/api/reestr/find?q=${encodeURIComponent(q)}`
+	);
+	return data.found && data.reestr_number ? data.reestr_number : null;
+}
+
+export async function resetReestr(
+	taskNumbers: string[]
+): Promise<{ success: boolean; cleared: number }> {
+	return api<{ success: boolean; cleared: number }>('/api/reestr/reset', {
+		method: 'POST',
+		body: JSON.stringify({ task_numbers: taskNumbers })
+	});
 }

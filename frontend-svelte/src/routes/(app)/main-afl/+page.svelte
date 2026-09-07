@@ -9,7 +9,15 @@
 		type SortingState
 	} from '@tanstack/table-core';
 	import { api } from '$lib/api/client';
-	import { buildMainAflQuery, type MainAflRow, type MainAflResponse } from '$lib/api/main-afl';
+	import {
+		buildMainAflQuery,
+		createReestr,
+		downloadReestrUrl,
+		fetchMainAflStats,
+		type MainAflRow,
+		type MainAflResponse,
+		type MainAflStats
+	} from '$lib/api/main-afl';
 	import { VISIBLE_COLUMNS, EXPAND_GROUPS } from '$lib/columns';
 	import {
 		Table,
@@ -31,11 +39,13 @@
 	import ChevronsLeft from '@lucide/svelte/icons/chevrons-left';
 	import ChevronsRight from '@lucide/svelte/icons/chevrons-right';
 	import Trash2 from '@lucide/svelte/icons/trash-2';
+	import Printer from '@lucide/svelte/icons/printer';
 	import { queryClient } from '$lib/query';
 	import { toast } from '$lib/store/toast.svelte';
 	import { auth } from '$lib/store/auth.svelte';
 	import { Input } from '$lib/components/ui/input';
 	import Search from '@lucide/svelte/icons/search';
+	import { copyText } from '$lib/clipboard';
 
 	const HEADER_ICONS: Partial<Record<keyof MainAflRow, Component>> = {
 		reestr_number: ListChecks,
@@ -67,9 +77,113 @@
 	let reportOptions = $state<string[]>([]);
 	let reportChoice = $state<Record<string, string>>({});
 
-	const canChangeReport = $derived(
+	const canChangeReport = $derived(auth.user?.role === 'администратор');
+
+	const canSelectForReestr = $derived(
+		auth.user?.role === 'менеджер' || auth.user?.role === 'оператор' || auth.user?.role === 'работник'
+	);
+
+	let selected = $state<Set<string>>(new Set());
+	let done_day = $state('');
+	let stats = $state<MainAflStats | null>(null);
+
+	let customer = $state<string | undefined>(undefined);
+	let taskType = $state<string | undefined>(undefined);
+	let onlyCompleted = $state(false);
+	let taskReport = $state<string | undefined>(undefined);
+	let executorFilter = $state<string | undefined>(undefined);
+	let executorOrg = $state<string | undefined>(undefined);
+	let onlyWithoutReestr = $state(false);
+
+	function toggleSelected(id: string) {
+		const next = new Set(selected);
+		if (next.has(id)) next.delete(id);
+		else next.add(id);
+		selected = next;
+	}
+
+	async function copyTask(id: string) {
+		if (id) await copyText(id);
+	}
+
+	$effect(() => {
+		fetchMainAflStats()
+			.then((s) => (stats = s))
+			.catch(() => {});
+	});
+
+	const doneDays = $derived(stats?.done_days ?? []);
+	const showDepartments = $derived(
 		auth.user?.role === 'администратор' || auth.user?.role === 'специалист'
 	);
+	const filteredTaskReports = $derived(
+		(stats?.task_reports ?? []).filter(
+			(t) => !['Не выполнено', 'Дубли', 'Ручная проверка'].includes(t.label)
+		)
+	);
+
+	function deptLabel(d: string) {
+		return d.replace(/ отделение$/, '');
+	}
+
+	function resetFilters() {
+		search.value = '';
+		customer = undefined;
+		taskType = undefined;
+		onlyCompleted = false;
+		taskReport = undefined;
+		executorFilter = undefined;
+		executorOrg = undefined;
+		onlyWithoutReestr = false;
+		done_day = '';
+		page = 1;
+	}
+
+	function toggleStat(label: string) {
+		if (label === 'ПСК') customer = customer === 'ПСК' ? undefined : 'ПСК';
+		else if (label === 'РЛЭ') customer = customer === 'РЛЭ' ? undefined : 'РЛЭ';
+		else if (label === 'План') taskType = taskType === 'Плановый' ? undefined : 'Плановый';
+		else if (label === 'Внеплан') taskType = taskType === 'Внеплановый' ? undefined : 'Внеплановый';
+		else if (label === 'Выполнено') onlyCompleted = !onlyCompleted;
+		else if (label === 'Не выполнено') onlyCompleted = false;
+		page = 1;
+	}
+
+	function toggleTaskReport(label: string) {
+		taskReport = taskReport === label ? undefined : label;
+		page = 1;
+	}
+
+	function toggleExecutor(label: string) {
+		executorFilter = executorFilter === label ? undefined : label;
+		page = 1;
+	}
+
+	function toggleDept(label: string) {
+		executorOrg = executorOrg === label ? undefined : label;
+		page = 1;
+	}
+
+	async function handleCreateReestr() {
+		if (selected.size === 0) {
+			toast('Не выбраны строки');
+			return;
+		}
+		try {
+			const result = await createReestr([...selected]);
+			const parts = result.reestrs.map((r) =>
+				r.reestr_number === 'Отклонён'
+					? `${r.task_report}: отклонён`
+					: `${r.reestr_number} — ${r.task_report} (${r.count})`
+			);
+			const blockedMsg = result.blocked?.length ? ` | Стоп-фактор: ${result.blocked.length}` : '';
+			toast((parts.join(' | ') || 'Готово') + blockedMsg);
+			selected = new Set();
+			queryClient.invalidateQueries({ queryKey: ['main-afl'] });
+		} catch {
+			toast('Ошибка создания реестра');
+		}
+	}
 
 	$effect(() => {
 		api<string[]>('/api/task-reports')
@@ -82,7 +196,21 @@
 
 	const query = createQuery<MainAflResponse>(
 		toStore(() => ({
-			queryKey: ['main-afl', page, sortKey, sortOrder, searchValue],
+			queryKey: [
+				'main-afl',
+				page,
+				sortKey,
+				sortOrder,
+				searchValue,
+				done_day,
+				customer,
+				taskType,
+				onlyCompleted,
+				taskReport,
+				executorFilter,
+				executorOrg,
+				onlyWithoutReestr
+			],
 			queryFn: () =>
 				api<MainAflResponse>(
 					`/api/main-afl?${buildMainAflQuery({
@@ -90,7 +218,15 @@
 						per_page: perPage,
 						sort: sortKey || undefined,
 						order: sortKey ? sortOrder : undefined,
-						search: searchValue || undefined
+						search: searchValue || undefined,
+						done_day: done_day || undefined,
+						customer,
+						task_type: taskType,
+						only_completed: onlyCompleted || undefined,
+						task_report: taskReport,
+						executor_filter: executorFilter,
+						executor_org: executorOrg,
+						only_without_reestr: onlyWithoutReestr || undefined
 					})}`
 				)
 		}))
@@ -99,6 +235,21 @@
 	const result = fromStore(query);
 	const rows = $derived(result.current.data?.rows ?? []);
 	const isPending = $derived(result.current.isPending);
+
+	const visibleIds = $derived(rows.map((r) => r.task_number).filter(Boolean) as string[]);
+	const allVisibleSelected = $derived(
+		visibleIds.length > 0 && visibleIds.every((id) => selected.has(id))
+	);
+
+	function toggleAllVisible() {
+		const next = new Set(selected);
+		if (allVisibleSelected) {
+			for (const id of visibleIds) next.delete(id);
+		} else {
+			for (const id of visibleIds) next.add(id);
+		}
+		selected = next;
+	}
 
 	const table = $derived(
 		createTable({
@@ -195,19 +346,116 @@
 </script>
 
 <div class="flex h-full flex-col gap-3 p-3">
-	<div class="shrink-0 rounded-md border bg-card p-3">
-		<div class="flex flex-wrap items-center gap-3">
-			<div class="relative w-full max-w-sm">
-				<Search class="pointer-events-none absolute left-2.5 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
-				<Input bind:value={search.value} placeholder="Поиск по адресу, № задания или л/с" class="bg-background pl-8" />
+	<div class="shrink-0 space-y-3">
+		<div class="rounded-md border bg-card p-3">
+			<div class="flex flex-wrap items-center gap-3">
+				<div class="relative w-full max-w-sm">
+					<Search class="pointer-events-none absolute left-2.5 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
+					<Input bind:value={search.value} placeholder="Поиск по адресу, № задания или л/с" class="bg-background pl-8" />
+				</div>
+				<select
+					class="h-9 rounded-md border border-input bg-background px-2 text-sm outline-none focus-visible:border-ring"
+					bind:value={done_day}
+				>
+					<option value="">Выберите дату</option>
+					{#each doneDays as d (d)}
+						<option value={d}>{d}</option>
+					{/each}
+				</select>
+				<label class="flex cursor-pointer items-center gap-2 text-sm">
+					<button
+						type="button"
+						role="switch"
+						aria-checked={onlyWithoutReestr}
+						aria-label={onlyWithoutReestr ? 'Без реестра' : 'Все строки'}
+						class={onlyWithoutReestr
+							? 'relative h-5 w-9 shrink-0 rounded-full bg-primary transition-colors'
+							: 'relative h-5 w-9 shrink-0 rounded-full bg-border transition-colors'}
+						onclick={() => (onlyWithoutReestr = !onlyWithoutReestr)}
+					>
+						<span class={`absolute left-0.5 top-0.5 size-4 rounded-full bg-white shadow-sm transition-transform ${onlyWithoutReestr ? 'translate-x-4' : ''}`}></span>
+					</button>
+					<span class="w-24 shrink-0">{onlyWithoutReestr ? 'Без реестра' : 'Все строки'}</span>
+				</label>
+				{#if canSelectForReestr}
+					<Button size="sm" onclick={handleCreateReestr} disabled={selected.size === 0}>
+						В реестр
+					</Button>
+				{/if}
+				<Button variant="outline" size="sm" onclick={resetFilters}>Сброс фильтров</Button>
 			</div>
-			<span class="text-xs text-muted-foreground">Фильтры и статистика — в разработке</span>
+		</div>
+		<div class="rounded-md border bg-card p-3">
+			<div class="grid grid-cols-1 gap-6 text-sm sm:grid-cols-3">
+				<div>
+					<div class="mb-1.5 text-xs font-medium text-muted-foreground">Статистика</div>
+					<div class="flex flex-col gap-y-0.5 text-xs">
+						{#each [
+							{ label: 'ПСК', count: stats?.customers?.['ПСК'] },
+							{ label: 'РЛЭ', count: stats?.customers?.['РЛЭ'] },
+							{ label: 'План', count: stats?.plan },
+							{ label: 'Внеплан', count: stats?.unplan },
+							{ label: 'Выполнено', count: stats?.completed },
+							{ label: 'Не выполнено', count: stats?.uncompleted }
+						] as s (s.label)}
+							<button class="flex cursor-pointer gap-1 text-left hover:underline" onclick={() => toggleStat(s.label)}>
+								<span class="text-muted-foreground">{s.label}</span>
+								<span class="ml-auto font-semibold tabular-nums">{s.count != null ? s.count.toLocaleString('ru-RU') : '—'}</span>
+							</button>
+						{/each}
+					</div>
+				</div>
+				<div>
+					<div class="mb-1.5 text-xs font-medium text-muted-foreground">Вид работ</div>
+					<div class="flex flex-col gap-y-0.5 text-xs">
+						{#each filteredTaskReports as tr (tr.label)}
+							<button class="flex cursor-pointer gap-1 text-left hover:underline" onclick={() => toggleTaskReport(tr.label)}>
+								<span class="text-muted-foreground">{tr.label}</span>
+								<span class="ml-auto font-semibold tabular-nums">{tr.count.toLocaleString('ru-RU')}</span>
+							</button>
+						{/each}
+					</div>
+				</div>
+				{#if showDepartments}
+					<div>
+						<div class="mb-1.5 text-xs font-medium text-muted-foreground">Отделения</div>
+						<div class="flex flex-col gap-y-0.5 text-xs">
+							{#each stats?.depts ?? [] as d (d.label)}
+								<button class="flex cursor-pointer gap-1 text-left hover:underline" onclick={() => toggleDept(d.label)}>
+									<span class="text-muted-foreground">{deptLabel(d.label)}</span>
+									<span class="ml-auto font-semibold tabular-nums">{d.count.toLocaleString('ru-RU')}</span>
+								</button>
+							{/each}
+						</div>
+					</div>
+				{:else}
+					<div>
+						<div class="mb-1.5 text-xs font-medium text-muted-foreground">Исполнители</div>
+						<div class="flex flex-col gap-y-0.5 text-xs">
+							{#each stats?.executors ?? [] as ex (ex.label)}
+								<button class="flex cursor-pointer gap-1 text-left hover:underline" onclick={() => toggleExecutor(ex.label)}>
+									<span class="text-muted-foreground">{ex.label}</span>
+									<span class="ml-auto font-semibold tabular-nums">{ex.count.toLocaleString('ru-RU')}</span>
+								</button>
+							{/each}
+						</div>
+					</div>
+				{/if}
+			</div>
 		</div>
 	</div>
 	<div class="flex min-h-0 flex-1 flex-col overflow-hidden rounded-md border bg-card">
 		<Table containerClass="min-h-0 flex-1 overflow-auto">
 				<TableHeader>
 					<TableRow class="hover:bg-transparent">
+						<TableHead class="sticky top-0 z-10 w-8 bg-muted text-center">
+							<input
+								type="checkbox"
+								class="size-4 cursor-pointer accent-primary"
+								checked={allVisibleSelected}
+								onchange={toggleAllVisible}
+							/>
+						</TableHead>
 						{#each VISIBLE_COLUMNS as col (col.key)}
 							{@const Icon = HEADER_ICONS[col.key]}
 							<TableHead
@@ -230,6 +478,7 @@
 					{#if isPending}
 						{#each Array(8) as _}
 							<TableRow>
+								<TableCell><Skeleton class="h-4 w-4" /></TableCell>
 								{#each VISIBLE_COLUMNS as _}
 									<TableCell><Skeleton class="h-4 w-full" /></TableCell>
 								{/each}
@@ -237,14 +486,30 @@
 						{/each}
 					{:else if rows.length === 0}
 						<TableRow>
-							<TableCell colspan={VISIBLE_COLUMNS.length} class="h-24 text-center text-muted-foreground">
+							<TableCell colspan={VISIBLE_COLUMNS.length + 1} class="h-24 text-center text-muted-foreground">
 								Нет данных
 							</TableCell>
 						</TableRow>
 					{:else}
 						{#each table.getRowModel().rows as row (row.id)}
 							{@const id = row.original.task_number ?? ''}
-							<TableRow class="cursor-pointer" onclick={() => toggleExpanded(id)}>
+							<TableRow
+								class="cursor-pointer"
+								title="ПКМ — скопировать номер задания"
+								onclick={() => toggleExpanded(id)}
+								oncontextmenu={(e) => {
+									e.preventDefault();
+									copyTask(id);
+								}}
+							>
+								<TableCell class="w-8 text-center" onclick={(e) => e.stopPropagation()}>
+									<input
+										type="checkbox"
+										class="size-4 cursor-pointer accent-primary"
+										checked={selected.has(id)}
+										onchange={() => toggleSelected(id)}
+									/>
+								</TableCell>
 								{#each row.getAllCells() as cell (cell.id)}
 									<TableCell class={cell.column.id === 'norm' ? 'whitespace-nowrap text-center text-sm' : 'whitespace-nowrap text-sm'}>
 										{#if cell.column.id === 'reestr_number'}
@@ -269,7 +534,7 @@
 							</TableRow>
 							{#if expanded.has(id)}
 								<TableRow class="bg-muted hover:bg-muted">
-									<TableCell colspan={VISIBLE_COLUMNS.length}>
+									<TableCell colspan={VISIBLE_COLUMNS.length + 1}>
 										<div class="grid grid-cols-1 gap-x-6 gap-y-4 py-2 sm:grid-cols-2 lg:grid-cols-4">
 											{#each EXPAND_GROUPS as group (group.title)}
 												<div class="space-y-2">
@@ -292,6 +557,17 @@
 													<Trash2 class="size-4" />
 													Удалить из реестра
 												</Button>
+											{#if canSelectForReestr}
+												<Button
+													size="sm"
+													variant="outline"
+													onclick={() => window.open(downloadReestrUrl(row.original.reestr_number!), '_blank')}
+												>
+													<Printer class="size-4" />
+													Печать реестра
+												</Button>
+											{/if}
+
 											{/if}
 											{#if canChangeReport}
 												<select
@@ -326,7 +602,12 @@
 	</div>
 
 	<div class="flex items-center justify-between gap-3">
-		<span class="text-sm text-muted-foreground">Всего: {total.toLocaleString('ru-RU')}</span>
+		<span class="text-sm text-muted-foreground">
+			Всего: {total.toLocaleString('ru-RU')}
+			{#if selected.size > 0}
+				· Выбрано: {selected.size}
+			{/if}
+		</span>
 		<div class="flex flex-wrap items-center gap-1">
 			<Button variant="outline" size="sm" disabled={page <= 1} onclick={() => goToPage(1)} aria-label="Первая страница">
 				<ChevronsLeft class="size-4" />
