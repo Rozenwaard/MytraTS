@@ -56,6 +56,32 @@ bun install
 bun run build     # → frontend/dist
 ```
 
+## 4а. Фронтенд Svelte («Руны», `frontend-svelte/`)
+
+Новый фронтенд на SvelteKit 2 + Svelte 5 (Runes), менеджер `bun`, порт **5174**, прокси
+`/api` → `:8000`. Живёт рядом со старым React-фронтом (`frontend/`, порт 5173).
+
+### Запуск (dev)
+```bash
+# 1. бэкенд (порт 8000)
+cd /opt/mytra && uv run uvicorn app:app --reload --port 8000
+
+# 2. фронт Svelte (порт 5174)
+cd /opt/mytra/frontend-svelte && bun install && bun run dev
+```
+Открыть `http://localhost:5174`. Логин — табельный номер + пароль (первый вход — сменить пароль).
+
+### Сборка (prod)
+```bash
+cd /opt/mytra/frontend-svelte && bun install && bun run build
+```
+Используется `@sveltejs/adapter-auto` (в Node-окружении резолвится в `adapter-node`): сборка
+даёт `build/` с Node-сервером SvelteKit. Запуск: `bun build/index.js` (или `node build/index.js`),
+порт по умолчанию 3000 (переопределяется `PORT`). Статику и роутинг отдаёт этот сервер,
+поэтому в Apache вместо `DocumentRoot` на `frontend/dist` проксируйте `/` на этот порт, а
+`/api` — на `:8000` (см. §6).
+
+
 ## 5. systemd-сервис бэкенда
 Файл `/etc/systemd/system/mytra.service`:
 ```ini
