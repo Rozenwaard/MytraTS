@@ -13,7 +13,14 @@ SvelteKit-переезд текущего React-фронтенда. Бэкенд
 - Тема light/dark — `mode-watcher`.
 
 ## Запуск
+> **Запускать оба процесса одновременно** — бэкенд и фронтенд. Фронт проксирует `/api → :8000`, без бэка логин и все запросы падают.
+
 ```powershell
+# 1) бэкенд (порт 8000) — отдельный терминал
+cd C:\Users\ASUS\MaterialThought\MytraTS
+uv run uvicorn app:app --reload --port 8000
+
+# 2) фронтенд Svelte «Руны» (порт 5174) — другой терминал
 cd C:\Users\ASUS\MaterialThought\MytraTS\frontend-svelte
 bun install
 bun run dev      # порт 5174, прокси /api → :8000

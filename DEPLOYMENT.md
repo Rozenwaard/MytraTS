@@ -58,28 +58,61 @@ bun run build     # → frontend/dist
 
 ## 4а. Фронтенд Svelte («Руны», `frontend-svelte/`)
 
-Новый фронтенд на SvelteKit 2 + Svelte 5 (Runes), менеджер `bun`, порт **5174**, прокси
-`/api` → `:8000`. Живёт рядом со старым React-фронтом (`frontend/`, порт 5173).
+Новый фронтенд на SvelteKit 2 + Svelte 5 (Runes), менеджер `bun`, порт **5174** (dev),
+прокси `/api` → `:8000`. Живёт рядом со старым React-фронтом (`frontend/`, порт 5173).
+
+### Ключевые решения (зафиксированы, не менять без причины)
+
+- **Tailwind CSS v4 — только v4, НЕ v3.** Стили подключаются плагином `@tailwindcss/vite`
+  (`vite.config.ts` → `tailwindcss()`), тема описана в `src/routes/layout.css` через
+  `@import 'tailwindcss'` + `@theme inline` + `@custom-variant dark`. Отдельных
+  `tailwind.config.js` / `postcss.config.js` **нет и не должно быть**. Даунгрейд до v3 (или
+  классические `@tailwind base/components/utilities`) ломает генерацию стилей — страница
+  рендерится «голой», без CSS.
+- **Node `^20.19.0 || >=22.12.0`** — требование Vite 8. Node 18 не подходит.
+- **Сборка — только свежим `bun`** (не yarn/npm). Свежий bun несёт собственный lightningcss,
+  который понимает синтаксис Tailwind v4 (`--spacing()` и т.д.). На старом bun/Node сборка
+  падает с `lightningcss … --spacing()` / «unsupported syntax».
+- **Прод-режим — это Node-сервер SvelteKit, а не статика.** `@sveltejs/adapter-auto` в
+  Node-окружении резолвится в `adapter-node`: сборка даёт `build/index.js`, который сам
+  отдаёт статику и роутинг (SSR). Apache должен проксировать `/` на этот сервер, а НЕ
+  указывать `DocumentRoot /opt/mytra/frontend/dist` (это старый React-фронт).
+
+### Требования
+
+- Node ≥ 20.19 (проверка `node -v`).
+- Свежий `bun` (проверка `bun -v`), ставится как в §1.
+- В `package.json` прописан `engines: { "node": ">=20.19.0" }`, а в `.npmrc` —
+  `engine-strict=true`: на старом Node установка/сборка упадёт сразу с понятной ошибкой,
+  а не с загадочным `--spacing()`.
 
 ### Запуск (dev)
+
 ```bash
-# 1. бэкенд (порт 8000)
+# 1. бэкенд (порт 8000) — отдельный терминал
 cd /opt/mytra && uv run uvicorn app:app --reload --port 8000
 
-# 2. фронт Svelte (порт 5174)
+# 2. фронт Svelte (порт 5174) — другой терминал
 cd /opt/mytra/frontend-svelte && bun install && bun run dev
 ```
 Открыть `http://localhost:5174`. Логин — табельный номер + пароль (первый вход — сменить пароль).
 
 ### Сборка (prod)
+
 ```bash
 cd /opt/mytra/frontend-svelte && bun install && bun run build
+# → build/ с build/index.js (Node-сервер SvelteKit)
 ```
-Используется `@sveltejs/adapter-auto` (в Node-окружении резолвится в `adapter-node`): сборка
-даёт `build/` с Node-сервером SvelteKit. Запуск: `bun build/index.js` (или `node build/index.js`),
-порт по умолчанию 3000 (переопределяется `PORT`). Статику и роутинг отдаёт этот сервер,
-поэтому в Apache вместо `DocumentRoot` на `frontend/dist` проксируйте `/` на этот порт, а
-`/api` — на `:8000` (см. §6).
+
+Запуск prod-сервера (порт по умолчанию 3000, переопределяется `PORT`):
+
+```bash
+cd /opt/mytra/frontend-svelte && PORT=3000 bun build/index.js
+# или: node build/index.js
+```
+
+В Apache вместо `DocumentRoot` на `frontend/dist` проксируйте `/` на `127.0.0.1:3000`,
+а `/api` — на `127.0.0.1:8000` (готовый конфиг — §6, подраздел «Svelte-фронт»).
 
 
 ## 5. systemd-сервис бэкенда
@@ -169,6 +202,39 @@ sudo systemctl reload apache2
 - CORS в прод-режиме не участвует: фронт и API на одном origin. `CORSConfig` в `app.py`
   прописан только под dev-origin `http://localhost:5173`.
 
+### Svelte-фронт («Руны»): Node-сервер вместо статики
+
+Если наружу смотрим новый Svelte-фронт (а не React), конфиг меняется: статику больше не
+отдаём через `DocumentRoot`, а проксируем `/` на Node-сервер SvelteKit (`build/index.js`,
+порт 3000). Файл `/etc/apache2/sites-available/mytra.conf`:
+
+```apache
+<VirtualHost *:80>
+    # ServerName mytra.company.ru
+
+    ProxyPreserveHost On
+    ProxyRequests Off
+
+    # Svelte-приложение (adapter-node) на 127.0.0.1:3000.
+    # Слеш на конце цели обязателен — иначе Apache срежет ведущий "/" пути.
+    ProxyPass / http://127.0.0.1:3000/
+    ProxyPassReverse / http://127.0.0.1:3000/
+
+    # API — на бэкенд (правило длиннее "/", поэтому обрабатывается первым).
+    ProxyPass /api http://127.0.0.1:8000/api
+    ProxyPassReverse /api http://127.0.0.1:8000/api
+</VirtualHost>
+```
+
+```bash
+sudo apache2ctl configtest && sudo systemctl reload apache2
+```
+
+Сам Node-сервер запускается отдельно (dev — `bun run dev`, prod — `bun build/index.js`).
+Для прода удобно оформить его как systemd-сервис по аналогии с `mytra.service` (§5):
+`WorkingDirectory=/opt/mytra/frontend-svelte`, `ExecStart=$(which bun) build/index.js`,
+`Environment=PORT=3000`.
+
 ## 7. Файрвол и проверка
 ```bash
 sudo ufw allow 22/tcp && sudo ufw allow 80/tcp && sudo ufw enable
@@ -204,6 +270,11 @@ cd /opt/mytra && git pull && uv sync --python-preference only-system
 cd frontend && bun install && bun run build && cd ..
 sudo systemctl restart mytra
 ```
+Svelte-фронт («Руны», `frontend-svelte/`):
+```bash
+cd /opt/mytra/frontend-svelte && git pull && bun install && bun run build
+# затем перезапустить Node-сервер SvelteKit (systemd-сервис или вручную)
+```
 
 ## Бэкап БД
 ```bash
@@ -224,3 +295,7 @@ sudo systemctl start mytra
 - **Права на БД** — `mytra.db` должен принадлежать пользователю `mytra`.
 - **`status=203/EXEC`** — `uv` создал venv на своём Python внутри `/home/<юзер>`, куда сервису
   `mytra` нет доступа. Лечится системным Python 3.11 (§1) и `uv sync --python-preference only-system`.
+- **Сборка Svelte падает: `lightningcss` / `--spacing()` / «unsupported syntax»** — старый
+  Node или старый bun. Проверь `node -v` (нужно ≥20.19) и обнови `bun` (§1). Не «лечи»
+  даунгрейдом до Tailwind v3 — проект заточен под v4, после v3 стили не генерируются и
+  страница рендерится без CSS.
