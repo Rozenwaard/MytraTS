@@ -122,6 +122,13 @@
 		)
 	);
 
+	function splitTwoColumns<T>(items: T[]): [T[], T[]] {
+		return [items.slice(0, 7), items.slice(7, 14)];
+	}
+
+	const reportCols = $derived(splitTwoColumns(filteredTaskReports));
+	const deptCols = $derived(splitTwoColumns(stats?.depts ?? []));
+
 	function deptLabel(d: string) {
 		return d.replace(/ отделение$/, '');
 	}
@@ -354,10 +361,12 @@
 					<Input bind:value={search.value} placeholder="Поиск по адресу, № задания или л/с" class="bg-background pl-8" />
 				</div>
 				<select
-					class="h-9 rounded-md border border-input bg-background px-2 text-sm outline-none focus-visible:border-ring"
+					class={done_day
+						? 'h-9 rounded-md border border-input bg-background px-2 text-sm outline-none focus-visible:border-ring'
+						: 'h-9 rounded-md border border-input bg-background px-2 text-sm text-muted-foreground outline-none focus-visible:border-ring'}
 					bind:value={done_day}
 				>
-					<option value="">Выберите дату</option>
+					<option value="">Выберите дату работ</option>
 					{#each doneDays as d (d)}
 						<option value={d}>{d}</option>
 					{/each}
@@ -386,7 +395,7 @@
 			</div>
 		</div>
 		<div class="rounded-md border bg-card p-3">
-			<div class="grid grid-cols-1 gap-6 text-sm sm:grid-cols-3">
+			<div class={showDepartments ? 'grid grid-cols-1 gap-6 text-sm sm:grid-cols-5' : 'grid grid-cols-1 gap-6 text-sm sm:grid-cols-3'}>
 				<div>
 					<div class="mb-1.5 text-xs font-medium text-muted-foreground">Статистика</div>
 					<div class="flex flex-col gap-y-0.5 text-xs">
@@ -405,27 +414,61 @@
 						{/each}
 					</div>
 				</div>
-				<div>
-					<div class="mb-1.5 text-xs font-medium text-muted-foreground">Вид работ</div>
-					<div class="flex flex-col gap-y-0.5 text-xs">
-						{#each filteredTaskReports as tr (tr.label)}
-							<button class="flex cursor-pointer gap-1 text-left hover:underline" onclick={() => toggleTaskReport(tr.label)}>
-								<span class="text-muted-foreground">{tr.label}</span>
-								<span class="ml-auto font-semibold tabular-nums">{tr.count.toLocaleString('ru-RU')}</span>
-							</button>
-						{/each}
-					</div>
-				</div>
 				{#if showDepartments}
+					<div class="sm:col-span-2">
+						<div class="mb-1.5 text-xs font-medium text-muted-foreground">Вид работ</div>
+						<div class="flex gap-4">
+							<div class="flex flex-1 flex-col gap-y-0.5 text-xs">
+								{#each reportCols[0] as tr (tr.label)}
+									<button class="flex cursor-pointer gap-1 text-left hover:underline" onclick={() => toggleTaskReport(tr.label)}>
+										<span class="text-muted-foreground">{tr.label}</span>
+										<span class="ml-auto font-semibold tabular-nums">{tr.count.toLocaleString('ru-RU')}</span>
+									</button>
+								{/each}
+							</div>
+							<div class="flex flex-1 flex-col gap-y-0.5 text-xs">
+								{#each reportCols[1] as tr (tr.label)}
+									<button class="flex cursor-pointer gap-1 text-left hover:underline" onclick={() => toggleTaskReport(tr.label)}>
+										<span class="text-muted-foreground">{tr.label}</span>
+										<span class="ml-auto font-semibold tabular-nums">{tr.count.toLocaleString('ru-RU')}</span>
+									</button>
+								{/each}
+							</div>
+						</div>
+					</div>
+				{:else}
 					<div>
-						<div class="mb-1.5 text-xs font-medium text-muted-foreground">Отделения</div>
+						<div class="mb-1.5 text-xs font-medium text-muted-foreground">Вид работ</div>
 						<div class="flex flex-col gap-y-0.5 text-xs">
-							{#each stats?.depts ?? [] as d (d.label)}
-								<button class="flex cursor-pointer gap-1 text-left hover:underline" onclick={() => toggleDept(d.label)}>
-									<span class="text-muted-foreground">{deptLabel(d.label)}</span>
-									<span class="ml-auto font-semibold tabular-nums">{d.count.toLocaleString('ru-RU')}</span>
+							{#each filteredTaskReports as tr (tr.label)}
+								<button class="flex cursor-pointer gap-1 text-left hover:underline" onclick={() => toggleTaskReport(tr.label)}>
+									<span class="text-muted-foreground">{tr.label}</span>
+									<span class="ml-auto font-semibold tabular-nums">{tr.count.toLocaleString('ru-RU')}</span>
 								</button>
 							{/each}
+						</div>
+					</div>
+				{/if}
+				{#if showDepartments}
+					<div class="sm:col-span-2">
+						<div class="mb-1.5 text-xs font-medium text-muted-foreground">Отделения</div>
+						<div class="flex gap-4">
+							<div class="flex flex-1 flex-col gap-y-0.5 text-xs">
+								{#each deptCols[0] as d (d.label)}
+									<button class="flex cursor-pointer gap-1 text-left hover:underline" onclick={() => toggleDept(d.label)}>
+										<span class="text-muted-foreground">{deptLabel(d.label)}</span>
+										<span class="ml-auto font-semibold tabular-nums">{d.count.toLocaleString('ru-RU')}</span>
+									</button>
+								{/each}
+							</div>
+							<div class="flex flex-1 flex-col gap-y-0.5 text-xs">
+								{#each deptCols[1] as d (d.label)}
+									<button class="flex cursor-pointer gap-1 text-left hover:underline" onclick={() => toggleDept(d.label)}>
+										<span class="text-muted-foreground">{deptLabel(d.label)}</span>
+										<span class="ml-auto font-semibold tabular-nums">{d.count.toLocaleString('ru-RU')}</span>
+									</button>
+								{/each}
+							</div>
 						</div>
 					</div>
 				{:else}

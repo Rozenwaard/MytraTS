@@ -64,7 +64,7 @@
 		error = '';
 		try {
 			const result = await login(staffId, password);
-			await goto(result.changePassword ? '/main-afl' : '/main-afl');
+			await goto(result.changePassword ? '/change-password' : '/main-afl');
 		} catch {
 			error = 'Неверный логин или пароль';
 		} finally {

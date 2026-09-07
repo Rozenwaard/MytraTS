@@ -1,5 +1,5 @@
 <script lang="ts">
-	import Placeholder from '$lib/components/placeholder.svelte';
+	import HelpContent from '$lib/components/help-content.svelte';
 </script>
 
-<Placeholder title="Помощь" />
+<HelpContent key="instruction" />
