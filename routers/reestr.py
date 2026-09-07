@@ -17,6 +17,9 @@ from services.reestr import DEPT_PREFIXES, LOCALE_SUFFIXES, generate_reestr_xlsx
 from services.report_check import is_stop_blocked
 
 
+_IN_CHUNK = 32500
+
+
 @post("/reestr", guards=[require_auth])
 async def api_reestr(
     request: Request, db_session: AsyncSession,
@@ -27,13 +30,16 @@ async def api_reestr(
         return Response(content=json.dumps({"success": False, "error": "Не выбраны строки"}, ensure_ascii=False), media_type="application/json")
 
     user = await get_current_user(request, db_session)
-    names, bind_params = build_in_clause("tn", task_numbers)
 
-    result = await db_session.execute(
-        text(f"SELECT task_number, task_report, executor_organization, customer, grid, reestr_number, errors, region, municipal_district, "
-             f"(SELECT locale FROM users WHERE users.full_name = main_afl.executor LIMIT 1) as locale "
-             f"FROM main_afl WHERE task_number IN ({names})"), bind_params)
-    all_rows = [dict(row._mapping) for row in result]
+    all_rows = []
+    for i in range(0, len(task_numbers), _IN_CHUNK):
+        chunk = task_numbers[i:i + _IN_CHUNK]
+        names, bind_params = build_in_clause("tn", chunk)
+        result = await db_session.execute(
+            text(f"SELECT task_number, task_report, executor_organization, customer, grid, reestr_number, errors, region, municipal_district, "
+                 f"(SELECT locale FROM users WHERE users.full_name = main_afl.executor LIMIT 1) as locale "
+                 f"FROM main_afl WHERE task_number IN ({names})"), bind_params)
+        all_rows.extend([dict(row._mapping) for row in result])
 
     blocked_set = {r["task_number"] for r in all_rows if is_stop_blocked(r)}
     rows = [r for r in all_rows if r["task_number"] not in blocked_set]
@@ -61,8 +67,9 @@ async def api_reestr(
         display_name = f"{customer} / {grid_val} / {task_report}" if task_report else f"{customer} / {grid_val} / Без категории"
 
         if task_report is None or task_report == "" or task_report in invalid_reports:
-            if new_tasks:
-                tn_names, tn_params = build_in_clause("rj", new_tasks)
+            for i in range(0, len(new_tasks), _IN_CHUNK):
+                chunk = new_tasks[i:i + _IN_CHUNK]
+                tn_names, tn_params = build_in_clause("rj", chunk)
                 await db_session.execute(
                     text(f"UPDATE main_afl SET reestr_number = 'Отклонён' WHERE task_number IN ({tn_names})"), tn_params)
             reestrs.append({"task_report": display_name, "reestr_number": "Отклонён",
@@ -88,10 +95,12 @@ async def api_reestr(
         count = max_num + 1
         reestr_number = f"{count}-{prefix}{suffix}" if suffix else f"{count}-{prefix}"
 
-        tn_names, tn_params = build_in_clause("rn", new_tasks)
-        await db_session.execute(
-            text(f"UPDATE main_afl SET reestr_number = :rn, reestr_date = :rd WHERE task_number IN ({tn_names})"),
-            {"rn": reestr_number, "rd": reestr_date, **tn_params})
+        for i in range(0, len(new_tasks), _IN_CHUNK):
+            chunk = new_tasks[i:i + _IN_CHUNK]
+            tn_names, tn_params = build_in_clause("rn", chunk)
+            await db_session.execute(
+                text(f"UPDATE main_afl SET reestr_number = :rn, reestr_date = :rd WHERE task_number IN ({tn_names})"),
+                {"rn": reestr_number, "rd": reestr_date, **tn_params})
         reestrs.append({"task_report": display_name, "reestr_number": reestr_number,
                        "count": len(new_tasks), "skipped": len(already), "rejected": 0})
 

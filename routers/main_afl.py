@@ -138,7 +138,7 @@ async def api_update_task_report(
     data: dict = Body(media_type=RequestEncodingType.JSON),
 ) -> Response:
     user = await get_current_user(request, db_session)
-    if user.effective_role not in ('администратор', 'специалист'):
+    if user.effective_role != 'администратор':
         return Response(content=json.dumps({"success": False, "error": "Нет прав"}, ensure_ascii=False), media_type="application/json")
     task_numbers = data.get("task_numbers", [])
     task_report = data.get("task_report", "")
@@ -147,7 +147,7 @@ async def api_update_task_report(
     names, bind_params = build_in_clause("tr", task_numbers)
     bind_params["tr_val"] = task_report if task_report else None
     result = await db_session.execute(
-        text(f"UPDATE main_afl SET task_report = :tr_val, task_detail = 'Ручная проверка' WHERE task_number IN ({names})"), bind_params)
+        text(f"UPDATE main_afl SET task_report = :tr_val, task_detail = 'Ручная проверка', reestr_number = NULL, reestr_date = NULL WHERE task_number IN ({names})"), bind_params)
     await apply_manual_norm(db_session, task_numbers)
     await db_session.commit()
     return Response(content=json.dumps({"success": True, "updated": result.rowcount}, ensure_ascii=False), media_type="application/json")
