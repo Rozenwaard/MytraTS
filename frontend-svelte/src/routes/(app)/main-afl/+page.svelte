@@ -13,6 +13,7 @@
 		buildMainAflQuery,
 		createReestr,
 		downloadReestrUrl,
+		fetchAllTaskNumbers,
 		fetchMainAflStats,
 		type MainAflRow,
 		type MainAflResponse,
@@ -84,6 +85,8 @@
 	);
 
 	let selected = $state<Set<string>>(new Set());
+	let allSelected = $state(false);
+	let selectingAll = $state(false);
 	let done_day = $state('');
 	let stats = $state<MainAflStats | null>(null);
 
@@ -100,6 +103,7 @@
 		if (next.has(id)) next.delete(id);
 		else next.add(id);
 		selected = next;
+		allSelected = false;
 	}
 
 	async function copyTask(id: string) {
@@ -186,6 +190,7 @@
 			const blockedMsg = result.blocked?.length ? ` | Стоп-фактор: ${result.blocked.length}` : '';
 			toast((parts.join(' | ') || 'Готово') + blockedMsg);
 			selected = new Set();
+			allSelected = false;
 			queryClient.invalidateQueries({ queryKey: ['main-afl'] });
 		} catch {
 			toast('Ошибка создания реестра');
@@ -243,20 +248,53 @@
 	const rows = $derived(result.current.data?.rows ?? []);
 	const isPending = $derived(result.current.isPending);
 
-	const visibleIds = $derived(rows.map((r) => r.task_number).filter(Boolean) as string[]);
-	const allVisibleSelected = $derived(
-		visibleIds.length > 0 && visibleIds.every((id) => selected.has(id))
-	);
-
-	function toggleAllVisible() {
-		const next = new Set(selected);
-		if (allVisibleSelected) {
-			for (const id of visibleIds) next.delete(id);
-		} else {
-			for (const id of visibleIds) next.add(id);
-		}
-		selected = next;
+	function currentFilterParams() {
+		return {
+			search: searchValue || undefined,
+			done_day: done_day || undefined,
+			customer,
+			task_type: taskType,
+			only_completed: onlyCompleted || undefined,
+			task_report: taskReport,
+			executor_filter: executorFilter,
+			executor_org: executorOrg,
+			only_without_reestr: onlyWithoutReestr || undefined
+		};
 	}
+
+	async function toggleAllVisible() {
+		if (selectingAll) return;
+		selectingAll = true;
+		try {
+			const ids = await fetchAllTaskNumbers(currentFilterParams());
+			if (allSelected) {
+				selected = new Set();
+				allSelected = false;
+			} else {
+				selected = new Set(ids);
+				allSelected = ids.length > 0;
+				toast(ids.length ? `Выбрано: ${ids.length}` : 'Нет строк в текущей фильтрации');
+			}
+		} catch {
+			toast('Ошибка выбора строк');
+		} finally {
+			selectingAll = false;
+		}
+	}
+
+	$effect(() => {
+		// сброс «выбрано всё» при смене фильтров
+		searchValue;
+		customer;
+		taskType;
+		onlyCompleted;
+		taskReport;
+		executorFilter;
+		executorOrg;
+		onlyWithoutReestr;
+		done_day;
+		allSelected = false;
+	});
 
 	const table = $derived(
 		createTable({
@@ -495,7 +533,8 @@
 							<input
 								type="checkbox"
 								class="size-4 cursor-pointer accent-primary"
-								checked={allVisibleSelected}
+								checked={allSelected}
+								disabled={selectingAll}
 								onchange={toggleAllVisible}
 							/>
 						</TableHead>

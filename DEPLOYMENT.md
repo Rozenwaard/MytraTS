@@ -73,10 +73,12 @@ bun run build     # → frontend/dist
 - **Сборка — только свежим `bun`** (не yarn/npm). Свежий bun несёт собственный lightningcss,
   который понимает синтаксис Tailwind v4 (`--spacing()` и т.д.). На старом bun/Node сборка
   падает с `lightningcss … --spacing()` / «unsupported syntax».
-- **Прод-режим — это Node-сервер SvelteKit, а не статика.** `@sveltejs/adapter-auto` в
-  Node-окружении резолвится в `adapter-node`: сборка даёт `build/index.js`, который сам
-  отдаёт статику и роутинг (SSR). Apache должен проксировать `/` на этот сервер, а НЕ
-  указывать `DocumentRoot /opt/mytra/frontend/dist` (это старый React-фронт).
+- **Прод-режим — это Node-сервер SvelteKit, а не статика.** В проекте явно подключён
+  `@sveltejs/adapter-node`: `bun run build` даёт `build/index.js`, который сам отдаёт
+  статику и роутинг (SSR). `adapter-auto` не использован — на голом Debian/Ubuntu он не
+  определяет среду (ищет Vercel/Netlify/Cloudflare) и пишет результат в `.svelte-kit/output/`
+  вместо `build/`. Apache должен проксировать `/` на этот сервер, а НЕ указывать
+  `DocumentRoot /opt/mytra/frontend/dist` (это старый React-фронт).
 
 ### Требования
 
@@ -193,7 +195,7 @@ sudo systemctl reload apache2
 - `ProxyRequests Off` — это и так дефолт, но пишем явно: страхует от превращения сервера
   в открытый forward-прокси.
 - `LimitRequestBody` не задаём: дефолт Apache — `0` (без лимита), а реальный потолок задаёт
-  само приложение — `request_max_body_size=35 МБ` в `app.py`. Если понадобятся xlsx крупнее,
+  само приложение — `request_max_body_size=65 МБ` в `app.py`. Если понадобятся xlsx крупнее,
   поднимать нужно **и** там, и (при необходимости) в Apache.
 - `ProxyTimeout` тоже не задаём. Он наследует `Timeout` (в Debian/Ubuntu `apache2.conf` — 300 с),
   и этого хватает: `POST /api/upload` только принимает файл и сразу отдаёт `upload_id`, а разбор
@@ -215,14 +217,15 @@ sudo systemctl reload apache2
     ProxyPreserveHost On
     ProxyRequests Off
 
+    # API — на бэкенд. Обязано стоять ВЫШЕ "/": ProxyPass матчит по порядку объявления,
+    # первый совпавший выигрывает, поэтому catch-all "/" перехватил бы "/api/*" раньше бэкенда.
+    ProxyPass /api http://127.0.0.1:8000/api
+    ProxyPassReverse /api http://127.0.0.1:8000/api
+
     # Svelte-приложение (adapter-node) на 127.0.0.1:3000.
     # Слеш на конце цели обязателен — иначе Apache срежет ведущий "/" пути.
     ProxyPass / http://127.0.0.1:3000/
     ProxyPassReverse / http://127.0.0.1:3000/
-
-    # API — на бэкенд (правило длиннее "/", поэтому обрабатывается первым).
-    ProxyPass /api http://127.0.0.1:8000/api
-    ProxyPassReverse /api http://127.0.0.1:8000/api
 </VirtualHost>
 ```
 
@@ -230,10 +233,12 @@ sudo systemctl reload apache2
 sudo apache2ctl configtest && sudo systemctl reload apache2
 ```
 
-Сам Node-сервер запускается отдельно (dev — `bun run dev`, prod — `bun build/index.js`).
-Для прода удобно оформить его как systemd-сервис по аналогии с `mytra.service` (§5):
-`WorkingDirectory=/opt/mytra/frontend-svelte`, `ExecStart=$(which bun) build/index.js`,
-`Environment=PORT=3000`.
+Сам Node-сервер запускается отдельно (dev — `bun run dev`, prod — `node build/index.js`).
+Запуск прод-сервера через `node` — каноничный рантайм `adapter-node` и самый надёжный: он
+собран под базовый x86-64 и не зависит от SSE4.2/AVX (которые маскировал «Common KVM processor»).
+`bun build/index.js` на host-CPU тоже работает, но `node` безопаснее. systemd-сервис по аналогии
+с `mytra.service` (§5): `WorkingDirectory=/opt/mytra/frontend-svelte`,
+`ExecStart=$(which node) build/index.js`, `Environment=PORT=3000`.
 
 ## 7. Файрвол и проверка
 ```bash
@@ -264,17 +269,30 @@ curl http://localhost/api/login        # JSON (прокси работает)
 x86-64 и работают. Научные пакеты (`pyarrow`, `scipy`, `numpy`) собираются под x86-64-v2
 и могут упасть на старом гипервизоре — проверяйте перед добавлением.
 
+### CPU (прод-сервер): Xeon E5-2603 v3 = Haswell-EP
+Набор инструкций `SSE4.2 + AVX + AVX2 + FMA + BMI1/2 + F16C + AES`, **без AVX-512**.
+- `bun` таргетирует Nehalem (SSE4.2) + AVX2/AVX-512-пути на лету → работает.
+- Бинарники под AVX-512/x86-64-v4 не запустятся — не подключать без проверки.
+- Крах `CPU lacks AVX support`/`Illegal instruction` был из-за эмуляции «Common KVM processor»
+  (маскирует SSE4.2/AVX), а не железа. **ВМ обязана работать на host-CPU** (или `host-passthrough`/`Haswell`).
+- `node build/index.js` не зависит от этих инструкций — прод-фронт безопаснее держать на `node`.
+
 ## Обновление
+Рекомендуемая команда обновления с GitHub (бэкенд + Svelte-фронт «Руны», оба сервиса):
 ```bash
-cd /opt/mytra && git pull && uv sync --python-preference only-system
-cd frontend && bun install && bun run build && cd ..
-sudo systemctl restart mytra
+sudo systemctl stop mytra mytra-frontend && \
+sudo chown -R "$USER:" /opt/mytra && \
+cd /opt/mytra && git reset --hard origin/master && git pull && \
+uv sync --python-preference only-system && \
+cd frontend-svelte && bun install && bun run build && cd .. && \
+sudo chown -R mytra:mytra /opt/mytra && \
+sudo chmod -R o+rX /opt/mytra && \
+sudo systemctl start mytra mytra-frontend
 ```
-Svelte-фронт («Руны», `frontend-svelte/`):
-```bash
-cd /opt/mytra/frontend-svelte && git pull && bun install && bun run build
-# затем перезапустить Node-сервер SvelteKit (systemd-сервис или вручную)
-```
+- `git reset --hard origin/master` — сброс локальных правок на сервере (adapter-node уже в репо — `bun add`/`sed` больше не нужны).
+- `uv sync --python-preference only-system` — бэкенд на системном Python 3.11.
+- `bun install && bun run build` — собирает `frontend-svelte/build/index.js` (Node-сервер SvelteKit).
+- Если всё ещё используется React-фронт (`frontend/`), добавить `cd frontend && bun install && bun run build && cd ..` перед сборкой Svelte.
 
 ## Бэкап БД
 ```bash
@@ -288,7 +306,7 @@ sudo systemctl start mytra
 - **`/api` 404 / Connection refused** — не запущен uvicorn, не включены модули `proxy proxy_http`,
   либо в `ProxyPass`/`ProxyPassReverse` пропущен `/api` в целевом URL (тогда Apache срезает
   префикс и бэкенд не находит маршрут — см. §6).
-- **413 / «файл слишком большой» при загрузке xlsx** — упёрлись в `request_max_body_size=35 МБ`
+- **413 / «файл слишком большой» при загрузке xlsx** — упёрлись в `request_max_body_size=65 МБ`
   в `app.py`, а не в Apache.
 - **«no such table: users»** — не положен `mytra.db` или он пустой.
 - **Логин не проходит** — при первом входе пароль = табельному номеру; пользователь должен быть в базе.

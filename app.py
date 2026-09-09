@@ -50,5 +50,5 @@ app = Litestar(
     middleware=[session_config.middleware],
     cors_config=cors_config,
     exception_handlers={NotFoundException: lambda r, e: Response(content=json.dumps({"error": "Not found"}), media_type="application/json", status_code=404)},
-    request_max_body_size=35 * 1024 * 1024,
+    request_max_body_size=65 * 1024 * 1024,
 )

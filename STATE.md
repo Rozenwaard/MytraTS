@@ -17,26 +17,27 @@
 - Новый код на pandas/numpy не писать; для xlsx — `python-calamine` / `openpyxl`.
 
 ## Запуск (dev)
+> Запуск в **скрытом режиме** (без окон терминала) — через `Start-Process -WindowStyle Hidden`.
+
 ```powershell
-# бэкенд (порт 8000)
-cd C:\Users\ASUS\MaterialThought\MytraTS
-uv run uvicorn app:app --reload --port 8000
+# бэкенд (порт 8000) — в фоне, без окна
+Start-Process pwsh -WindowStyle Hidden -ArgumentList '-NoExit','-Command','cd C:\Users\ASUS\MaterialThought\MytraTS; uv run uvicorn app:app --reload --port 8000'
 
-# фронтенд React (порт 5173, прокси /api → :8000)
-cd C:\Users\ASUS\MaterialThought\MytraTS\frontend
-bun run dev
+# фронтенд React (порт 5173, прокси /api → :8000) — в фоне, без окна
+Start-Process pwsh -WindowStyle Hidden -ArgumentList '-NoExit','-Command','cd C:\Users\ASUS\MaterialThought\MytraTS\frontend; bun run dev'
 
-# фронтенд Svelte «Руны» (порт 5174, прокси /api → :8000)
-cd C:\Users\ASUS\MaterialThought\MytraTS\frontend-svelte
-bun run dev
+# фронтенд Svelte «Руны» (порт 5174, прокси /api → :8000) — в фоне, без окна
+Start-Process pwsh -WindowStyle Hidden -ArgumentList '-NoExit','-Command','cd C:\Users\ASUS\MaterialThought\MytraTS\frontend-svelte; bun run dev'
 ```
 Браузер: http://localhost:5173 (React) / http://localhost:5174 («Руны»). Логин: табельный номер + пароль (первый вход — пароль = табельный номер, потом смена). Тестовый юзер staff_id=2190.
+
+Остановка фонового процесса: `taskkill /PID <pid> /T /F` (pid смотри через `netstat -ano | findstr :8000` / `:5173` / `:5174`).
 
 ## Структура
 ```
 MytraTS/
 ├── app.py                 # точка входа: сборка Litestar-приложения из роутеров
-│                          # (request_max_body_size = 35 МБ — потолок загрузки xlsx;
+│                          # (request_max_body_size = 65 МБ — потолок загрузки xlsx;
 │                          #  CORSConfig только под dev-origin localhost:5173)
 ├── deps.py                # get_current_user, require_auth (общие зависимости)
 ├── sql.py                 # build_in_clause (общий SQL-хелпер для IN)

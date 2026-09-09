@@ -12,21 +12,36 @@ SvelteKit-переезд текущего React-фронтенда. Бэкенд
 - TanStack Query v5 (`@tanstack/svelte-query`) — кэш/дедуп; в перспективе `mutate`+`invalidateQueries` для таблицы с вводом данных.
 - Тема light/dark — `mode-watcher`.
 
+## Ограничения CPU (прод-сервер)
+Прод-сервер — **Intel Xeon E5-2603 v3** = **Haswell-EP** (2014): набор инструкций
+`SSE4.2 + AVX + AVX2 + FMA + BMI1/2 + F16C + AES`, **без AVX-512** (это x86-64-v4).
+Держать в уме при выборе инструментов/нативных зависимостей:
+
+- `bun` официально таргетирует **Nehalem (SSE4.2)** и включает AVX2/AVX-512-пути на лету → на Haswell работает.
+- Бинарники, собранные под **AVX-512 / x86-64-v4**, на этом CPU **не запустятся** — не подключать без проверки.
+- Крах `CPU lacks AVX support` / `Illegal instruction` был из-за эмуляции «Common KVM processor»
+  (маскирует SSE4.2/AVX от гостя), а не из-за железа: ВМ обязана работать на host-CPU
+  (или `host-passthrough`/`Haswell`). На `node build/index.js` это не влияет — node собран под базовый x86-64.
+
 ## Запуск
 > **Запускать оба процесса одновременно** — бэкенд и фронтенд. Фронт проксирует `/api → :8000`, без бэка логин и все запросы падают.
+> **Запуск в скрытом режиме** (без окон терминала) — через `Start-Process -WindowStyle Hidden`; окна терминалов не нужны.
 
 ```powershell
-# 1) бэкенд (порт 8000) — отдельный терминал
-cd C:\Users\ASUS\MaterialThought\MytraTS
-uv run uvicorn app:app --reload --port 8000
+# 1) бэкенд (порт 8000) — в фоне, без окна
+Start-Process pwsh -WindowStyle Hidden -ArgumentList '-NoExit','-Command','cd C:\Users\ASUS\MaterialThought\MytraTS; uv run uvicorn app:app --reload --port 8000'
 
-# 2) фронтенд Svelte «Руны» (порт 5174) — другой терминал
+# 2) фронтенд Svelte «Руны» (порт 5174) — в фоне, без окна
+#    (при первом запуске: cd C:\Users\ASUS\MaterialThought\MytraTS\frontend-svelte; bun install)
+Start-Process pwsh -WindowStyle Hidden -ArgumentList '-NoExit','-Command','cd C:\Users\ASUS\MaterialThought\MytraTS\frontend-svelte; bun run dev'
+
+# проверка типов — не в фоне
 cd C:\Users\ASUS\MaterialThought\MytraTS\frontend-svelte
-bun install
-bun run dev      # порт 5174, прокси /api → :8000
-bun run check    # svelte-check (типы)
+bun run check
 ```
 Браузер: http://localhost:5174. Логин — табельный номер + пароль.
+
+Остановить фоновый процесс: `taskkill /PID <pid> /T /F` (pid — из `netstat -ano | findstr :8000` / `:5174`).
 
 ## Технологические нюансы (грабли, найденные при сборке)
 - **shadcn-svelte v1.6** перешёл на «пресеты» (`nova/vega/maia/lyra/mira/luma/sera/rhea`). Флаг `init --preset` принимает **не имя, а base62-код**: `vega` = `bIkeymG`, `nova` = `b0`, `rhea` = `b27GcrRo`, `mira` = `b1D0dv72`, `luma` = `b1VlIttI`. `--preset vega` (именем) падает с `not a valid preset`.

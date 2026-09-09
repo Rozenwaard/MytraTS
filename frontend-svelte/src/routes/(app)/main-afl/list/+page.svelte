@@ -14,6 +14,7 @@
 		fetchReestrList,
 		findReestr,
 		downloadReestrUrl,
+		fetchAllTaskNumbers,
 		resetReestr,
 		type MainAflRow,
 		type MainAflResponse
@@ -59,6 +60,8 @@
 	let page = $state(1);
 	let sorting = $state<SortingState>([]);
 	let selected = $state<Set<string>>(new Set());
+	let allSelected = $state(false);
+	let selectingAll = $state(false);
 
 	let reestrs = $state<string[]>([]);
 	let meta = $state<Record<string, { task_report: string | null; customer: string | null }>>({});
@@ -123,10 +126,12 @@
 		})
 	);
 
-	const visibleIds = $derived(rows.map((r) => r.task_number).filter(Boolean) as string[]);
-	const allVisibleSelected = $derived(
-		visibleIds.length > 0 && visibleIds.every((id) => selected.has(id))
-	);
+	function currentFilterParams() {
+		return {
+			reestr: reestrFilter || undefined,
+			exact: exact || undefined
+		};
+	}
 	const activeMeta = $derived(meta[activeReestr]);
 
 	function toggleSelected(id: string) {
@@ -134,17 +139,35 @@
 		if (next.has(id)) next.delete(id);
 		else next.add(id);
 		selected = next;
+		allSelected = false;
 	}
 
-	function toggleAllVisible() {
-		const next = new Set(selected);
-		if (allVisibleSelected) {
-			for (const id of visibleIds) next.delete(id);
-		} else {
-			for (const id of visibleIds) next.add(id);
+	async function toggleAllVisible() {
+		if (selectingAll) return;
+		selectingAll = true;
+		try {
+			const ids = await fetchAllTaskNumbers(currentFilterParams());
+			if (allSelected) {
+				selected = new Set();
+				allSelected = false;
+			} else {
+				selected = new Set(ids);
+				allSelected = ids.length > 0;
+				toast(ids.length ? `Выбрано: ${ids.length}` : 'Нет строк в текущем фильтре');
+			}
+		} catch {
+			toast('Ошибка выбора строк');
+		} finally {
+			selectingAll = false;
 		}
-		selected = next;
 	}
+
+	$effect(() => {
+		// сброс «выбрано всё» при смене фильтра
+		reestrFilter;
+		exact;
+		allSelected = false;
+	});
 
 	async function copyTask(id: string) {
 		if (id) await copyText(id);
@@ -231,6 +254,7 @@
 			const result = await resetReestr([...selected]);
 			toast(`Сброшено: ${result.cleared}`);
 			selected = new Set();
+			allSelected = false;
 			queryClient.invalidateQueries({ queryKey: ['main-afl'] });
 			fetchReestrList()
 				.then((d) => {
@@ -311,7 +335,8 @@
 						<input
 							type="checkbox"
 							class="size-4 cursor-pointer accent-primary"
-							checked={allVisibleSelected}
+							checked={allSelected}
+							disabled={selectingAll}
 							onchange={toggleAllVisible}
 						/>
 					</TableHead>
