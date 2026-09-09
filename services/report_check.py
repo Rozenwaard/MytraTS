@@ -488,13 +488,14 @@ _IN_CHUNK = 32500
 
 
 async def recompute_errors(db_session: AsyncSession, task_numbers: list | None = None) -> int:
-    """Пересчитывает и сохраняет ошибки только для строк verified='Нет' AND sent_to_billing='Нет' AND status='Завершено'."""
-    # Ошибки считаются только для строк «на исправлении» (не отмечено проверкой,
-    # не отправлено в биллинг, завершено). У остальных очищаем, чтобы не оставалось
-    # устаревших ошибок.
-    await db_session.execute(
-        text("UPDATE main_afl SET errors = NULL WHERE COALESCE(verified, '') != 'Нет' OR COALESCE(sent_to_billing, '') != 'Нет' OR COALESCE(status, '') != 'Завершено'")
-    )
+    """Удаляет все ошибки, затем считает их только для строк verified='Нет' AND sent_to_billing='Нет' AND status='Завершено'.
+
+    При загрузке (task_numbers задан) — только для затронутых строк; при полном пересчёте
+    (task_numbers=None) — для всех строк, удовлетворяющих условию.
+    """
+    # Сначала удаляем все ошибки, чтобы не оставалось устаревших. Затем считаем только
+    # для значимых на момент загрузки строк (затронутые task_numbers).
+    await db_session.execute(text("UPDATE main_afl SET errors = NULL"))
 
     if task_numbers is not None and not task_numbers:
         await db_session.commit()
