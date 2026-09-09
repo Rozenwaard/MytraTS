@@ -176,6 +176,7 @@ async def api_dashboard_verified_report(request: Request, db_session: AsyncSessi
     clauses, params = build_scope(user, dept)
     clauses.append("verified = 'Нет'")
     clauses.append("sent_to_billing = 'Нет' AND status != 'Закрыто'")
+    clauses.append("(errors IS NULL OR errors = '')")
     where = " AND ".join(clauses)
 
     result = await db_session.execute(
@@ -188,7 +189,30 @@ async def api_dashboard_verified_report(request: Request, db_session: AsyncSessi
                     headers={"Content-Disposition": f"attachment; filename*=UTF-8''{quote(filename)}"})
 
 
+@get("/dashboard/report-counts", guards=[require_auth])
+async def api_dashboard_report_counts(request: Request, db_session: AsyncSession) -> Response:
+    """Число строк в отчётах «Балансовая», «Дата работ», «Отметка о проверке» (зона стоп-фактора + видимость роли)."""
+    user = await get_current_user(request, db_session)
+    base, base_params = build_scope(user, "")
+
+    counts: dict = {}
+    specs = [
+        ("balance", ["errors LIKE :be"], {"be": "%Балансовая принадлежность%"}),
+        ("date", ["errors LIKE :dw"], {"dw": "%Дата работ%"}),
+        ("verified", ["verified = 'Нет'", "(errors IS NULL OR errors = '')"], {}),
+    ]
+    for label, extra_clauses, extra_params in specs:
+        clauses = base + extra_clauses + ["sent_to_billing = 'Нет' AND status != 'Закрыто'"]
+        params = {**base_params, **extra_params}
+        where = " AND ".join(clauses)
+        counts[label] = (await db_session.execute(
+            text(f"SELECT COUNT(*) FROM main_afl WHERE {where}"), params)).scalar()
+
+    return Response(content=json.dumps(counts, ensure_ascii=False), media_type="application/json")
+
+
 dashboard_router = Router("/api", route_handlers=[
     api_dashboard_summary, api_dashboard_overview, api_dashboard_errors_report,
     api_dashboard_balance_report, api_dashboard_date_report, api_dashboard_verified_report,
+    api_dashboard_report_counts,
 ])

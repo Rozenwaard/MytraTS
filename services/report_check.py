@@ -488,11 +488,12 @@ _IN_CHUNK = 32500
 
 
 async def recompute_errors(db_session: AsyncSession, task_numbers: list | None = None) -> int:
-    """Пересчитывает и сохраняет ошибки только для строк со status LIKE 'З%'."""
-    # Ошибки считаются только для закрытых/завершённых заданий (status LIKE 'З%').
-    # У остальных очищаем, чтобы не оставалось устаревших ошибок.
+    """Пересчитывает и сохраняет ошибки только для строк verified='Нет' AND sent_to_billing='Нет' AND status='Завершено'."""
+    # Ошибки считаются только для строк «на исправлении» (не отмечено проверкой,
+    # не отправлено в биллинг, завершено). У остальных очищаем, чтобы не оставалось
+    # устаревших ошибок.
     await db_session.execute(
-        text("UPDATE main_afl SET errors = NULL WHERE status NOT LIKE 'З%'")
+        text("UPDATE main_afl SET errors = NULL WHERE COALESCE(verified, '') != 'Нет' OR COALESCE(sent_to_billing, '') != 'Нет' OR COALESCE(status, '') != 'Завершено'")
     )
 
     if task_numbers is not None and not task_numbers:
@@ -512,12 +513,13 @@ async def recompute_errors(db_session: AsyncSession, task_numbers: list | None =
 
 
 async def _recompute_errors_chunk(db_session: AsyncSession, task_numbers: list | None) -> int:
+    condition = "verified = 'Нет' AND sent_to_billing = 'Нет' AND status = 'Завершено'"
     if task_numbers is not None:
         names, params = _in_clause("ce", task_numbers)
         result = await db_session.execute(
-            text(f"SELECT * FROM main_afl WHERE task_number IN ({names}) AND status LIKE 'З%'"), params)
+            text(f"SELECT * FROM main_afl WHERE task_number IN ({names}) AND {condition}"), params)
     else:
-        result = await db_session.execute(text("SELECT * FROM main_afl WHERE status LIKE 'З%'"))
+        result = await db_session.execute(text(f"SELECT * FROM main_afl WHERE {condition}"))
 
     rows = [dict(r._mapping) for r in result]
     updates = [{"e": join_errors(check_row(row)), "tn": row["task_number"]} for row in rows]

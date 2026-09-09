@@ -14,7 +14,9 @@
 		createReestr,
 		downloadReestrUrl,
 		fetchAllTaskNumbers,
+		fetchDashboardReportCounts,
 		fetchMainAflStats,
+		type DashboardReportCounts,
 		type MainAflRow,
 		type MainAflResponse,
 		type MainAflStats
@@ -83,6 +85,20 @@
 	const canSelectForReestr = $derived(
 		auth.user?.role === 'менеджер' || auth.user?.role === 'оператор' || auth.user?.role === 'работник'
 	);
+
+	const canAdminReports = $derived(
+		auth.user?.role === 'администратор' || auth.user?.role === 'специалист'
+	);
+
+	let reportCounts = $state<DashboardReportCounts | null>(null);
+
+	$effect(() => {
+		if (canAdminReports) {
+			fetchDashboardReportCounts()
+				.then((c) => (reportCounts = c))
+				.catch(() => {});
+		}
+	});
 
 	let selected = $state<Set<string>>(new Set());
 	let allSelected = $state(false);
@@ -430,6 +446,22 @@
 					</Button>
 				{/if}
 				<Button variant="outline" size="sm" onclick={resetFilters}>Сброс фильтров</Button>
+				{#if canSelectForReestr}
+					<Button variant="outline" size="sm" onclick={() => window.open('/api/dashboard/errors-report', '_blank')}>
+						Отчёт об ошибках
+					</Button>
+				{/if}
+				{#if canAdminReports}
+					<Button variant="outline" size="sm" onclick={() => window.open('/api/dashboard/balance-report', '_blank')}>
+						Балансовая принадлежность{reportCounts ? ` (${reportCounts.balance})` : ''}
+					</Button>
+					<Button variant="outline" size="sm" onclick={() => window.open('/api/dashboard/date-report', '_blank')}>
+						Дата работ{reportCounts ? ` (${reportCounts.date})` : ''}
+					</Button>
+					<Button variant="outline" size="sm" onclick={() => window.open('/api/dashboard/verified-report', '_blank')}>
+						Отметка о проверке{reportCounts ? ` (${reportCounts.verified})` : ''}
+					</Button>
+				{/if}
 			</div>
 		</div>
 		<div class="rounded-md border bg-card p-3">

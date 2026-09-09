@@ -123,6 +123,16 @@ export async function fetchMainAflStats(): Promise<MainAflStats> {
 	return api<MainAflStats>('/api/main-afl/stats');
 }
 
+export interface DashboardReportCounts {
+	balance: number;
+	date: number;
+	verified: number;
+}
+
+export async function fetchDashboardReportCounts(): Promise<DashboardReportCounts> {
+	return api<DashboardReportCounts>('/api/dashboard/report-counts');
+}
+
 export interface ReestrListResponse {
 	reestrs: string[];
 	meta: Record<string, { task_report: string | null; customer: string | null }>;

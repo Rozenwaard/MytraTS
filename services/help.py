@@ -16,6 +16,7 @@ HELP_KEYS = {
     "instruction": "Инструкция",
     "tariffs": "Тарифы",
     "operators": "Операторы",
+    "task-report": "Отчёт по заданию",
 }
 
 
@@ -95,6 +96,12 @@ def _postprocess_instruction(blocks: list[dict]) -> list[dict]:
 def parse_instruction_docx(content: bytes) -> list[dict]:
     """Инструкция: docx → блоки с разделами (h) и без строки версии."""
     return _postprocess_instruction(parse_docx_to_blocks(content))
+
+
+def parse_task_report_docx(content: bytes) -> list[dict]:
+    """«Правила проверки отчёта Алькор»: docx → заголовок + нумерованные правила (без оглавления)."""
+    blocks = parse_docx_to_blocks(content)
+    return [{"type": "p", "text": "Правила проверки отчёта Алькор"}] + blocks
 
 
 # Контент вкладки «Операторы» (статический, без загрузки/скачивания).
