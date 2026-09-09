@@ -488,14 +488,20 @@ _IN_CHUNK = 32500
 
 
 async def recompute_errors(db_session: AsyncSession, task_numbers: list | None = None) -> int:
-    """Удаляет все ошибки, затем считает их только для строк verified='Нет' AND sent_to_billing='Нет' AND status='Завершено'.
+    """Очищает ошибки у затронутых строк и считает их заново только для verified='Нет' AND sent_to_billing='Нет' AND status='Завершено'.
 
-    При загрузке (task_numbers задан) — только для затронутых строк; при полном пересчёте
-    (task_numbers=None) — для всех строк, удовлетворяющих условию.
+    При загрузке (task_numbers задан) — только для затронутых строк (старые строки не трогаем);
+    при полном пересчёте (task_numbers=None) — для всех строк.
     """
-    # Сначала удаляем все ошибки, чтобы не оставалось устаревших. Затем считаем только
-    # для значимых на момент загрузки строк (затронутые task_numbers).
-    await db_session.execute(text("UPDATE main_afl SET errors = NULL"))
+    if task_numbers is not None:
+        # Очищаем ошибки только у затронутых строк (замещаемых/обновляемых при слиянии),
+        # чтобы старые строки, не попавшие в загрузку, не теряли свои ошибки.
+        for i in range(0, len(task_numbers), _IN_CHUNK):
+            names, params = _in_clause("cl", task_numbers[i:i + _IN_CHUNK])
+            await db_session.execute(
+                text(f"UPDATE main_afl SET errors = NULL WHERE task_number IN ({names})"), params)
+    else:
+        await db_session.execute(text("UPDATE main_afl SET errors = NULL"))
 
     if task_numbers is not None and not task_numbers:
         await db_session.commit()
