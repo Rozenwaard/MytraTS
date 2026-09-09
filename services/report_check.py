@@ -488,7 +488,7 @@ _IN_CHUNK = 32500
 
 
 async def recompute_errors(db_session: AsyncSession, task_numbers: list | None = None) -> int:
-    """Очищает ошибки у затронутых строк и считает их заново только для verified='Нет' AND sent_to_billing='Нет' AND status='Завершено'.
+    """Очищает ошибки у затронутых строк и считает их заново только для verified='Нет' AND sent_to_billing='Нет' AND status='Завершено' AND reestr_number IS NULL.
 
     При загрузке (task_numbers задан) — только для затронутых строк (старые строки не трогаем);
     при полном пересчёте (task_numbers=None) — для всех строк.
@@ -520,7 +520,7 @@ async def recompute_errors(db_session: AsyncSession, task_numbers: list | None =
 
 
 async def _recompute_errors_chunk(db_session: AsyncSession, task_numbers: list | None) -> int:
-    condition = "verified = 'Нет' AND sent_to_billing = 'Нет' AND status = 'Завершено'"
+    condition = "verified = 'Нет' AND sent_to_billing = 'Нет' AND status = 'Завершено' AND reestr_number IS NULL"
     if task_numbers is not None:
         names, params = _in_clause("ce", task_numbers)
         result = await db_session.execute(
