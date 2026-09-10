@@ -168,8 +168,6 @@ TASK_OUTPUT_RULES = [
      "sent_to_billing = 'Да' AND task_output IS NULL", None),
     ("task_output = 'Не исполнено', task_detail = '9'",
      "task_output IS NULL", None),
-    ("task_output = 'Проверка', task_detail = '10'",
-     "sent_to_billing = 'Да' AND task_output = 'Не исполнено'", 70),
 ]
 
 
@@ -315,6 +313,14 @@ async def process_raw_afl(db_session: AsyncSession, upload_progress: dict, uploa
 
         # === Шаг 5: task_report (DJ) ===
         await _apply_rules(db_session, TASK_REPORT_RULES, upload_progress, upload_id, total_rows)
+
+        # Коды 66 «Объект эксплуатируется» и 33 «Отсутствует связь с ВПУ» (только ПСК)
+        # не дают вид работ → task_report = NULL (иначе попадали бы в «Бытовые заявки»).
+        await db_session.execute(text(
+            "UPDATE raw_afl SET task_report = NULL "
+            "WHERE task_detail = 'Объект эксплуатируется' "
+            "OR (task_detail = 'Отсутствует связь с ВПУ' AND customer = 'ПСК')"
+        ))
 
 
         # === Шаг 6: task_report_id ===
