@@ -177,6 +177,8 @@ def render_help_html(title: str, blocks: list[dict]) -> str:
         if b["type"] == "p":
             text = html.escape(b["text"]).replace("\n", "<br>")
             parts.append(f"<p>{text}</p>")
+        elif b["type"] == "h":
+            parts.append(f"<h2>{html.escape(b['text'])}</h2>")
         else:
             parts.append("<table>")
             for i, row in enumerate(b["rows"]):
@@ -197,6 +199,7 @@ def render_help_html(title: str, blocks: list[dict]) -> str:
   @page {{ size: A4; margin: 18mm 15mm; }}
   body {{ font-family: 'Segoe UI', Arial, sans-serif; color: #1f2937; font-size: 13px; line-height: 1.55; margin: 0; }}
   h1 {{ font-size: 20px; margin: 0 0 16px; }}
+  h2 {{ font-size: 16px; margin: 22px 0 8px; border-bottom: 1px solid #e2e8f0; padding-bottom: 4px; }}
   p {{ margin: 0 0 10px; }}
   table {{ border-collapse: collapse; width: 100%; margin: 8px 0 16px; }}
   th, td {{ border: 1px solid #cbd5e1; padding: 6px 8px; vertical-align: top; text-align: left; font-size: 12px; }}
