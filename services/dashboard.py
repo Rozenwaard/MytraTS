@@ -87,3 +87,35 @@ def generate_task_numbers_xlsx(rows) -> bytes:
     buf = io.BytesIO()
     wb.save(buf)
     return buf.getvalue()
+
+
+def generate_recheck_xlsx(rows, balance_rows, date_rows) -> bytes:
+    """Отчёт «Повторная проверка»: 3 вкладки — общие ошибки, балансовая принадлежность, дата работ."""
+    wb = Workbook()
+
+    ws = wb.active
+    ws.title = "Ошибки"
+    ws.append(["Номер задания", "Ошибки", "Комментарий"])
+    for tn, errors, comment in rows:
+        ws.append([tn, errors, comment])
+    ws.column_dimensions["A"].width = 28
+    ws.column_dimensions["B"].width = 90
+    ws.column_dimensions["C"].width = 30
+
+    ws_balance = wb.create_sheet("Балансовая принадлежность")
+    ws_balance.append(["Номер задания", "Комментарий"])
+    for tn, comment in balance_rows:
+        ws_balance.append([tn, comment])
+    ws_balance.column_dimensions["A"].width = 28
+    ws_balance.column_dimensions["B"].width = 60
+
+    ws_date = wb.create_sheet("Дата работ")
+    ws_date.append(["Номер задания", "Комментарий"])
+    for tn, comment in date_rows:
+        ws_date.append([tn, comment])
+    ws_date.column_dimensions["A"].width = 28
+    ws_date.column_dimensions["B"].width = 60
+
+    buf = io.BytesIO()
+    wb.save(buf)
+    return buf.getvalue()

@@ -19,8 +19,9 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from deps import get_current_user, require_auth
 from sql import norm_name
+from services.dashboard import generate_recheck_xlsx
 from services.reestr import generate_dop_report_xlsx_bytes, generate_fin_report_xlsx_bytes
-from services.report_check import STOP_FACTOR_REGIONS, STOP_FACTOR_DISTRICTS
+from services.report_check import BALANCE_ERRORS, check_row, join_errors, STOP_FACTOR_REGIONS, STOP_FACTOR_DISTRICTS
 
 
 def _normal_work_types_clause():
@@ -233,6 +234,86 @@ async def api_fin_report_discrepancies(
     return Response(content=json.dumps({"success": True, "updated": updated, "not_found": not_found}, ensure_ascii=False), media_type="application/json")
 
 
+@post("/fin-report/recheck", guards=[require_auth])
+async def api_fin_report_recheck(
+    request: Request, db_session: AsyncSession,
+    data: UploadFile = Body(media_type=RequestEncodingType.MULTI_PART),
+) -> Response:
+    """«Повторная проверка»: txt с номерами заданий (по одному на строку).
+
+    Для найденных строк: report = NULL + пересчёт ошибок по общим правилам БЕЗ ограничений
+    (verified/status/sent_to_billing/reestr_number). Возвращает xlsx с ошибками и колонкой
+    «Комментарий» («Заблокировано исправление» для status='Закрыто' или sent_to_billing='Да').
+    """
+    user = await get_current_user(request, db_session)
+    if user.effective_role != "администратор":
+        return Response(content=json.dumps({"error": "Нет прав"}, ensure_ascii=False), media_type="application/json", status_code=403)
+
+    if not data or not data.filename.lower().endswith(".txt"):
+        return Response(content=json.dumps({"error": "Нужен файл .txt"}, ensure_ascii=False), media_type="application/json", status_code=400)
+
+    raw = await data.read()
+    text_content = None
+    for enc in ("utf-8-sig", "utf-8", "cp1251"):
+        try:
+            text_content = raw.decode(enc)
+            break
+        except UnicodeDecodeError:
+            continue
+    if text_content is None:
+        return Response(content=json.dumps({"error": "Не удалось прочитать txt (кодировка)"}, ensure_ascii=False), media_type="application/json", status_code=400)
+
+    numbers = [line.strip() for line in text_content.splitlines() if line.strip()]
+    if not numbers:
+        return Response(content=json.dumps({"error": "Файл пуст"}, ensure_ascii=False), media_type="application/json", status_code=400)
+
+    updates = []
+    report_rows = []
+    balance_rows = []
+    date_rows = []
+    not_found = 0
+    for tn in numbers:
+        result = await db_session.execute(text("SELECT * FROM main_afl WHERE task_number = :tn"), {"tn": tn})
+        row = result.fetchone()
+        if row is None:
+            not_found += 1
+            continue
+        row = dict(row._mapping)
+        errors = check_row(row)
+        updates.append({"e": join_errors(errors), "tn": tn})
+
+        general = []
+        for e in errors:
+            if e in BALANCE_ERRORS:
+                balance_rows.append((tn, e))
+            elif e == "Дата работ":
+                date_rows.append((tn, e))
+            else:
+                general.append(e)
+        if general:
+            comment = "Заблокировано исправление" if (row.get("status") == "Закрыто" or row.get("sent_to_billing") == "Да") else ""
+            report_rows.append((tn, join_errors(general), comment))
+
+    if updates:
+        await db_session.execute(
+            text("UPDATE main_afl SET report = NULL, reestr_number = NULL, reestr_date = NULL, errors = :e WHERE task_number = :tn"),
+            updates,
+        )
+    await db_session.commit()
+
+    output = generate_recheck_xlsx(report_rows, balance_rows, date_rows)
+    filename = f"Повторная_проверка_{datetime.now().strftime('%Y-%m-%d_%H-%M-%S')}.xlsx"
+    return Response(
+        content=output,
+        media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        headers={
+            "Content-Disposition": f"attachment; filename*=UTF-8''{quote(filename)}",
+            "X-Updated": str(len(updates)),
+            "X-Not-Found": str(not_found),
+        },
+    )
+
+
 download_progress: dict[str, dict] = {}
 download_results: dict[str, bytes] = {}
 
@@ -311,6 +392,6 @@ async def _run_download(download_id: str, period_fmt: str):
 
 
 fin_report_router = Router("/api", route_handlers=[
-    api_fin_report, api_fin_report_add, api_fin_report_discrepancies,
+    api_fin_report, api_fin_report_add, api_fin_report_discrepancies, api_fin_report_recheck,
     api_fin_report_download_start, api_fin_report_download_progress, api_fin_report_download_result,
 ])
