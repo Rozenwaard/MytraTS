@@ -192,7 +192,7 @@ async def api_dashboard_verified_report(request: Request, db_session: AsyncSessi
 
 @get("/dashboard/report-counts", guards=[require_auth])
 async def api_dashboard_report_counts(request: Request, db_session: AsyncSession) -> Response:
-    """Число строк в отчётах «Балансовая», «Дата работ», «Отметка о проверке» (зона стоп-фактора + видимость роли)."""
+    """Число строк в отчётах «Балансовая», «Дата работ», «Отметка о проверке», «Отчёт об ошибках» (зона стоп-фактора + видимость роли)."""
     user = await get_current_user(request, db_session)
     base, base_params = build_scope(user, "")
 
@@ -209,11 +209,44 @@ async def api_dashboard_report_counts(request: Request, db_session: AsyncSession
         counts[label] = (await db_session.execute(
             text(f"SELECT COUNT(*) FROM main_afl WHERE {where}"), params)).scalar()
 
+    # «Отчёт об ошибках»: строки с ошибками, кроме балансовых и «Дата работ» (считаем в Python, как в выгрузке).
+    err_clauses = base + ["(errors IS NOT NULL AND errors != '')", "sent_to_billing = 'Нет' AND status = 'Завершено'"]
+    err_where = " AND ".join(err_clauses)
+    result = await db_session.execute(
+        text(f"SELECT errors FROM main_afl WHERE {err_where}"), base_params)
+    excluded = BALANCE_ERRORS | {"Дата работ"}
+    counts["errors"] = sum(
+        1 for (errors_text,) in result
+        if any(e not in excluded for e in split_errors(errors_text))
+    )
+
     return Response(content=json.dumps(counts, ensure_ascii=False), media_type="application/json")
+
+
+@get("/dashboard/errors-by-locale", guards=[require_auth])
+async def api_dashboard_errors_by_locale(request: Request, db_session: AsyncSession) -> Response:
+    """Строки с ошибками «на исправлении» в зоне стоп-фактора — по группам (locale)."""
+    user = await get_current_user(request, db_session)
+    clauses, params = build_scope(user, "")
+    clauses.append("(errors IS NOT NULL AND errors != '')")
+    clauses.append("sent_to_billing = 'Нет' AND status = 'Завершено'")
+    where = " AND ".join(clauses)
+
+    locale_expr = (
+        f"COALESCE((SELECT locale FROM users WHERE {norm_name('users.full_name')} = {norm_name('main_afl.executor')} LIMIT 1), '(без локали)')"
+    )
+    result = await db_session.execute(text(
+        f"SELECT {locale_expr} AS locale, COUNT(*) AS cnt FROM main_afl WHERE {where} GROUP BY locale ORDER BY cnt DESC"
+    ), params)
+    by_locale = [{"locale": row[0], "count": row[1]} for row in result]
+
+    return Response(content=json.dumps(
+        {"total": sum(item["count"] for item in by_locale), "by_locale": by_locale},
+        ensure_ascii=False), media_type="application/json")
 
 
 dashboard_router = Router("/api", route_handlers=[
     api_dashboard_summary, api_dashboard_overview, api_dashboard_errors_report,
     api_dashboard_balance_report, api_dashboard_date_report, api_dashboard_verified_report,
-    api_dashboard_report_counts,
+    api_dashboard_report_counts, api_dashboard_errors_by_locale,
 ])

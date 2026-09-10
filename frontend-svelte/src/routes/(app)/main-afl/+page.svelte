@@ -93,7 +93,7 @@
 	let reportCounts = $state<DashboardReportCounts | null>(null);
 
 	$effect(() => {
-		if (canAdminReports) {
+		if (canAdminReports || canSelectForReestr) {
 			fetchDashboardReportCounts()
 				.then((c) => (reportCounts = c))
 				.catch(() => {});
@@ -448,7 +448,7 @@
 				<Button variant="outline" size="sm" onclick={resetFilters}>Сброс фильтров</Button>
 				{#if canSelectForReestr}
 					<Button variant="outline" size="sm" onclick={() => window.open('/api/dashboard/errors-report', '_blank')}>
-						Отчёт об ошибках
+						Отчёт об ошибках{reportCounts ? ` (${reportCounts.errors})` : ''}
 					</Button>
 				{/if}
 				{#if canAdminReports}

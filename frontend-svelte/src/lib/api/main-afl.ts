@@ -127,6 +127,7 @@ export interface DashboardReportCounts {
 	balance: number;
 	date: number;
 	verified: number;
+	errors: number;
 }
 
 export async function fetchDashboardReportCounts(): Promise<DashboardReportCounts> {
