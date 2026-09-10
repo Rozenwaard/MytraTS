@@ -33,6 +33,7 @@ export const SUB_NAV: Record<string, SubTab[]> = {
 	'/help': [
 		{ href: '/help', label: 'Инструкция' },
 		{ href: '/help/tariffs', label: 'Тарифы' },
-		{ href: '/help/task-report', label: 'Отчёт по заданию' }
+		{ href: '/help/task-report', label: 'Отчёт по заданию' },
+		{ href: '/help/operators', label: 'Операторы' }
 	]
 };
