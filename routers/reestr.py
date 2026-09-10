@@ -12,7 +12,7 @@ from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from deps import get_current_user, require_auth
-from sql import build_in_clause
+from sql import build_in_clause, norm_name
 from services.reestr import DEPT_PREFIXES, LOCALE_SUFFIXES, generate_reestr_xlsx_bytes
 from services.report_check import is_stop_blocked
 
@@ -37,7 +37,7 @@ async def api_reestr(
         names, bind_params = build_in_clause("tn", chunk)
         result = await db_session.execute(
             text(f"SELECT task_number, task_report, executor_organization, customer, grid, reestr_number, errors, region, municipal_district, "
-                 f"(SELECT locale FROM users WHERE users.full_name = main_afl.executor LIMIT 1) as locale "
+                 f"(SELECT locale FROM users WHERE {norm_name('users.full_name')} = {norm_name('main_afl.executor')} LIMIT 1) as locale "
                  f"FROM main_afl WHERE task_number IN ({names})"), bind_params)
         all_rows.extend([dict(row._mapping) for row in result])
 
@@ -148,7 +148,7 @@ async def api_reestr_list(request: Request, db_session: AsyncSession) -> Respons
     query = "SELECT DISTINCT reestr_number FROM main_afl WHERE reestr_number IS NOT NULL AND reestr_number != 'Отклонён'"
     params = {}
     if user.effective_role in ("оператор", "работник"):
-        query += " AND executor IN (SELECT full_name FROM users WHERE locale = :locale)"
+        query += f" AND {norm_name('executor')} IN (SELECT {norm_name('full_name')} FROM users WHERE locale = :locale)"
         params["locale"] = user.locale
     elif user.effective_role == "менеджер":
         query += " AND executor_organization = :dept"
@@ -181,7 +181,7 @@ async def api_reestr_find(request: Request, db_session: AsyncSession, q: str = "
     )
     params = {"q": q}
     if user.effective_role in ("оператор", "работник"):
-        query += " AND executor IN (SELECT full_name FROM users WHERE locale = :locale)"
+        query += f" AND {norm_name('executor')} IN (SELECT {norm_name('full_name')} FROM users WHERE locale = :locale)"
         params["locale"] = user.locale
     elif user.effective_role == "менеджер":
         query += " AND executor_organization = :dept"

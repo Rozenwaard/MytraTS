@@ -40,7 +40,7 @@ MytraTS/
 │                          # (request_max_body_size = 65 МБ — потолок загрузки xlsx;
 │                          #  CORSConfig только под dev-origin localhost:5173)
 ├── deps.py                # get_current_user, require_auth (общие зависимости)
-├── sql.py                 # build_in_clause (общий SQL-хелпер для IN)
+├── sql.py                 # build_in_clause, norm_name (общие SQL-хелперы: IN-клаузы + нормализация ФИО «ё/е»)
 ├── data/
 │   ├── config.py          # engine, SECRET_KEY из .env
 │   └── models.py          # RawAfl, MainAfl (+errors, +norm, +extra), StoryAfl, Tabel, Carte, Utalo, Calendar, User, HelpPage (+ ROLES, FIELD_ROLES, ADMIN_ROLES)
@@ -222,6 +222,7 @@ MytraTS/
 
 ## Конвенции
 - SQL: только bindparams (`:name`), без f-string-инъекций. Для IN — `build_in_clause(prefix, values)` в sql.py. Большие списки (десятки тысяч) бить на чанки `_IN_CHUNK = 32500` — лимит SQLite на число переменных (32766).
+- Сравнение ФИО (`executor` ↔ `users.full_name`) — всегда через `norm_name()` из `sql.py` (нормализация «ё/е» на лету, данные в БД не меняем). Без неё «Артем» из выгрузки не совпадёт с «Артём» в users: строка молча потеряется при отсеве или не засчитается в премию/видимость.
 - Роли проверяются через `user.effective_role`.
 - Фильтры на бэке строятся из `clauses` + `params` dict.
 - Фронт: типы в `api/main-afl.ts`, запросы через `api<T>()` (client.ts, credentials:include).

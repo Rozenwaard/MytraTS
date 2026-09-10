@@ -4,7 +4,7 @@ from openpyxl import Workbook
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from sql import build_in_clause
+from sql import build_in_clause, norm_name
 
 
 # ─── Нормативы (минуты) — источник истины: таблица carte ───
@@ -129,13 +129,13 @@ async def aggregate_utalo(db_session: AsyncSession) -> int:
     Доп.: task_report = источник extra («Код …» или «Выполнение задания в Алькоре»), norm_sum = extra.
     """
     await db_session.execute(text("DELETE FROM utalo"))
-    await db_session.execute(text("""
+    await db_session.execute(text(f"""
         INSERT INTO utalo (period, staff_id, full_name, position, dept, task_report, count, norm_sum)
         SELECT SUBSTR(m.done_day, 1, 4) || ' ' || SUBSTR(m.done_day, 6, 2),
                u.staff_id, u.full_name, u.position, u.dept, m.task_report,
                COUNT(*), SUM(m.norm)
         FROM main_afl m
-        JOIN users u ON u.full_name = m.executor
+        JOIN users u ON {norm_name('u.full_name')} = {norm_name('m.executor')}
         WHERE m.norm != 0 AND m.done_day IS NOT NULL
         GROUP BY 1, 2, 3, 4, 5, 6
 
@@ -149,7 +149,7 @@ async def aggregate_utalo(db_session: AsyncSession) -> int:
                ),
                COUNT(*), SUM(m.extra)
         FROM main_afl m
-        JOIN users u ON u.full_name = m.executor
+        JOIN users u ON {norm_name('u.full_name')} = {norm_name('m.executor')}
         WHERE m.extra != 0 AND m.done_day IS NOT NULL
         GROUP BY 1, 2, 3, 4, 5, 6
     """))

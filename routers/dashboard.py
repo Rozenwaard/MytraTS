@@ -11,6 +11,7 @@ from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from deps import get_current_user, require_auth
+from sql import norm_name
 from services.dashboard import build_scope, generate_errors_xlsx, generate_balance_xlsx, generate_task_numbers_xlsx, pick_pu_type
 from services.report_check import split_errors, join_errors, BALANCE_ERRORS
 
@@ -61,7 +62,7 @@ async def api_dashboard_overview(request: Request, db_session: AsyncSession) -> 
     params: dict = {}
 
     if user.effective_role in ("оператор", "работник"):
-        base_where += " AND executor IN (SELECT full_name FROM users WHERE locale = :locale)"
+        base_where += f" AND {norm_name('executor')} IN (SELECT {norm_name('full_name')} FROM users WHERE locale = :locale)"
         params["locale"] = user.locale
     elif user.effective_role == "менеджер":
         base_where += " AND executor_organization = :dept"

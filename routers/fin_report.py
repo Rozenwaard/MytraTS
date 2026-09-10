@@ -18,6 +18,7 @@ from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from deps import get_current_user, require_auth
+from sql import norm_name
 from services.reestr import generate_dop_report_xlsx_bytes, generate_fin_report_xlsx_bytes
 from services.report_check import STOP_FACTOR_REGIONS, STOP_FACTOR_DISTRICTS
 
@@ -40,7 +41,7 @@ def _stop_zone_clause():
 
 
 def _locale_expr():
-    return "COALESCE((SELECT locale FROM users WHERE users.full_name = main_afl.executor LIMIT 1), '(без локали)')"
+    return f"COALESCE((SELECT locale FROM users WHERE {norm_name('users.full_name')} = {norm_name('main_afl.executor')} LIMIT 1), '(без локали)')"
 
 
 def _cost_expr():

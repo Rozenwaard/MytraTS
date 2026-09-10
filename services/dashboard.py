@@ -4,6 +4,7 @@ import io
 
 from openpyxl import Workbook
 
+from sql import norm_name
 from services.report_check import STOP_FACTOR_REGIONS, STOP_FACTOR_DISTRICTS
 
 
@@ -30,7 +31,7 @@ def build_scope(user, dept: str = "") -> tuple[list, dict]:
 
     role = user.effective_role
     if role in ("оператор", "работник"):
-        clauses.append("executor IN (SELECT full_name FROM users WHERE locale = :locale)")
+        clauses.append(f"{norm_name('executor')} IN (SELECT {norm_name('full_name')} FROM users WHERE locale = :locale)")
         params["locale"] = user.locale
     elif role == "менеджер":
         clauses.append("executor_organization = :dept")

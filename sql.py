@@ -6,3 +6,8 @@ def build_in_clause(prefix: str, values: list[str]) -> tuple[str, dict]:
     placeholders = {f"{prefix}{i}": v for i, v in enumerate(values)}
     names = ", ".join(f":{prefix}{i}" for i in range(len(values)))
     return names, placeholders
+
+
+def norm_name(column: str) -> str:
+    """SQL-выражение нормализации ФИО «ё/е» для сравнения (данные в БД не меняем)."""
+    return f"REPLACE(REPLACE({column}, 'ё', 'е'), 'Ё', 'Е')"

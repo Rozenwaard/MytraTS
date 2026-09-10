@@ -8,6 +8,7 @@ from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from deps import get_current_user, require_auth
+from sql import norm_name
 
 
 @get("/executor-organizations", guards=[require_auth])
@@ -23,7 +24,7 @@ async def api_executors(request: Request, db_session: AsyncSession) -> Response:
     user = await get_current_user(request, db_session)
     if user.effective_role in ("оператор", "работник"):
         result = await db_session.execute(text(
-            "SELECT DISTINCT executor FROM main_afl WHERE executor IN (SELECT full_name FROM users WHERE locale = :locale) AND executor IS NOT NULL ORDER BY executor"),
+            f"SELECT DISTINCT executor FROM main_afl WHERE {norm_name('executor')} IN (SELECT {norm_name('full_name')} FROM users WHERE locale = :locale) AND executor IS NOT NULL ORDER BY executor"),
             {"locale": user.locale})
     elif user.effective_role == "менеджер":
         result = await db_session.execute(text(
@@ -43,7 +44,7 @@ async def api_task_reports(request: Request, db_session: AsyncSession) -> Respon
             AND task_report NOT IN ('Диспетчеризация', 'Дубли')"""
     params = {}
     if user.effective_role in ("оператор", "работник"):
-        query += " AND executor IN (SELECT full_name FROM users WHERE locale = :locale)"
+        query += f" AND {norm_name('executor')} IN (SELECT {norm_name('full_name')} FROM users WHERE locale = :locale)"
         params["locale"] = user.locale
     elif user.effective_role == "менеджер":
         query += " AND executor_organization = :dept"

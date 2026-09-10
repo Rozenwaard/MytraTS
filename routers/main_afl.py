@@ -10,7 +10,7 @@ from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from deps import get_current_user, require_auth
-from sql import build_in_clause
+from sql import build_in_clause, norm_name
 from services.premium import apply_manual_norm
 
 MAIN_AFL_DISPLAY_COLUMNS = [
@@ -34,7 +34,7 @@ def _build_main_afl_clauses(user, search, customer, task_report, executor_org,
     clauses.append("status LIKE 'З%'")
 
     if user.effective_role in ("оператор", "работник"):
-        clauses.append("executor IN (SELECT full_name FROM users WHERE locale = :locale)")
+        clauses.append(f"{norm_name('executor')} IN (SELECT {norm_name('full_name')} FROM users WHERE locale = :locale)")
         params["locale"] = user.locale
     elif user.effective_role == "менеджер":
         clauses.append("executor_organization = :dept")
@@ -161,7 +161,7 @@ async def api_main_afl_stats(request: Request, db_session: AsyncSession) -> Resp
     base_where += " AND status LIKE 'З%'"
 
     if user.effective_role in ("оператор", "работник"):
-        base_where += " AND executor IN (SELECT full_name FROM users WHERE locale = :locale)"
+        base_where += f" AND {norm_name('executor')} IN (SELECT {norm_name('full_name')} FROM users WHERE locale = :locale)"
         params["locale"] = user.locale
     elif user.effective_role == "менеджер":
         base_where += " AND executor_organization = :dept"
@@ -193,7 +193,7 @@ async def api_main_afl_stats(request: Request, db_session: AsyncSession) -> Resp
         text(f"""SELECT m.executor, m.cnt, u.locale
                  FROM (SELECT executor, COUNT(*) as cnt FROM main_afl
                        WHERE {base_where} AND executor IS NOT NULL GROUP BY executor) m
-                 LEFT JOIN users u ON u.full_name = m.executor
+                 LEFT JOIN users u ON {norm_name('u.full_name')} = {norm_name('m.executor')}
                  ORDER BY m.executor"""), params)
     executors = [{"label": row[0], "count": row[1], "locale": row[2]} for row in ex_result]
 
