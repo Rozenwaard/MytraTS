@@ -488,3 +488,12 @@ class HelpPage(Base):
     title: Mapped[str] = mapped_column(Text)
     content: Mapped[str] = mapped_column(Text)   # JSON: {"blocks": [...]}
     updated_at: Mapped[Optional[str]] = mapped_column(Text)
+
+
+class DiscrepanciesLog(Base):
+    __tablename__ = 'discrepancies_log'
+
+    id: Mapped[Optional[int]] = mapped_column(Integer, primary_key=True)
+    batch_id: Mapped[str] = mapped_column(Text)
+    payload: Mapped[str] = mapped_column(Text)   # JSON: {task_number: {task_report, task_detail, reestr_number, reestr_date, report, norm, extra}}
+    created_at: Mapped[str] = mapped_column(Text)

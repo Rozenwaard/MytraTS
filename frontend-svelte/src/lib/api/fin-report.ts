@@ -34,7 +34,7 @@ export async function addToReport(
 
 export async function uploadDiscrepancies(
 	file: File
-): Promise<{ success: boolean; updated: number; not_found: number }> {
+): Promise<{ success: boolean; updated: number; not_found: number; batch_id: string }> {
 	const form = new FormData();
 	form.append('data', file);
 	const res = await fetch('/api/fin-report/discrepancies', {
@@ -46,7 +46,25 @@ export async function uploadDiscrepancies(
 		const body = (await res.json().catch(() => ({}))) as { error?: string };
 		throw new Error(body.error ?? 'Ошибка загрузки разногласий');
 	}
-	return (await res.json()) as { success: boolean; updated: number; not_found: number };
+	return (await res.json()) as { success: boolean; updated: number; not_found: number; batch_id: string };
+}
+
+export async function rollbackDiscrepancies(
+	batchId: string
+): Promise<{ success: boolean; restored: number }> {
+	return api('/api/fin-report/discrepancies/rollback', {
+		method: 'POST',
+		body: JSON.stringify({ batch_id: batchId })
+	});
+}
+
+export async function discardDiscrepancies(
+	batchId: string
+): Promise<{ success: boolean }> {
+	return api('/api/fin-report/discrepancies/discard', {
+		method: 'POST',
+		body: JSON.stringify({ batch_id: batchId })
+	});
 }
 
 export async function recheckTasks(

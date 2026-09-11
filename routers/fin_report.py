@@ -219,19 +219,123 @@ async def api_fin_report_discrepancies(
     if not numbers:
         return Response(content=json.dumps({"error": "Файл пуст"}, ensure_ascii=False), media_type="application/json", status_code=400)
 
+    # Уникальные номера в порядке появления (дубли в файле не считаем дважды).
+    unique = list(dict.fromkeys(numbers))
+
+    batch_id = uuid.uuid4().hex
+    snapshot = {}
     updated = 0
     not_found = 0
-    for tn in numbers:
-        res = await db_session.execute(
-            text("UPDATE main_afl SET task_report = NULL, task_detail = 'Разногласия', reestr_number = 'Отклонён', reestr_date = NULL, report = NULL, norm = NULL, extra = NULL WHERE task_number = :tn"),
-            {"tn": tn})
-        if res.rowcount:
-            updated += 1
-        else:
+
+    for tn in unique:
+        before = await db_session.execute(
+            text("SELECT task_report, task_detail, reestr_number, reestr_date, report, norm, extra FROM main_afl WHERE task_number = :tn"),
+            {"tn": tn},
+        )
+        row = before.mappings().first()
+        if row is None:
             not_found += 1
+            continue
+
+        # Снимок «до» — для возможности отката.
+        snapshot[tn] = dict(row)
+
+        await db_session.execute(
+            text("UPDATE main_afl SET task_report = NULL, task_detail = 'Разногласия', reestr_number = 'Отклонён', reestr_date = NULL, report = NULL, norm = NULL, extra = NULL WHERE task_number = :tn"),
+            {"tn": tn},
+        )
+        updated += 1
+
+    if snapshot:
+        await db_session.execute(
+            text("INSERT INTO discrepancies_log (batch_id, payload, created_at) VALUES (:batch_id, :payload, :created_at)"),
+            {"batch_id": batch_id, "payload": json.dumps(snapshot, ensure_ascii=False), "created_at": datetime.now().isoformat(timespec="seconds")},
+        )
+
     await db_session.commit()
 
-    return Response(content=json.dumps({"success": True, "updated": updated, "not_found": not_found}, ensure_ascii=False), media_type="application/json")
+    return Response(content=json.dumps({"success": True, "updated": updated, "not_found": not_found, "batch_id": batch_id}, ensure_ascii=False), media_type="application/json")
+
+
+@post("/fin-report/discrepancies/rollback", guards=[require_auth])
+async def api_fin_report_discrepancies_rollback(
+    request: Request, db_session: AsyncSession,
+    data: dict = Body(media_type=RequestEncodingType.JSON),
+) -> Response:
+    """«Откат разногласий»: возвращает значения, сброшенные операцией «Разногласия».
+
+    Восстанавливает task_report/task_detail/reestr_number/reestr_date/report/norm/extra
+    для строк из последнего (или указанного batch_id) снимка. Одноразовый: снимок удаляется.
+    """
+    user = await get_current_user(request, db_session)
+    if user.effective_role != "администратор":
+        return Response(content=json.dumps({"error": "Нет прав"}, ensure_ascii=False), media_type="application/json", status_code=403)
+
+    batch_id = (data or {}).get("batch_id")
+
+    if batch_id:
+        log = await db_session.execute(
+            text("SELECT id, payload FROM discrepancies_log WHERE batch_id = :batch_id ORDER BY id DESC LIMIT 1"),
+            {"batch_id": batch_id},
+        )
+    else:
+        log = await db_session.execute(
+            text("SELECT id, payload FROM discrepancies_log ORDER BY id DESC LIMIT 1"),
+        )
+
+    row = log.mappings().first()
+    if row is None:
+        return Response(content=json.dumps({"error": "Нет снимка для отката"}, ensure_ascii=False), media_type="application/json", status_code=404)
+
+    snapshot = json.loads(row["payload"])
+    restored = 0
+    for tn, prev in snapshot.items():
+        await db_session.execute(
+            text(
+                "UPDATE main_afl SET task_report = :task_report, task_detail = :task_detail, "
+                "reestr_number = :reestr_number, reestr_date = :reestr_date, report = :report, "
+                "norm = :norm, extra = :extra WHERE task_number = :tn"
+            ),
+            {
+                "tn": tn,
+                "task_report": prev.get("task_report"),
+                "task_detail": prev.get("task_detail"),
+                "reestr_number": prev.get("reestr_number"),
+                "reestr_date": prev.get("reestr_date"),
+                "report": prev.get("report"),
+                "norm": prev.get("norm"),
+                "extra": prev.get("extra"),
+            },
+        )
+        restored += 1
+
+    await db_session.execute(text("DELETE FROM discrepancies_log WHERE id = :id"), {"id": row["id"]})
+    await db_session.commit()
+
+    return Response(content=json.dumps({"success": True, "restored": restored}, ensure_ascii=False), media_type="application/json")
+
+
+@post("/fin-report/discrepancies/discard", guards=[require_auth])
+async def api_fin_report_discrepancies_discard(
+    request: Request, db_session: AsyncSession,
+    data: dict = Body(media_type=RequestEncodingType.JSON),
+) -> Response:
+    """«Сохранить» после «Разногласий»: выбрасывает снимок отката (изменения остаются).
+
+    Удаляет строку discrepancies_log для batch_id — откат становится недоступен.
+    """
+    user = await get_current_user(request, db_session)
+    if user.effective_role != "администратор":
+        return Response(content=json.dumps({"error": "Нет прав"}, ensure_ascii=False), media_type="application/json", status_code=403)
+
+    batch_id = (data or {}).get("batch_id")
+    if not batch_id:
+        return Response(content=json.dumps({"error": "Нет batch_id"}, ensure_ascii=False), media_type="application/json", status_code=400)
+
+    await db_session.execute(text("DELETE FROM discrepancies_log WHERE batch_id = :batch_id"), {"batch_id": batch_id})
+    await db_session.commit()
+
+    return Response(content=json.dumps({"success": True}, ensure_ascii=False), media_type="application/json")
 
 
 @post("/fin-report/recheck", guards=[require_auth])
@@ -392,6 +496,6 @@ async def _run_download(download_id: str, period_fmt: str):
 
 
 fin_report_router = Router("/api", route_handlers=[
-    api_fin_report, api_fin_report_add, api_fin_report_discrepancies, api_fin_report_recheck,
+    api_fin_report, api_fin_report_add, api_fin_report_discrepancies, api_fin_report_discrepancies_rollback, api_fin_report_discrepancies_discard, api_fin_report_recheck,
     api_fin_report_download_start, api_fin_report_download_progress, api_fin_report_download_result,
 ])

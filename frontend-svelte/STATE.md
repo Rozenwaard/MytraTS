@@ -41,6 +41,27 @@ bun run check
 ```
 Браузер: http://localhost:5174. Логин — табельный номер + пароль.
 
+### Проверка, что бэк поднят
+Бэкенд — **Litestar** (не FastAPI): рутов `/` и `/docs` у него нет (это FastAPI-пути), поэтому 404 там — **норма, а не падение**. Swagger-схема Litestar живёт на `/schema`.
+
+```powershell
+# 1) порт слушается
+netstat -ano | findstr :8000        # должно быть LISTENING
+
+# 2) бэк реально отвечает (без авторизации) — самый надёжный признак:
+Invoke-WebRequest http://localhost:8000/schema/openapi.json -UseBasicParsing
+#   → HTTP 200 (OpenAPI-схема ~40 КБ)
+
+# 3) альтернатива — любой защищённый /api/* должен дать 401, а не 404:
+Invoke-WebRequest http://localhost:8000/api/user/settings -UseBasicParsing
+#   → HTTP 401 Unauthorized = бэк жив, маршрут есть, но требует логина
+```
+
+- **Connection refused / «не удалось подключиться»** → uvicorn не запущен (или ещё поднимается — подожди пару секунд).
+- **404 на `/` или `/docs`** → норма (Litestar, не FastAPI), не признак падения.
+- **401 на защищённом `/api/*`** → бэк поднят и отвечает.
+- **200 на `/schema/openapi.json`** → бэк поднят и отвечает (самый чистый вариант, без авторизации).
+
 Остановить фоновый процесс: `taskkill /PID <pid> /T /F` (pid — из `netstat -ano | findstr :8000` / `:5174`).
 
 ## Технологические нюансы (грабли, найденные при сборке)

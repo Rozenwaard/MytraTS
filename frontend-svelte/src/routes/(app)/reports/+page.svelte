@@ -6,6 +6,8 @@
 		fetchFinReport,
 		addToReport,
 		uploadDiscrepancies,
+		rollbackDiscrepancies,
+		discardDiscrepancies,
 		recheckTasks,
 		startFinReportDownload,
 		fetchFinReportDownloadProgress,
@@ -56,6 +58,8 @@
 
 	let adding = $state(false);
 	let uploading = $state(false);
+	let discrepanciesResult = $state<{ batchId: string; updated: number; notFound: number } | null>(null);
+	let discrepanciesBusy = $state(false);
 	let rechecking = $state(false);
 	let downloading = $state(false);
 	let downloadDone = $state(0);
@@ -114,12 +118,42 @@
 		uploading = true;
 		try {
 			const res = await uploadDiscrepancies(file);
-			toast(`Разногласия: обновлено ${res.updated} | не найдено ${res.not_found}`);
+			discrepanciesResult = { batchId: res.batch_id, updated: res.updated, notFound: res.not_found };
 			await queryClient.invalidateQueries({ queryKey: ['fin-report', period] });
 		} catch {
 			toast('Ошибка загрузки разногласий');
 		} finally {
 			uploading = false;
+		}
+	}
+
+	async function confirmDiscrepancies() {
+		if (!discrepanciesResult || discrepanciesBusy) return;
+		discrepanciesBusy = true;
+		try {
+			await discardDiscrepancies(discrepanciesResult.batchId);
+			toast('Изменения сохранены');
+		} catch {
+			toast('Ошибка фиксации изменений');
+		} finally {
+			discrepanciesBusy = false;
+			discrepanciesResult = null;
+			await queryClient.invalidateQueries({ queryKey: ['fin-report', period] });
+		}
+	}
+
+	async function handleRollbackDiscrepancies() {
+		if (!discrepanciesResult || discrepanciesBusy) return;
+		discrepanciesBusy = true;
+		try {
+			const res = await rollbackDiscrepancies(discrepanciesResult.batchId);
+			toast(`Откат выполнен: восстановлено ${res.restored}`);
+		} catch {
+			toast('Ошибка отката разногласий');
+		} finally {
+			discrepanciesBusy = false;
+			discrepanciesResult = null;
+			await queryClient.invalidateQueries({ queryKey: ['fin-report', period] });
 		}
 	}
 
@@ -229,7 +263,7 @@
 					<span class="text-sm">Разблокировать</span>
 				</label>
 
-				<Button variant="outline" size="sm" onclick={openDiscrepancies} disabled={uploading}>
+				<Button size="sm" class="bg-destructive text-destructive-foreground hover:bg-destructive/80" onclick={openDiscrepancies} disabled={uploading}>
 					{uploading ? 'Обрабатываем…' : 'Разногласия'}
 				</Button>
 
@@ -307,6 +341,39 @@
 						<span class="tabular-nums">{data ? fmtMoney(data.cost_rle) : fmtMoney(0)}</span>
 					</div>
 				</div>
+			</div>
+		</div>
+	</div>
+{/if}
+
+<svelte:window onkeydown={(e) => { if (discrepanciesResult && e.key === 'Escape') confirmDiscrepancies(); }} />
+
+{#if discrepanciesResult}
+	<button
+		type="button"
+		class="fixed inset-0 z-40 bg-black/50"
+		aria-label="Закрыть"
+		onclick={confirmDiscrepancies}
+	></button>
+
+	<div class="pointer-events-none fixed inset-0 z-50 flex items-center justify-center p-4">
+		<div
+			class="pointer-events-auto w-full max-w-md rounded-lg border bg-card p-6 shadow-lg"
+			role="dialog"
+			aria-modal="true"
+			tabindex="-1"
+		>
+			<h2 class="text-lg font-semibold">Разногласия</h2>
+			<p class="mt-2 text-sm text-muted-foreground">
+				Изменения применены: удалено исполнение для {discrepanciesResult.updated} строк.
+			</p>
+			<div class="mt-6 flex justify-end gap-4">
+				<Button variant="outline" size="sm" onclick={handleRollbackDiscrepancies} disabled={discrepanciesBusy}>
+					Откатить
+				</Button>
+				<Button size="sm" onclick={confirmDiscrepancies} disabled={discrepanciesBusy}>
+					Сохранить
+				</Button>
 			</div>
 		</div>
 	</div>

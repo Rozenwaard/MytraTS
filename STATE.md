@@ -31,6 +31,27 @@ Start-Process pwsh -WindowStyle Hidden -ArgumentList '-NoExit','-Command','cd C:
 ```
 Браузер: http://localhost:5173 (React) / http://localhost:5174 («Руны»). Логин: табельный номер + пароль (первый вход — пароль = табельный номер, потом смена). Тестовый юзер staff_id=2190.
 
+### Проверка, что бэк поднят
+Бэкенд — **Litestar** (не FastAPI): рутов `/` и `/docs` у него нет (это FastAPI-пути), поэтому 404 там — **норма, а не падение**. Swagger-схема Litestar живёт на `/schema`.
+
+```powershell
+# 1) порт слушается
+netstat -ano | findstr :8000        # должно быть LISTENING
+
+# 2) бэк реально отвечает (без авторизации) — самый надёжный признак:
+Invoke-WebRequest http://localhost:8000/schema/openapi.json -UseBasicParsing
+#   → HTTP 200 (OpenAPI-схема ~40 КБ)
+
+# 3) альтернатива — любой защищённый /api/* должен дать 401, а не 404:
+Invoke-WebRequest http://localhost:8000/api/user/settings -UseBasicParsing
+#   → HTTP 401 Unauthorized = бэк жив, маршрут есть, но требует логина
+```
+
+- **Connection refused / «не удалось подключиться»** → uvicorn не запущен (или ещё поднимается — подожди пару секунд).
+- **404 на `/` или `/docs`** → норма (Litestar, не FastAPI), не признак падения.
+- **401 на защищённом `/api/*`** → бэк поднят и отвечает.
+- **200 на `/schema/openapi.json`** → бэк поднят и отвечает (самый чистый вариант, без авторизации).
+
 Остановка фонового процесса: `taskkill /PID <pid> /T /F` (pid смотри через `netstat -ano | findstr :8000` / `:5173` / `:5174`).
 
 ## Структура
@@ -43,7 +64,7 @@ MytraTS/
 ├── sql.py                 # build_in_clause, norm_name (общие SQL-хелперы: IN-клаузы + нормализация ФИО «ё/е»)
 ├── data/
 │   ├── config.py          # engine, SECRET_KEY из .env
-│   └── models.py          # RawAfl, MainAfl (+errors, +norm, +extra), StoryAfl, Tabel, Carte, Utalo, Calendar, User, HelpPage (+ ROLES, FIELD_ROLES, ADMIN_ROLES)
+│   └── models.py          # RawAfl, MainAfl (+errors, +norm, +extra), StoryAfl, Tabel, Carte, Utalo, Calendar, User, HelpPage, DiscrepanciesLog (+ ROLES, FIELD_ROLES, ADMIN_ROLES)
 ├── services/
 │   ├── uploader.py        # xlsx → raw_afl (чтение calamine, fallback openpyxl; async engine, run_sync)
 │   ├── processor.py       # классификация: словари групп признаков + data-driven правила (TASK_OUTPUT/COMMENT/TASK_REPORT_RULES)
@@ -60,7 +81,7 @@ MytraTS/
 │   ├── main_afl.py         # таблица реестров, статистика, смена вида работ
 │   ├── reestr.py           # формирование/сброс реестров, список, выгрузка
 │   ├── report.py           # формирование отчётного периода + выгрузка xlsx
-│   ├── fin_report.py       # «Отчёты» → Финотчёт (плашки/раскладка по locale, добавление в отчёт, разногласия)
+│   ├── fin_report.py       # «Отчёты» → Финотчёт (плашки/раскладка по locale, добавление в отчёт, разногласия + откат)
 │   ├── premium.py          # «Отчёты» → Премия (загрузка табеля в tabel, сводка по должностям, агрегация нормативов в utalo)
 │   ├── rle.py              # «Отчёты» → РЛЭ (таблица + xlsx недельных блоков)
 │   ├── story.py            # архив (перенос строк) + отклонение
@@ -186,7 +207,9 @@ MytraTS/
 |---|---|---|
 | GET | `/fin-report?period=YYYY-MM` | плашки + раскладка по locale и видам работ + стоимость + ПСК/РЛЭ; пустой period = строки вне отчёта, заданный — строки этого периода; все плашки — только статус Завершено/Закрыто, «с ошибками» — в зоне стоп-фактора (СПб+Гатчина) |
 | POST | `/fin-report/add` | с period: `report = «ГГГГ ММ»` строкам с реестром, пустым report и done_day ≤ конца периода; без period: все строки «Готово к отчёту» → следующий период после последнего в main_afl |
-| POST | `/fin-report/discrepancies` | multipart `.txt` с task_number → сброс в неисполненные: task_report/reestr_date/report/norm/extra = NULL, task_detail = «Разногласия», reestr_number = «Отклонён» |
+| POST | `/fin-report/discrepancies` | multipart `.txt` с task_number → сброс в неисполненные: task_report/reestr_date/report/norm/extra = NULL, task_detail = «Разногласия», reestr_number = «Отклонён»; возвращает `batch_id` снимка «до» |
+| POST | `/fin-report/discrepancies/rollback` | «Откат разногласий»: по последнему (или переданному batch_id) восстанавливает task_report/task_detail/reestr_number/reestr_date/report/norm/extra из снимка в `discrepancies_log`; одноразовый — снимок удаляется |
+| POST | `/fin-report/discrepancies/discard` | «Сохранить» после разногласий: удаляет снимок batch_id из `discrepancies_log` (изменения остаются, откат становится недоступен) |
 | POST | `/fin-report/recheck` | «Повторная проверка»: multipart `.txt` с task_number → `report/reestr_number/reestr_date = NULL` + пересчёт ошибок по общим правилам без ограничений (verified/status/billing/reestr_number); возвращает xlsx: вкладка «Ошибки» (№ задания + ошибки + «Комментарий» «Заблокировано исправление» для Закрыто/биллинг=Да) + вкладки «Балансовая принадлежность» и «Дата работ» (№ задания + ошибка) |
 | POST | `/fin-report/download` (старт) + `/fin-report/download/progress/{id}` + `/fin-report/download/result/{id}` | ZIP с 6 xlsx: 4 detail (спбплан/лоплан/спбвнеплан/ловнеплан) + 2 допотчёта по плану (спб/ло, 3 вкладки: кварт/лестн агрегированы по адресу, ИЖС построчно); генерация фоновая, прогресс опрашивается фронтом |
 
