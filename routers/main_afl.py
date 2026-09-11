@@ -16,10 +16,12 @@ from services.premium import apply_manual_norm
 MAIN_AFL_DISPLAY_COLUMNS = [
     "task_number", "task_source", "task_type", "work_type_in_task",
     "address", "municipal_district", "house_type", "personal_account",
-    "service_object_type", "subscriber_name", "meter_installation_place",
-    "meter_status", "meter_ownership", "violations", "comment",
+    "service_object_type", "subscriber_name", "subscriber_type",
+    "meter_installation_place", "meter_model", "meter_status",
+    "meter_ownership", "violations", "comment",
     "executor", "visit_reason", "customer", "task_output", "task_report",
-    "grid", "done_day", "reestr_number", "reestr_date", "errors", "norm"
+    "task_detail", "grid", "done_day", "reestr_number", "reestr_date",
+    "errors", "norm"
 ]
 
 

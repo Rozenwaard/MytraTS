@@ -64,6 +64,13 @@ MAIN_AFL_COLUMNS = [
 ]
 
 
+# «Жизненные» поля, которые обновляются даже у строк с номером реестра:
+# проверка/статус/биллинг меняются в источнике независимо от реестра.
+STATUS_ONLY_COLUMNS = [
+    'verified', 'status', 'sent_to_billing', 'billing_sent_at', 'status_changed_at',
+]
+
+
 async def merge_to_main(db_session, upload_progress, upload_id, total_rows):
     # Существующие строки: task_number → (текущий reestr_number, task_detail).
     # Плюс активные строки по task_report_id — кандидаты дедупликации (учитывает серию загрузок).
@@ -95,6 +102,7 @@ async def merge_to_main(db_session, upload_progress, upload_id, total_rows):
     # номером реестра и строки с task_detail = 'Разногласия'.
     update_rows = []
     reset_reestr_tasks = []
+    status_only_rows = []
     for row in all_rows:
         tn = row['task_number']
         if tn not in existing:
@@ -103,6 +111,9 @@ async def merge_to_main(db_session, upload_progress, upload_id, total_rows):
         if task_detail == 'Разногласия':
             continue
         if rn and rn != 'Отклонён':
+            # Строка с реальным номером реестра: полную перезапись пропускаем,
+            # но «жизненные» поля (проверка/статус/биллинг) обновим отдельно.
+            status_only_rows.append(row)
             continue
         update_rows.append(row)
         if rn == 'Отклонён':
@@ -182,6 +193,12 @@ async def merge_to_main(db_session, upload_progress, upload_id, total_rows):
         update_sql = text(f"UPDATE main_afl SET {set_clause} WHERE task_number = :task_number")
         await db_session.execute(update_sql, update_rows)
         updated = len(update_rows)
+
+    if status_only_rows:
+        status_set = ', '.join(f'"{c}" = :{c}' for c in STATUS_ONLY_COLUMNS)
+        status_sql = text(f"UPDATE main_afl SET {status_set} WHERE task_number = :task_number")
+        await db_session.execute(status_sql, status_only_rows)
+        updated += len(status_only_rows)
 
     if reset_reestr_tasks:
         # 'Отклонён' сбрасываем в пустой — строка снова доступна для реестра.

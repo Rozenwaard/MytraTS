@@ -11,7 +11,9 @@ export interface MainAflRow {
 	personal_account: string | null;
 	service_object_type: string | null;
 	subscriber_name: string | null;
+	subscriber_type: string | null;
 	meter_installation_place: string | null;
+	meter_model: string | null;
 	meter_status: string | null;
 	meter_ownership: string | null;
 	violations: string | null;
@@ -21,6 +23,7 @@ export interface MainAflRow {
 	customer: string | null;
 	task_output: string | null;
 	task_report: string | null;
+	task_detail: string | null;
 	grid: string | null;
 	done_day: string | null;
 	reestr_number: string | null;

@@ -103,18 +103,19 @@ def generate_recheck_xlsx(rows, balance_rows, date_rows) -> bytes:
     ws.column_dimensions["C"].width = 30
 
     ws_balance = wb.create_sheet("Балансовая принадлежность")
-    ws_balance.append(["Номер задания", "Комментарий"])
-    for tn, comment in balance_rows:
-        ws_balance.append([tn, comment])
+    ws_balance.append(["Номер задания", "Тип", "Комментарий"])
+    for tn, pu_type, comment in balance_rows:
+        ws_balance.append([tn, pu_type, comment])
     ws_balance.column_dimensions["A"].width = 28
-    ws_balance.column_dimensions["B"].width = 60
+    ws_balance.column_dimensions["B"].width = 30
+    ws_balance.column_dimensions["C"].width = 30
 
     ws_date = wb.create_sheet("Дата работ")
     ws_date.append(["Номер задания", "Комментарий"])
     for tn, comment in date_rows:
         ws_date.append([tn, comment])
     ws_date.column_dimensions["A"].width = 28
-    ws_date.column_dimensions["B"].width = 60
+    ws_date.column_dimensions["B"].width = 30
 
     buf = io.BytesIO()
     wb.save(buf)

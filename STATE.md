@@ -68,7 +68,7 @@ MytraTS/
 ├── services/
 │   ├── uploader.py        # xlsx → raw_afl (чтение calamine, fallback openpyxl; async engine, run_sync)
 │   ├── processor.py       # классификация: словари групп признаков + data-driven правила (TASK_OUTPUT/COMMENT/TASK_REPORT_RULES)
-│   ├── merger.py          # raw → main (INSERT новых + UPDATE пустых/'Отклонён'; защищены строки с номером реестра и с task_detail='Разногласия'; проставляет norm; не переносит: status IS NULL, task_number IS NULL (в «Реестры» показывает только статусы 'З%'); дедупликация по task_report_id — активная строка одна, проигравшие → Дубли/Отклонён/norm=0)
+│   ├── merger.py          # raw → main (INSERT новых + UPDATE пустых/'Отклонён'; защищены строки с номером реестра и с task_detail='Разногласия'; у строк с номером реестра отдельно обновляются verified/status/sent_to_billing/billing_sent_at/status_changed_at; проставляет norm; не переносит: status IS NULL, task_number IS NULL (в «Реестры» показывает только статусы 'З%'); дедупликация по task_report_id — активная строка одна, проигравшие → Дубли/Отклонён/norm=0)
 │   ├── reestr.py          # генерация xlsx реестра/отчёта, DEPT_PREFIXES, LOCALE_SUFFIXES
 │   ├── report_check.py    # правила проверки «Алькор» (check_row), recompute_errors, BALANCE_ERRORS, STOP_FACTOR_*
 │   ├── dashboard.py       # build_scope (виды работ из carte.kind='base'+территории+видимость+отделение), генераторы xlsx отчётов дашборда
@@ -210,7 +210,7 @@ MytraTS/
 | POST | `/fin-report/discrepancies` | multipart `.txt` с task_number → сброс в неисполненные: task_report/reestr_date/report/norm/extra = NULL, task_detail = «Разногласия», reestr_number = «Отклонён»; возвращает `batch_id` снимка «до» |
 | POST | `/fin-report/discrepancies/rollback` | «Откат разногласий»: по последнему (или переданному batch_id) восстанавливает task_report/task_detail/reestr_number/reestr_date/report/norm/extra из снимка в `discrepancies_log`; одноразовый — снимок удаляется |
 | POST | `/fin-report/discrepancies/discard` | «Сохранить» после разногласий: удаляет снимок batch_id из `discrepancies_log` (изменения остаются, откат становится недоступен) |
-| POST | `/fin-report/recheck` | «Повторная проверка»: multipart `.txt` с task_number → `report/reestr_number/reestr_date = NULL` + пересчёт ошибок по общим правилам без ограничений (verified/status/billing/reestr_number); возвращает xlsx: вкладка «Ошибки» (№ задания + ошибки + «Комментарий» «Заблокировано исправление» для Закрыто/биллинг=Да) + вкладки «Балансовая принадлежность» и «Дата работ» (№ задания + ошибка) |
+| POST | `/fin-report/recheck` | «Повторная проверка»: multipart `.txt` с task_number → `report/reestr_number/reestr_date = NULL` + пересчёт ошибок по общим правилам без ограничений (verified/status/billing/reestr_number); возвращает xlsx: «Ошибки» (номер/ошибки/комментарий), «Балансовая принадлежность» (номер/тип/комментарий), «Дата работ» (номер/комментарий); комментарий = «Отправлено в билинг» или «Закрыто» |
 | POST | `/fin-report/download` (старт) + `/fin-report/download/progress/{id}` + `/fin-report/download/result/{id}` | ZIP с 6 xlsx: 4 detail (спбплан/лоплан/спбвнеплан/ловнеплан) + 2 допотчёта по плану (спб/ло, 3 вкладки: кварт/лестн агрегированы по адресу, ИЖС построчно); генерация фоновая, прогресс опрашивается фронтом |
 
 ### Премия (только администратор)

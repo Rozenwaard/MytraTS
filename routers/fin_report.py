@@ -19,7 +19,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from deps import get_current_user, require_auth
 from sql import norm_name
-from services.dashboard import generate_recheck_xlsx
+from services.dashboard import generate_recheck_xlsx, pick_pu_type
 from services.reestr import generate_dop_report_xlsx_bytes, generate_fin_report_xlsx_bytes
 from services.report_check import BALANCE_ERRORS, check_row, join_errors, STOP_FACTOR_REGIONS, STOP_FACTOR_DISTRICTS
 
@@ -345,9 +345,10 @@ async def api_fin_report_recheck(
 ) -> Response:
     """«Повторная проверка»: txt с номерами заданий (по одному на строку).
 
-    Для найденных строк: report = NULL + пересчёт ошибок по общим правилам БЕЗ ограничений
-    (verified/status/sent_to_billing/reestr_number). Возвращает xlsx с ошибками и колонкой
-    «Комментарий» («Заблокировано исправление» для status='Закрыто' или sent_to_billing='Да').
+    Для найденных строк: report/reestr_number/reestr_date = NULL + пересчёт ошибок по общим
+    правилам БЕЗ ограничений. Возвращает xlsx: «Ошибки» (номер/ошибки/комментарий),
+    «Балансовая принадлежность» (номер/тип/комментарий), «Дата работ» (номер/комментарий).
+    Комментарий = «Отправлено в билинг» или «Закрыто» (или пусто).
     """
     user = await get_current_user(request, db_session)
     if user.effective_role != "администратор":
@@ -386,17 +387,31 @@ async def api_fin_report_recheck(
         errors = check_row(row)
         updates.append({"e": join_errors(errors), "tn": tn})
 
+        # Признак для колонки «Комментарий» во всех вкладках.
+        comment = ""
+        if row.get("sent_to_billing") == "Да":
+            comment = "Отправлено в билинг"
+        elif row.get("status") == "Закрыто":
+            comment = "Закрыто"
+
         general = []
+        has_balance = False
+        has_date = False
         for e in errors:
             if e in BALANCE_ERRORS:
-                balance_rows.append((tn, e))
+                has_balance = True
             elif e == "Дата работ":
-                date_rows.append((tn, e))
+                has_date = True
             else:
                 general.append(e)
+
         if general:
-            comment = "Заблокировано исправление" if (row.get("status") == "Закрыто" or row.get("sent_to_billing") == "Да") else ""
             report_rows.append((tn, join_errors(general), comment))
+        if has_balance:
+            pu_type = pick_pu_type(row.get("meter_type_2"), row.get("meter_type_1"), row.get("meter_type"))
+            balance_rows.append((tn, pu_type, comment))
+        if has_date:
+            date_rows.append((tn, comment))
 
     if updates:
         await db_session.execute(

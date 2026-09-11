@@ -39,6 +39,7 @@ export const EXPAND_GROUPS: ExpandGroup[] = [
 	{
 		title: 'Потребитель',
 		columns: [
+			{ key: 'subscriber_type', header: 'Лицо' },
 			{ key: 'subscriber_name', header: 'Потребитель' },
 			{ key: 'municipal_district', header: 'Район' },
 			{ key: 'house_type', header: 'Тип дома' },
@@ -48,6 +49,7 @@ export const EXPAND_GROUPS: ExpandGroup[] = [
 	{
 		title: 'Прибор учёта',
 		columns: [
+			{ key: 'meter_model', header: 'Тип ПУ' },
 			{ key: 'meter_installation_place', header: 'Место ПУ' },
 			{ key: 'meter_status', header: 'Статус' },
 			{ key: 'meter_ownership', header: 'Принадлежность' },
@@ -59,6 +61,7 @@ export const EXPAND_GROUPS: ExpandGroup[] = [
 		columns: [
 			{ key: 'comment', header: 'Комментарий' },
 			{ key: 'task_output', header: 'Результат' },
+			{ key: 'task_detail', header: 'Детали' },
 			{ key: 'reestr_number', header: 'Реестр' },
 			{ key: 'errors', header: 'Ошибки' }
 		]
