@@ -101,15 +101,17 @@ async def api_dashboard_overview(request: Request, db_session: AsyncSession) -> 
             in_work_matrix[f"{cust_key}_{task_key}"] = cnt
 
     # «Крупная задолженность»: visit_reason содержит «Крупная задолженность».
-    # Матрица 2×2: просрочено/вовремя (created_at старше 7 дней = просрочено) × в работе/выполнено.
+    # Матрица 2×2: просрочено/вовремя × в работе/выполнено.
+    #   просрочено = не завершено за 7 дней от создания: «в работе» — создано раньше 7 дней назад;
+    #                «выполнено» — выполнено позже чем через 7 дней после создания (done_day - created_at > 7).
     debt_clause = f"{vis_where} AND visit_reason LIKE :debt_reason"
     debt_params = {**vis_params, "debt_reason": "%Крупная задолженность%"}
     debt_total, ontime_in_work, ontime_completed, overdue_in_work, overdue_completed = (await db_session.execute(text(
         f"SELECT COUNT(*), "
         f"COALESCE(SUM(CASE WHEN (status IS NULL OR status NOT LIKE 'З%') AND (created_at IS NULL OR created_at > date('now', 'localtime', '-7 days')) THEN 1 ELSE 0 END), 0), "
-        f"COALESCE(SUM(CASE WHEN (status IS NOT NULL AND status LIKE 'З%') AND (created_at IS NULL OR created_at > date('now', 'localtime', '-7 days')) THEN 1 ELSE 0 END), 0), "
+        f"COALESCE(SUM(CASE WHEN (status IS NOT NULL AND status LIKE 'З%') AND (done_day IS NULL OR created_at IS NULL OR julianday(done_day) - julianday(created_at) <= 7) THEN 1 ELSE 0 END), 0), "
         f"COALESCE(SUM(CASE WHEN (status IS NULL OR status NOT LIKE 'З%') AND (created_at IS NOT NULL AND created_at <= date('now', 'localtime', '-7 days')) THEN 1 ELSE 0 END), 0), "
-        f"COALESCE(SUM(CASE WHEN (status IS NOT NULL AND status LIKE 'З%') AND (created_at IS NOT NULL AND created_at <= date('now', 'localtime', '-7 days')) THEN 1 ELSE 0 END), 0) "
+        f"COALESCE(SUM(CASE WHEN (status IS NOT NULL AND status LIKE 'З%') AND (done_day IS NOT NULL AND created_at IS NOT NULL AND julianday(done_day) - julianday(created_at) > 7) THEN 1 ELSE 0 END), 0) "
         f"FROM main_afl WHERE {debt_clause}"
     ), debt_params)).one()
 
