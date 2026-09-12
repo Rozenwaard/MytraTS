@@ -19,7 +19,10 @@ export const TOP_NAV: NavItem[] = [
 export const SUB_NAV: Record<string, SubTab[]> = {
 	'/dashboard': [
 		{ href: '/dashboard', label: 'Обзор' },
-		{ href: '/dashboard/errors', label: 'Ошибки' }
+		{ href: '/dashboard/tasks', label: 'Задания' },
+		{ href: '/dashboard/projects', label: 'Проекты' },
+		{ href: '/dashboard/errors', label: 'Ошибки' },
+		{ href: '/dashboard/workers', label: 'Работники' }
 	],
 	'/main-afl': [
 		{ href: '/main-afl', label: 'Обзор' },

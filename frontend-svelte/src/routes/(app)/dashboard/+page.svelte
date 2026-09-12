@@ -8,12 +8,14 @@
 		type ErrorsByLocale
 	} from '$lib/api/dashboard';
 	import { Skeleton } from '$lib/components/ui/skeleton';
-	import { auth } from '$lib/store/auth.svelte';
-	import ChevronDown from '@lucide/svelte/icons/chevron-down';
-
-	const isAdmin = $derived(
-		auth.user?.role === 'администратор' || auth.user?.role === 'специалист'
-	);
+	import StatCard from '$lib/components/stat-card.svelte';
+	import { cn } from '$lib/utils.js';
+	import ClipboardList from '@lucide/svelte/icons/clipboard-list';
+	import Wallet from '@lucide/svelte/icons/wallet';
+	import CircleDollarSign from '@lucide/svelte/icons/circle-dollar-sign';
+	import Users from '@lucide/svelte/icons/users';
+	import Wrench from '@lucide/svelte/icons/wrench';
+	import TriangleAlert from '@lucide/svelte/icons/triangle-alert';
 
 	const overviewQuery = createQuery<DashboardOverview>(
 		toStore(() => ({
@@ -28,75 +30,179 @@
 	const errorsQuery = createQuery<ErrorsByLocale>(
 		toStore(() => ({
 			queryKey: ['dashboard-errors-by-locale'],
-			queryFn: () => fetchErrorsByLocale(),
-			enabled: isAdmin
+			queryFn: () => fetchErrorsByLocale()
 		}))
 	);
 	const errorsResult = fromStore(errorsQuery);
 	const errors = $derived(errorsResult.current.data);
 
-	let errorsExpanded = $state(false);
+	const debt = $derived(
+		overview?.debt ?? {
+			total: 0,
+			ontime_in_work: 0,
+			ontime_completed: 0,
+			overdue_in_work: 0,
+			overdue_completed: 0
+		}
+	);
+	const inWorkMatrix = $derived(
+		overview?.in_work_matrix ?? {
+			psk_plan: 0,
+			psk_unplan: 0,
+			rle_plan: 0,
+			rle_unplan: 0
+		}
+	);
+	const workers = $derived(overview?.workers ?? { total: 0, controllers: 0, engineers: 0 });
+	const instrumental = $derived(overview?.instrumental ?? { ordered: 0, completed: 0 });
 
 	const fmt = (n: number | undefined) => (n ?? 0).toLocaleString('ru-RU');
 	const fmtMoney = (n: number | undefined) =>
 		(n ?? 0).toLocaleString('ru-RU', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+
+	function errorGridClass(n: number): string {
+		if (n <= 1) return 'grid-cols-1';
+		return 'grid-flow-col grid-rows-3';
+	}
 </script>
 
-<div class="flex h-full flex-col gap-3 overflow-auto p-3">
+<div class="flex h-full flex-col gap-4 overflow-auto p-4">
 	{#if overviewPending}
-		<div class="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-5">
-			{#each Array(5) as _}
-				<Skeleton class="h-20 w-full" />
+		<div class="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
+			{#each Array(6) as _}
+				<Skeleton class="h-[220px] w-full" />
 			{/each}
 		</div>
 	{:else if overview}
-		<div class="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-5">
-			{@render StatCard('Заданий', fmt(overview.total))}
-			{@render StatCard('ПСК', fmt(overview.psk))}
-			{@render StatCard('РЛЭ', fmt(overview.rle))}
-			{@render StatCard('План', fmt(overview.plan))}
-			{@render StatCard('Внеплан', fmt(overview.unplan))}
-			{@render StatCard('Выполнено', fmt(overview.completed))}
-			{@render StatCard('Не выполнено', fmt(overview.uncompleted))}
-			{@render StatCard('С ошибками', fmt(overview.with_errors))}
-			{@render StatCard('Без ошибок', fmt(overview.without_errors))}
-			{@render StatCard('Стоимость', `${fmtMoney(overview.cost)} ₽`)}
-		</div>
-	{/if}
-
-	{#if isAdmin}
-		<div class="rounded-md border bg-card p-3">
-			<button
-				type="button"
-				class="flex w-full items-center justify-between gap-2 text-left"
-				onclick={() => (errorsExpanded = !errorsExpanded)}
+		<div class="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
+			<StatCard
+				title="Заданий в работе"
+				icon={ClipboardList}
+				iconClass="bg-primary/10 text-primary"
+				href="/dashboard/tasks"
 			>
-				<span class="text-sm font-medium">Отчёт об ошибках</span>
-				<span class="flex items-center gap-2">
-					<span class="text-xl font-semibold tabular-nums">{errors ? fmt(errors.total) : '…'}</span>
-					<ChevronDown
-						class={`size-4 shrink-0 text-muted-foreground transition-transform ${errorsExpanded ? 'rotate-180' : ''}`}
-					/>
-				</span>
-			</button>
+				{#snippet children()}
+					<div class="grid grid-cols-[auto_1fr_1fr] gap-2 text-sm">
+						<div></div>
+						<div class="text-center text-xs font-medium text-muted-foreground">План</div>
+						<div class="text-center text-xs font-medium text-muted-foreground">Внеплан</div>
 
-			{#if errorsExpanded}
-				<div class="mt-3 grid grid-cols-1 gap-2 sm:grid-cols-2 lg:grid-cols-3">
-					{#each errors?.by_locale ?? [] as item (item.locale)}
-						<div class="flex items-center justify-between rounded-md border bg-muted/40 px-3 py-2">
-							<span class="text-sm text-muted-foreground">{item.locale}</span>
-							<span class="text-sm font-semibold tabular-nums">{item.count}</span>
-						</div>
-					{/each}
-				</div>
-			{/if}
+						<div class="flex items-center text-muted-foreground">ПСК</div>
+						{@render MatrixCell(inWorkMatrix.psk_plan)}
+						{@render MatrixCell(inWorkMatrix.psk_unplan)}
+
+						<div class="flex items-center text-muted-foreground">РЛЭ</div>
+						{@render MatrixCell(inWorkMatrix.rle_plan)}
+						{@render MatrixCell(inWorkMatrix.rle_unplan)}
+					</div>
+				{/snippet}
+			</StatCard>
+
+			<StatCard
+				title="Стоимость"
+				icon={Wallet}
+				iconClass="bg-brand-logo/10 text-brand-logo"
+				href="/reports"
+			>
+				{#snippet children()}
+					<div class="space-y-2">
+						{@render StatRow('Итого', `${fmtMoney(overview.cost)} ₽`, true)}
+						{@render StatRow('ПСК', `${fmtMoney(overview.cost_psk)} ₽`)}
+						{@render StatRow('РЛЭ', `${fmtMoney(overview.cost_rle)} ₽`)}
+					</div>
+				{/snippet}
+			</StatCard>
+
+			<StatCard
+				title="Крупная задолженность"
+				icon={CircleDollarSign}
+				iconClass="bg-amber-100 text-amber-800"
+				href="/dashboard/projects"
+			>
+				{#snippet children()}
+					<div class="grid grid-cols-[auto_1fr_1fr] gap-2 text-sm">
+						<div></div>
+						<div class="text-center text-xs font-medium text-muted-foreground">Просрочено</div>
+						<div class="text-center text-xs font-medium text-muted-foreground">Вовремя</div>
+
+						<div class="flex items-center text-muted-foreground">В работе</div>
+						{@render MatrixCell(debt.overdue_in_work)}
+						{@render MatrixCell(debt.ontime_in_work)}
+
+						<div class="flex items-center text-muted-foreground">Выполнено</div>
+						{@render MatrixCell(debt.overdue_completed)}
+						{@render MatrixCell(debt.ontime_completed)}
+					</div>
+				{/snippet}
+			</StatCard>
+
+			<StatCard
+				title="Ошибки"
+				icon={TriangleAlert}
+				iconClass="bg-destructive/10 text-destructive"
+				href="/dashboard/errors"
+			>
+				{#snippet children()}
+					<div class={cn('grid gap-2', errorGridClass((errors?.by_locale ?? []).length))}>
+						{#each errors?.by_locale ?? [] as item (item.locale)}
+							{@render StatRow(item.locale, fmt(item.count))}
+						{/each}
+					</div>
+				{/snippet}
+			</StatCard>
+
+			<StatCard
+				title="Работники"
+				icon={Users}
+				iconClass="bg-blue-100 text-blue-800"
+				href="/dashboard/workers"
+			>
+				{#snippet children()}
+					<div class="space-y-2">
+						{@render StatRow('Всего', fmt(workers.total), true)}
+						{@render StatRow('Контролёры', fmt(workers.controllers))}
+						{@render StatRow('Инженеры', fmt(workers.engineers))}
+					</div>
+				{/snippet}
+			</StatCard>
+
+			<StatCard
+				title="Инструментальные проверки"
+				icon={Wrench}
+				iconClass="bg-violet-100 text-violet-800"
+				href="/dashboard/projects"
+			>
+				{#snippet children()}
+					<div class="space-y-2">
+						{@render StatRow('Заказано', fmt(instrumental.ordered))}
+						{@render StatRow('Выполнено', fmt(instrumental.completed))}
+					</div>
+				{/snippet}
+			</StatCard>
 		</div>
 	{/if}
 </div>
 
-{#snippet StatCard(label: string, value: string)}
-	<div class="rounded-md border bg-card p-3">
-		<div class="text-xs text-muted-foreground">{label}</div>
-		<div class="text-lg font-semibold tabular-nums truncate">{value}</div>
+{#snippet StatRow(label: string, value: string, emphasize = false)}
+	<div
+		class={cn(
+			'flex items-center justify-between rounded-md border px-3 py-2',
+			emphasize ? 'bg-muted/60' : 'bg-muted/40'
+		)}
+	>
+		<span
+			class={cn('text-sm', emphasize ? 'font-medium text-foreground' : 'text-muted-foreground')}
+		>
+			{label}
+		</span>
+		<span class="text-sm font-semibold tabular-nums">{value}</span>
+	</div>
+{/snippet}
+
+{#snippet MatrixCell(n: number)}
+	<div
+		class="flex items-center justify-center rounded-md border bg-muted/40 px-2 py-2 text-sm font-semibold tabular-nums"
+	>
+		{fmt(n)}
 	</div>
 {/snippet}

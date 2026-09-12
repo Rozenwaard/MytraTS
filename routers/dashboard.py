@@ -56,55 +56,112 @@ async def api_dashboard_summary(request: Request, db_session: AsyncSession, dept
 
 @get("/dashboard/overview", guards=[require_auth])
 async def api_dashboard_overview(request: Request, db_session: AsyncSession) -> Response:
-    """Общая сводка для вкладки «Обзор»: завершённые (Завершено/Закрыто) строки без отчёта (report пуст) в зоне видимости пользователя."""
+    """Сводка виджетов вкладки «Обзор» (по зоне видимости пользователя)."""
     user = await get_current_user(request, db_session)
-    base_where = "(report IS NULL OR report = '') AND status IN ('Завершено','Закрыто')"
-    params: dict = {}
 
+    # Зона видимости по роли (без фильтров статуса/отчёта) — общая для всех срезов.
+    vis_clauses: list = []
+    vis_params: dict = {}
     if user.effective_role in ("оператор", "работник"):
-        base_where += f" AND {norm_name('executor')} IN (SELECT {norm_name('full_name')} FROM users WHERE locale = :locale)"
-        params["locale"] = user.locale
+        vis_clauses.append(f"{norm_name('executor')} IN (SELECT {norm_name('full_name')} FROM users WHERE locale = :locale)")
+        vis_params["locale"] = user.locale
     elif user.effective_role == "менеджер":
-        base_where += " AND executor_organization = :dept"
-        params["dept"] = user.dept
+        vis_clauses.append("executor_organization = :dept")
+        vis_params["dept"] = user.dept
+    vis_where = " AND ".join(vis_clauses) if vis_clauses else "1=1"
 
-    total = (await db_session.execute(
-        text(f"SELECT COUNT(*) FROM main_afl WHERE {base_where}"), params)).scalar()
-
-    cust_result = await db_session.execute(
-        text(f"SELECT customer, COUNT(*) FROM main_afl WHERE {base_where} GROUP BY customer"), params)
-    customers = {row[0] or "(пусто)": row[1] for row in cust_result}
-
-    plan_result = await db_session.execute(
-        text(f"SELECT task_type, COUNT(*) FROM main_afl WHERE {base_where} AND task_type IN ('Плановый','Внеплановый') GROUP BY task_type"), params)
-    plan_counts = {row[0]: row[1] for row in plan_result}
-
-    completed_where = f"{base_where} AND task_report IS NOT NULL AND task_report NOT IN ('Дубли')"
-    completed = (await db_session.execute(
-        text(f"SELECT COUNT(*) FROM main_afl WHERE {completed_where}"), params)).scalar()
-    uncompleted = (await db_session.execute(
-        text(f"SELECT COUNT(*) FROM main_afl WHERE {base_where} AND (task_report IS NULL OR task_report = '' OR task_report IN ('Дубли'))"), params)).scalar()
-
-    with_errors = (await db_session.execute(
-        text(f"SELECT COUNT(*) FROM main_afl WHERE {completed_where} AND (errors IS NOT NULL AND errors != '')"), params)).scalar()
-    without_errors = completed - with_errors
+    base_where = "(report IS NULL OR report = '') AND status IN ('Завершено','Закрыто')"
+    if vis_clauses:
+        base_where += f" AND {vis_where}"
+    params = vis_params
 
     # Стоимость = завершённые (status Завершено/Закрыто) строки без отчёта, по carte.price.
     cost = (await db_session.execute(
         text(f"SELECT COALESCE(SUM(COALESCE((SELECT price FROM carte WHERE carte.title = main_afl.task_report LIMIT 1), 0)), 0) FROM main_afl WHERE {base_where}"),
         params)).scalar()
 
+    # Разбивка стоимости по заказчикам (customer = ПСК/РЛЭ) — для раскрытия плашки «Стоимость».
+    cost_by_cust_result = await db_session.execute(
+        text(f"SELECT customer, COALESCE(SUM(COALESCE((SELECT price FROM carte WHERE carte.title = main_afl.task_report LIMIT 1), 0)), 0) FROM main_afl WHERE {base_where} GROUP BY customer"),
+        params)
+    cost_by_cust = {row[0]: (row[1] or 0) for row in cost_by_cust_result}
+
+    # «Заданий в работе»: строки со статусом не «Завершено»/«Закрыто» (status NOT LIKE 'З%').
+    in_work_where = f"{vis_where} AND (status IS NULL OR status NOT LIKE 'З%')"
+
+    # Матрица 2×2 «Заданий в работе»: ПСК/РЛЭ × План/Внеплан.
+    in_work_matrix_result = await db_session.execute(
+        text(f"SELECT customer, task_type, COUNT(*) FROM main_afl WHERE {in_work_where} AND task_type IN ('Плановый','Внеплановый') GROUP BY customer, task_type"),
+        vis_params)
+    in_work_matrix = {"psk_plan": 0, "psk_unplan": 0, "rle_plan": 0, "rle_unplan": 0}
+    for cust, task_type, cnt in in_work_matrix_result:
+        cust_key = "psk" if cust == "ПСК" else ("rle" if cust == "РЛЭ" else None)
+        task_key = "plan" if task_type == "Плановый" else ("unplan" if task_type == "Внеплановый" else None)
+        if cust_key and task_key:
+            in_work_matrix[f"{cust_key}_{task_key}"] = cnt
+
+    # «Крупная задолженность»: visit_reason содержит «Крупная задолженность».
+    # Матрица 2×2: просрочено/вовремя (created_at старше 7 дней = просрочено) × в работе/выполнено.
+    debt_clause = f"{vis_where} AND visit_reason LIKE :debt_reason"
+    debt_params = {**vis_params, "debt_reason": "%Крупная задолженность%"}
+    debt_total, ontime_in_work, ontime_completed, overdue_in_work, overdue_completed = (await db_session.execute(text(
+        f"SELECT COUNT(*), "
+        f"COALESCE(SUM(CASE WHEN (status IS NULL OR status NOT LIKE 'З%') AND (created_at IS NULL OR created_at > date('now', 'localtime', '-7 days')) THEN 1 ELSE 0 END), 0), "
+        f"COALESCE(SUM(CASE WHEN (status IS NOT NULL AND status LIKE 'З%') AND (created_at IS NULL OR created_at > date('now', 'localtime', '-7 days')) THEN 1 ELSE 0 END), 0), "
+        f"COALESCE(SUM(CASE WHEN (status IS NULL OR status NOT LIKE 'З%') AND (created_at IS NOT NULL AND created_at <= date('now', 'localtime', '-7 days')) THEN 1 ELSE 0 END), 0), "
+        f"COALESCE(SUM(CASE WHEN (status IS NOT NULL AND status LIKE 'З%') AND (created_at IS NOT NULL AND created_at <= date('now', 'localtime', '-7 days')) THEN 1 ELSE 0 END), 0) "
+        f"FROM main_afl WHERE {debt_clause}"
+    ), debt_params)).one()
+
+    # «Работники»: контролёры (position содержит «контролёр») и инженеры (position содержит «инженер»)
+    # — по различным исполнителям за последние 10 дней работ (done_day), в зоне видимости пользователя.
+    workers_clauses: list = []
+    if user.effective_role in ("оператор", "работник"):
+        workers_clauses.append(f"{norm_name('m.executor')} IN (SELECT {norm_name('full_name')} FROM users WHERE locale = :locale)")
+    elif user.effective_role == "менеджер":
+        workers_clauses.append("m.executor_organization = :dept")
+    workers_where = " AND ".join(workers_clauses) if workers_clauses else "1=1"
+
+    workers_controllers, workers_engineers = (await db_session.execute(text(
+        "WITH last_days AS ("
+        "  SELECT DISTINCT done_day FROM main_afl WHERE done_day IS NOT NULL AND done_day != '' ORDER BY done_day DESC LIMIT 10"
+        ") "
+        "SELECT "
+        "COUNT(DISTINCT CASE WHEN u.position LIKE '%онтролёр%' THEN m.executor END), "
+        "COUNT(DISTINCT CASE WHEN u.position LIKE '%нженер%' THEN m.executor END) "
+        "FROM main_afl m "
+        "JOIN users u ON REPLACE(REPLACE(u.full_name,'ё','е'),'Ё','Е') = REPLACE(REPLACE(m.executor,'ё','е'),'Ё','Е') "
+        f"WHERE m.done_day IN (SELECT done_day FROM last_days) AND {workers_where}"
+    ), vis_params)).one()
+
+    # «Инструментальные проверки»: заказано (все строки вида работ) / выполнено (status Завершено/Закрыто).
+    instr_clause = f"{vis_where} AND work_type_in_task = 'Инструментальная проверка'"
+    instr_ordered = (await db_session.execute(
+        text(f"SELECT COUNT(*) FROM main_afl WHERE {instr_clause}"), vis_params)).scalar()
+    instr_completed = (await db_session.execute(
+        text(f"SELECT COUNT(*) FROM main_afl WHERE {instr_clause} AND task_report IN (SELECT title FROM carte WHERE kind = 'base')"), vis_params)).scalar()
+
     return Response(content=json.dumps({
-        "total": total,
-        "psk": customers.get("ПСК", 0),
-        "rle": customers.get("РЛЭ", 0),
-        "plan": plan_counts.get("Плановый", 0),
-        "unplan": plan_counts.get("Внеплановый", 0),
-        "completed": completed,
-        "uncompleted": uncompleted,
-        "with_errors": with_errors,
-        "without_errors": without_errors,
         "cost": round(cost, 2),
+        "cost_psk": round(cost_by_cust.get("ПСК", 0), 2),
+        "cost_rle": round(cost_by_cust.get("РЛЭ", 0), 2),
+        "in_work_matrix": in_work_matrix,
+        "debt": {
+            "total": debt_total,
+            "ontime_in_work": ontime_in_work,
+            "ontime_completed": ontime_completed,
+            "overdue_in_work": overdue_in_work,
+            "overdue_completed": overdue_completed,
+        },
+        "workers": {
+            "total": workers_controllers + workers_engineers,
+            "controllers": workers_controllers,
+            "engineers": workers_engineers,
+        },
+        "instrumental": {
+            "ordered": instr_ordered,
+            "completed": instr_completed,
+        },
     }, ensure_ascii=False), media_type="application/json")
 
 

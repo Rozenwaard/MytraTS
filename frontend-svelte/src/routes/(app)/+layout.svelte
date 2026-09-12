@@ -63,7 +63,7 @@
 	<header
 		class="flex h-14 shrink-0 items-center justify-between gap-4 border-b bg-sidebar px-4 text-sidebar-foreground"
 	>
-		<a href="/main-afl" class="flex items-center gap-2">
+		<a href="/dashboard" class="flex items-center gap-2">
 			<Logo />
 			<span class="text-lg font-bold">MYTRA</span>
 		</a>
