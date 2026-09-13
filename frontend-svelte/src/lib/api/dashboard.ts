@@ -34,6 +34,11 @@ export interface DashboardOverview {
 	debt: DebtMatrix;
 	workers: Workers;
 	instrumental: Instrumental;
+	duplicates: {
+		crm: number;
+		mixed: number;
+		non_crm: number;
+	};
 }
 
 export async function fetchDashboardOverview(): Promise<DashboardOverview> {

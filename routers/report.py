@@ -35,6 +35,8 @@ async def api_report(
         {"period": period})
     count = result1.rowcount
 
+    # TODO: разобраться, нужна ли эта пометка report='Отклонён' (сейчас «отклонённые» строки
+    # не попадают в архивацию по cron — ни в группу A, ни в B). Возможно, её стоит откатить.
     result2 = await db_session.execute(
         text("UPDATE main_afl SET report = 'Отклонён' WHERE reestr_number = 'Отклонён' AND report IS NULL"))
     rejected = result2.rowcount

@@ -13,13 +13,15 @@ export const TOP_NAV: NavItem[] = [
 	{ href: '/main-afl', label: 'Реестры' },
 	{ href: '/upload', label: 'Загрузка' },
 	{ href: '/reports', label: 'Отчёты' },
-	{ href: '/help', label: 'Помощь' }
+	{ href: '/help', label: 'Помощь' },
+	{ href: '/consumers', label: 'Потребители' }
 ];
 
 export const SUB_NAV: Record<string, SubTab[]> = {
 	'/dashboard': [
 		{ href: '/dashboard', label: 'Обзор' },
-		{ href: '/dashboard/tasks', label: 'Задания' },
+		{ href: '/dashboard/tasks', label: 'Задачи' },
+		{ href: '/dashboard/orders', label: 'Поручения' },
 		{ href: '/dashboard/projects', label: 'Проекты' },
 		{ href: '/dashboard/errors', label: 'Ошибки' },
 		{ href: '/dashboard/workers', label: 'Работники' }
@@ -31,12 +33,16 @@ export const SUB_NAV: Record<string, SubTab[]> = {
 	'/reports': [
 		{ href: '/reports', label: 'Финотчёт' },
 		{ href: '/reports/premium', label: 'Премия' },
-		{ href: '/reports/rle', label: 'РЛЭ' }
+		{ href: '/reports/rle', label: 'РЛЭ' },
+		{ href: '/reports/duplicates', label: 'Дубли' }
 	],
 	'/help': [
 		{ href: '/help', label: 'Инструкция' },
 		{ href: '/help/tariffs', label: 'Тарифы' },
 		{ href: '/help/task-report', label: 'Отчёт по заданию' },
 		{ href: '/help/operators', label: 'Операторы' }
+	],
+	'/consumers': [
+		{ href: '/consumers', label: 'Обзор' }
 	]
 };

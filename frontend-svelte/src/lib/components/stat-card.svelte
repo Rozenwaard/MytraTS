@@ -41,15 +41,6 @@
 				<ArrowRight class="size-3.5" />
 				<span>Перейти</span>
 			</a>
-		{:else}
-			<button
-				type="button"
-				class="flex shrink-0 items-center gap-1 rounded-md px-1.5 py-0.5 text-xs font-medium text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
-				aria-label="Перейти"
-			>
-				<ArrowRight class="size-3.5" />
-				<span>Перейти</span>
-			</button>
 		{/if}
 	</div>
 

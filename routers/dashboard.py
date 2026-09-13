@@ -143,6 +143,38 @@ async def api_dashboard_overview(request: Request, db_session: AsyncSession) -> 
     instr_completed = (await db_session.execute(
         text(f"SELECT COUNT(*) FROM main_afl WHERE {instr_clause} AND task_report IN (SELECT title FROM carte WHERE kind = 'base')"), vis_params)).scalar()
 
+    # «Дубли»: точки учёта, встречающиеся более 1 раза среди строк «в работе»
+    # (status не «Завершено»/«Закрыто»). Разбивка по task_source:
+    #   «Только CRM» — все строки точки учёта пришли из CRM;
+    #   «Смешанные»  — среди строк точки учёта есть и CRM, и другие источники;
+    #   «Не CRM»      — среди строк точки учёта нет CRM.
+    dup_base = "metering_point IS NOT NULL AND metering_point != '' AND (status IS NULL OR status NOT LIKE 'З%')"
+    duplicates_crm = (await db_session.execute(
+        text(
+            f"SELECT COUNT(*) FROM ("
+            f"SELECT metering_point FROM main_afl WHERE {vis_where} AND {dup_base} "
+            f"GROUP BY metering_point "
+            f"HAVING COUNT(*) > 1 AND SUM(CASE WHEN task_source = 'CRM' THEN 1 ELSE 0 END) = COUNT(*)"
+            f")"
+        ), vis_params)).scalar()
+    duplicates_mixed = (await db_session.execute(
+        text(
+            f"SELECT COUNT(*) FROM ("
+            f"SELECT metering_point FROM main_afl WHERE {vis_where} AND {dup_base} "
+            f"GROUP BY metering_point "
+            f"HAVING COUNT(*) > 1 AND SUM(CASE WHEN task_source = 'CRM' THEN 1 ELSE 0 END) > 0 "
+            f"AND SUM(CASE WHEN task_source = 'CRM' THEN 1 ELSE 0 END) < COUNT(*)"
+            f")"
+        ), vis_params)).scalar()
+    duplicates_nocrm = (await db_session.execute(
+        text(
+            f"SELECT COUNT(*) FROM ("
+            f"SELECT metering_point FROM main_afl WHERE {vis_where} AND {dup_base} "
+            f"GROUP BY metering_point "
+            f"HAVING COUNT(*) > 1 AND SUM(CASE WHEN task_source = 'CRM' THEN 1 ELSE 0 END) = 0"
+            f")"
+        ), vis_params)).scalar()
+
     return Response(content=json.dumps({
         "cost": round(cost, 2),
         "cost_psk": round(cost_by_cust.get("ПСК", 0), 2),
@@ -163,6 +195,11 @@ async def api_dashboard_overview(request: Request, db_session: AsyncSession) -> 
         "instrumental": {
             "ordered": instr_ordered,
             "completed": instr_completed,
+        },
+        "duplicates": {
+            "crm": duplicates_crm,
+            "mixed": duplicates_mixed,
+            "non_crm": duplicates_nocrm,
         },
     }, ensure_ascii=False), media_type="application/json")
 

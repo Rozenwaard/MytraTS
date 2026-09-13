@@ -5,7 +5,7 @@
 Бизнес-логика и правила — `docs/БИЗНЕС-ЛОГИКА.md`.
 
 ## Стек
-- **Бэкенд**: Python 3.11 (закреплено `requires-python = ">=3.11,<3.13"`), Litestar 2.24, SQLAlchemy 2 (async + aiosqlite), `uv` для зависимостей. БД — SQLite `mytra.db`.
+- **Бэкенд**: Python 3.11 (закреплено `requires-python = ">=3.11,<3.13"`), Litestar 2.24, SQLAlchemy 2 (async + aiosqlite), `uv` для зависимостей. БД — SQLite `mytra.db` (операционная) + `story.db` (архив/потребители).
 - **Фронтенд (текущий, React)**: Vite + React 19 + TypeScript (strict), Tailwind v4 + DaisyUI 5, TanStack Router/Query/Table. Менеджер — `bun`.
 - **Фронтенд (новый, «Руны»)**: SvelteKit + Svelte 5 Runes + Tailwind v4 + shadcn-svelte + TanStack Table v8 + TanStack Query, менеджер `bun`. Живёт в `frontend-svelte/` (порт 5174). Переезжаем по частям, бэкенд не трогаем. Начато: каркас (auth + shell + тема) + «Реестры → Обзор» (таблица). Детали (запуск, грабли сборки, дизайн-решения) — `frontend-svelte/STATE.md`.
 - **План (оценка)**: переход фронта на Svelte 5 — начат (проект «Руны»), черновик в `docs/SVELTE-MIGRATION.md`.
@@ -62,10 +62,13 @@ MytraTS/
 │                          #  CORSConfig только под dev-origin localhost:5173)
 ├── deps.py                # get_current_user, require_auth (общие зависимости)
 ├── sql.py                 # build_in_clause, norm_name (общие SQL-хелперы: IN-клаузы + нормализация ФИО «ё/е»)
+├── archive.py             # CLI архивации (cron 22-го числа): main_afl → story_afl → consumers
 ├── data/
-│   ├── config.py          # engine, SECRET_KEY из .env
-│   └── models.py          # RawAfl, MainAfl (+errors, +norm, +extra), StoryAfl, Tabel, Carte, Utalo, Calendar, User, HelpPage, DiscrepanciesLog (+ ROLES, FIELD_ROLES, ADMIN_ROLES)
+│   ├── config.py          # engine (mytra.db), story_engine (story.db), STORY_DB_PATH, SECRET_KEY из .env
+│   ├── models.py          # RawAfl, MainAfl (+errors, +norm, +extra), Tabel, Carte, Utalo, Calendar, User, HelpPage, DiscrepanciesLog (+ ROLES, FIELD_ROLES, ADMIN_ROLES)
+│   └── story_models.py    # «сторидб» (story.db): Consumer (consumers), StoryAfl (story_afl)
 ├── services/
+│   ├── archive.py         # перенос main_afl → story_afl → consumers (кросс-БД через ATTACH)
 │   ├── uploader.py        # xlsx → raw_afl (чтение calamine, fallback openpyxl; async engine, run_sync)
 │   ├── processor.py       # классификация: словари групп признаков + data-driven правила (TASK_OUTPUT/COMMENT/TASK_REPORT_RULES)
 │   ├── merger.py          # raw → main (INSERT новых + UPDATE пустых/'Отклонён'; защищены строки с номером реестра и с task_detail='Разногласия'; у строк с номером реестра отдельно обновляются verified/status/sent_to_billing/billing_sent_at/status_changed_at; проставляет norm; не переносит: status IS NULL, task_number IS NULL (в «Реестры» показывает только статусы 'З%'); дедупликация по task_report_id — активная строка одна, проигравшие → Дубли/Отклонён/norm=0)
@@ -243,6 +246,18 @@ MytraTS/
 
 ## НЕ ДОДЕЛАНО (заглушки / TODO)
 1. **Архив (Story)** — страница `/story` в навбаре ведёт на `/main-afl` (заглушка). Бэкенд-эндпоинты готовы: `/api/story-afl` (GET с фильтрами), `/api/story-afl/reject` (POST). Нужно: страница архива + таблица с фильтрами. **План:** горячая зона `main_afl` ≤200K строк, остальное уходит в архив; в будущем архив вынесем в отдельный SQLite `archive.db` (`ATTACH DATABASE ... AS archive`) — отдельный файл не конкурирует за лок с `mytra.db` и не раздувает основную БД. `main_afl` на две таблицы не делим (решили — выигрыша по производительности нет).
+
+## Архив и потребители (сторидб)
+Вторая база `story.db` («сторидб») — архив + справочник потребителей, не нагружает операционную `mytra.db`.
+- Таблицы (`data/story_models.py`): `story_afl` (архив = `main_afl` минус 18 «лишних» колонок: долги, расчётные показания и их даты, организации задания, `task_link`, `has_current_transformer`/`has_voltage_transformer`) и `consumers` (один ряд на `metering_point`, `manufacture_year` — INTEGER).
+- Перенос (`archive.py` → `services/archive.py`, cron 22-го числа в 22:00): из `mytra.main_afl` выбираются и удаляются две группы:
+  - **A** — `report` заполнен и `report < 'YYYY MM'` (предыдущий месяц от текущей даты);
+  - **B** — `report` пустой И `status LIKE 'З%'` И `reestr_number='Отклонён'` И `SUBSTR(done_day,1,7) ≤ 'YYYY-MM'`.
+  Кросс-БД перенос через `ATTACH DATABASE` — атомарно (`INSERT…SELECT` + `DELETE` в одной транзакции), быстрее и надёжнее материализации строк в Python.
+- Затем `story_afl → consumers`: для каждого `metering_point` берётся самая свежая строка (`done_day → created_at → work_end_date`) и апсёртится (уникальный `metering_point`).
+- Cron: `0 22 22 * * cd /path/to/MytraTS && uv run python archive.py >> /var/log/mytra-archive.log 2>&1`.
+- `mytra.db.story_afl` удалена (модель `StoryAfl` убрана из `data/models.py`). TODO: перевести `routers/story.py`, `routers/report.py`, `services/reestr.py` со старой `story_afl` на `story.db.story_afl`.
+- TODO: разобраться, нужна ли пометка `report='Отклонён'` в `routers/report.py` (такие строки сейчас не попадают в архивацию).
 
 ## Конвенции
 - SQL: только bindparams (`:name`), без f-string-инъекций. Для IN — `build_in_clause(prefix, values)` в sql.py. Большие списки (десятки тысяч) бить на чанки `_IN_CHUNK = 32500` — лимит SQLite на число переменных (32766).

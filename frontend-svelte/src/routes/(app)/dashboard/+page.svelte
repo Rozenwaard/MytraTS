@@ -16,6 +16,9 @@
 	import Users from '@lucide/svelte/icons/users';
 	import Wrench from '@lucide/svelte/icons/wrench';
 	import TriangleAlert from '@lucide/svelte/icons/triangle-alert';
+	import ListOrdered from '@lucide/svelte/icons/list-ordered';
+	import Activity from '@lucide/svelte/icons/activity';
+	import Copy from '@lucide/svelte/icons/copy';
 
 	const overviewQuery = createQuery<DashboardOverview>(
 		toStore(() => ({
@@ -60,8 +63,11 @@
 	const fmtMoney = (n: number | undefined) =>
 		(n ?? 0).toLocaleString('ru-RU', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 
+	const priorities = ['Внеплан ПСК', 'Внеплан РЛЭ', 'Инструменталки', 'План задвигаем'];
+
 	function errorGridClass(n: number): string {
 		if (n <= 1) return 'grid-cols-1';
+		if (n <= 4) return 'grid-cols-2';
 		return 'grid-flow-col grid-rows-3';
 	}
 </script>
@@ -69,12 +75,48 @@
 <div class="flex h-full flex-col gap-4 overflow-auto p-4">
 	{#if overviewPending}
 		<div class="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
-			{#each Array(6) as _}
+			{#each Array(9) as _}
 				<Skeleton class="h-[220px] w-full" />
 			{/each}
 		</div>
 	{:else if overview}
 		<div class="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
+			<StatCard
+				title="Приоритеты"
+				icon={ListOrdered}
+				iconClass="bg-orange-100 text-orange-800"
+				href="/dashboard/tasks"
+			>
+				{#snippet children()}
+					<div class={cn('grid gap-2', errorGridClass(priorities.length))}>
+						{#each priorities as name, i (name)}
+							{@render StatRow(`${i + 1}. ${name}`, '')}
+						{/each}
+					</div>
+				{/snippet}
+			</StatCard>
+
+			<StatCard
+				title="Стоимость"
+				icon={Wallet}
+				iconClass="bg-brand-logo/10 text-brand-logo"
+				href="/reports"
+			>
+				{#snippet children()}
+					<div class="space-y-2">
+						{@render StatRow('Итого', `${fmtMoney(overview.cost)} ₽`, true)}
+						{@render StatRow('ПСК', `${fmtMoney(overview.cost_psk)} ₽`)}
+						{@render StatRow('РЛЭ', `${fmtMoney(overview.cost_rle)} ₽`)}
+					</div>
+				{/snippet}
+			</StatCard>
+
+			<StatCard
+				title="Состояние"
+				icon={Activity}
+				iconClass="bg-emerald-100 text-emerald-800"
+			/>
+
 			<StatCard
 				title="Заданий в работе"
 				icon={ClipboardList}
@@ -99,16 +141,46 @@
 			</StatCard>
 
 			<StatCard
-				title="Стоимость"
-				icon={Wallet}
-				iconClass="bg-brand-logo/10 text-brand-logo"
-				href="/reports"
+				title="Ошибки"
+				icon={TriangleAlert}
+				iconClass="bg-destructive/10 text-destructive"
+				href="/dashboard/errors"
+			>
+				{#snippet children()}
+					<div class={cn('grid gap-2', errorGridClass((errors?.by_locale ?? []).length))}>
+						{#each errors?.by_locale ?? [] as item (item.locale)}
+							{@render StatRow(item.locale, fmt(item.count))}
+						{/each}
+					</div>
+				{/snippet}
+			</StatCard>
+
+			<StatCard
+				title="Дубли"
+				icon={Copy}
+				iconClass="bg-slate-100 text-slate-800"
+				href="/reports/duplicates"
 			>
 				{#snippet children()}
 					<div class="space-y-2">
-						{@render StatRow('Итого', `${fmtMoney(overview.cost)} ₽`, true)}
-						{@render StatRow('ПСК', `${fmtMoney(overview.cost_psk)} ₽`)}
-						{@render StatRow('РЛЭ', `${fmtMoney(overview.cost_rle)} ₽`)}
+						{@render StatRow('Только CRM', fmt(overview.duplicates.crm))}
+						{@render StatRow('Смешанные', fmt(overview.duplicates.mixed))}
+						{@render StatRow('Не CRM', fmt(overview.duplicates.non_crm))}
+					</div>
+				{/snippet}
+			</StatCard>
+
+			<StatCard
+				title="Активные работники"
+				icon={Users}
+				iconClass="bg-blue-100 text-blue-800"
+				href="/dashboard/workers"
+			>
+				{#snippet children()}
+					<div class="space-y-2">
+						{@render StatRow('Всего', fmt(workers.total), true)}
+						{@render StatRow('Контролёры', fmt(workers.controllers))}
+						{@render StatRow('Инженеры', fmt(workers.engineers))}
 					</div>
 				{/snippet}
 			</StatCard>
@@ -132,36 +204,6 @@
 						<div class="flex items-center text-muted-foreground">Выполнено</div>
 						{@render MatrixCell(debt.overdue_completed)}
 						{@render MatrixCell(debt.ontime_completed)}
-					</div>
-				{/snippet}
-			</StatCard>
-
-			<StatCard
-				title="Ошибки"
-				icon={TriangleAlert}
-				iconClass="bg-destructive/10 text-destructive"
-				href="/dashboard/errors"
-			>
-				{#snippet children()}
-					<div class={cn('grid gap-2', errorGridClass((errors?.by_locale ?? []).length))}>
-						{#each errors?.by_locale ?? [] as item (item.locale)}
-							{@render StatRow(item.locale, fmt(item.count))}
-						{/each}
-					</div>
-				{/snippet}
-			</StatCard>
-
-			<StatCard
-				title="Работники"
-				icon={Users}
-				iconClass="bg-blue-100 text-blue-800"
-				href="/dashboard/workers"
-			>
-				{#snippet children()}
-					<div class="space-y-2">
-						{@render StatRow('Всего', fmt(workers.total), true)}
-						{@render StatRow('Контролёры', fmt(workers.controllers))}
-						{@render StatRow('Инженеры', fmt(workers.engineers))}
 					</div>
 				{/snippet}
 			</StatCard>
