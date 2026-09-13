@@ -4,8 +4,10 @@
 	import {
 		fetchDashboardOverview,
 		fetchErrorsByLocale,
+		fetchStatus,
 		type DashboardOverview,
-		type ErrorsByLocale
+		type ErrorsByLocale,
+		type StatusState
 	} from '$lib/api/dashboard';
 	import { Skeleton } from '$lib/components/ui/skeleton';
 	import StatCard from '$lib/components/stat-card.svelte';
@@ -39,6 +41,15 @@
 	const errorsResult = fromStore(errorsQuery);
 	const errors = $derived(errorsResult.current.data);
 
+	const statusQuery = createQuery<StatusState>(
+		toStore(() => ({
+			queryKey: ['status'],
+			queryFn: () => fetchStatus()
+		}))
+	);
+	const statusResult = fromStore(statusQuery);
+	const status = $derived(statusResult.current.data);
+
 	const debt = $derived(
 		overview?.debt ?? {
 			total: 0,
@@ -69,6 +80,11 @@
 		if (n <= 1) return 'grid-cols-1';
 		if (n <= 4) return 'grid-cols-2';
 		return 'grid-flow-col grid-rows-3';
+	}
+
+	function statusValue(count: string | null | undefined, at: string | null | undefined): string {
+		if (!at) return '—';
+		return `${count ?? '—'} · ${at}`;
 	}
 </script>
 
@@ -115,7 +131,15 @@
 				title="Состояние"
 				icon={Activity}
 				iconClass="bg-emerald-100 text-emerald-800"
-			/>
+				href="/upload"
+			>
+				{#snippet children()}
+					<div class="space-y-2">
+						{@render StatRow('Задания в работе', statusValue(status?.in_work_count, status?.in_work_at), true)}
+						{@render StatRow('Новые задания', statusValue(status?.new_tasks_count, status?.new_tasks_at))}
+					</div>
+				{/snippet}
+			</StatCard>
 
 			<StatCard
 				title="Заданий в работе"

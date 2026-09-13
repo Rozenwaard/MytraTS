@@ -58,3 +58,15 @@ export interface ErrorsByLocale {
 export async function fetchErrorsByLocale(): Promise<ErrorsByLocale> {
 	return api<ErrorsByLocale>('/api/dashboard/errors-by-locale');
 }
+
+export interface StatusState {
+	last_txt_count: string | null;
+	in_work_at: string | null;
+	in_work_count: string | null;
+	new_tasks_at: string | null;
+	new_tasks_count: string | null;
+}
+
+export async function fetchStatus(): Promise<StatusState> {
+	return api<StatusState>('/api/status');
+}

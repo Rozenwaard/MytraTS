@@ -368,3 +368,10 @@ class DiscrepanciesLog(Base):
     batch_id: Mapped[str] = mapped_column(Text)
     payload: Mapped[str] = mapped_column(Text)   # JSON: {task_number: {task_report, task_detail, reestr_number, reestr_date, report, norm, extra}}
     created_at: Mapped[str] = mapped_column(Text)
+
+
+class StatusState(Base):
+    __tablename__ = 'status_state'
+
+    key: Mapped[str] = mapped_column(Text, primary_key=True)
+    value: Mapped[str] = mapped_column(Text)

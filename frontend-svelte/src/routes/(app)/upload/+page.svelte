@@ -2,8 +2,9 @@
 	import { onDestroy } from 'svelte';
 	import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '$lib/components/ui/card';
 	import { Input } from '$lib/components/ui/input';
+	import { Button } from '$lib/components/ui/button';
 	import { queryClient } from '$lib/query';
-	import { uploadXlsx, fetchUploadProgress, type UploadProgress } from '$lib/api/upload';
+	import { uploadXlsx, fetchUploadProgress, downloadTaskNumbersInWork, type UploadProgress } from '$lib/api/upload';
 
 	let uploading = $state(false);
 	let progress = $state<UploadProgress | null>(null);
@@ -80,7 +81,7 @@
 </script>
 
 <div class="h-full overflow-auto p-4">
-	<div class="mx-auto max-w-2xl">
+	<div class="mx-auto max-w-2xl space-y-4">
 		<Card>
 			<CardHeader>
 				<CardTitle>Загрузка</CardTitle>
@@ -118,6 +119,16 @@
 						{progress.message || 'Ошибка загрузки'}
 					</div>
 				{/if}
+			</CardContent>
+		</Card>
+
+		<Card>
+			<CardHeader>
+				<CardTitle>Задания в работе</CardTitle>
+				<CardDescription>Номера заданий, у которых ещё нет отчёта и реестра</CardDescription>
+			</CardHeader>
+			<CardContent>
+				<Button onclick={() => downloadTaskNumbersInWork()}>Получить номера заданий в работе</Button>
 			</CardContent>
 		</Card>
 	</div>

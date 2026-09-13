@@ -77,6 +77,7 @@ MytraTS/
 │   ├── dashboard.py       # build_scope (виды работ из carte.kind='base'+территории+видимость+отделение), генераторы xlsx отчётов дашборда
 │   ├── premium.py         # apply_norms / apply_manual_norm (norm=база, extra=доп. из carte), aggregate_utalo (агрегация в utalo), generate_premium_xlsx_bytes
 │   ├── rle.py             # РЛЭ: недельные блоки (кол-во работ/на исполнителя/в день) по сетям + генерация xlsx
+│   ├── status.py          # состояние загрузок для виджета «Состояние» (status_state: счётчики + таймстампы)
 │   └── help.py            # «Помощь»: парсинг docx/xlsx в блоки, HTML для печати, контент «Операторы»
 ├── routers/
 │   ├── auth.py             # логин/логаут, смена пароля, настройки, поиск пользователей
@@ -234,6 +235,8 @@ MytraTS/
 |---|---|---|
 | POST | `/upload` | multipart .xlsx → raw_afl |
 | GET | `/upload/progress/{upload_id}` | прогресс загрузки |
+| GET | `/upload/task-numbers-in-work` | выгрузка .txt номеров заданий «в работе» (report и reestr_number пустые) |
+| GET | `/status` | состояние загрузок для виджета «Состояние» (in_work/new_tasks счётчики + таймстампы) |
 
 ### Готово на бэке, нет UI
 | Метод | Путь | Что делает |

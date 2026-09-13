@@ -41,3 +41,24 @@ export async function fetchUploadProgress(uploadId: string): Promise<UploadProgr
 	}
 	return (await res.json()) as UploadProgress;
 }
+
+/**
+ * Скачивает номера заданий «в работе» (.txt, task_number столбиком).
+ */
+export async function downloadTaskNumbersInWork(): Promise<void> {
+	const res = await fetch('/api/upload/task-numbers-in-work', { credentials: 'include' });
+	if (!res.ok) {
+		throw new Error('Не удалось получить номера заданий');
+	}
+	const blob = await res.blob();
+	const url = URL.createObjectURL(blob);
+	const a = document.createElement('a');
+	a.href = url;
+	const cd = res.headers.get('Content-Disposition') ?? '';
+	const m = /filename\*=UTF-8''([^;]+)/.exec(cd);
+	a.download = m ? decodeURIComponent(m[1]) : 'номера_заданий_в_работе.txt';
+	document.body.appendChild(a);
+	a.click();
+	a.remove();
+	URL.revokeObjectURL(url);
+}
