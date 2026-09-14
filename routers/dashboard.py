@@ -77,12 +77,12 @@ async def api_dashboard_overview(request: Request, db_session: AsyncSession) -> 
 
     # Стоимость = завершённые (status Завершено/Закрыто) строки без отчёта, по carte.price.
     cost = (await db_session.execute(
-        text(f"SELECT COALESCE(SUM(COALESCE((SELECT price FROM carte WHERE carte.title = main_afl.task_report LIMIT 1), 0)), 0) FROM main_afl WHERE {base_where}"),
+        text(f"SELECT COALESCE(SUM(COALESCE(c.price, 0)), 0) FROM main_afl LEFT JOIN carte c ON c.title = main_afl.task_report WHERE {base_where}"),
         params)).scalar()
 
     # Разбивка стоимости по заказчикам (customer = ПСК/РЛЭ) — для раскрытия плашки «Стоимость».
     cost_by_cust_result = await db_session.execute(
-        text(f"SELECT customer, COALESCE(SUM(COALESCE((SELECT price FROM carte WHERE carte.title = main_afl.task_report LIMIT 1), 0)), 0) FROM main_afl WHERE {base_where} GROUP BY customer"),
+        text(f"SELECT customer, COALESCE(SUM(COALESCE(c.price, 0)), 0) FROM main_afl LEFT JOIN carte c ON c.title = main_afl.task_report WHERE {base_where} GROUP BY customer"),
         params)
     cost_by_cust = {row[0]: (row[1] or 0) for row in cost_by_cust_result}
 
@@ -100,12 +100,12 @@ async def api_dashboard_overview(request: Request, db_session: AsyncSession) -> 
         if cust_key and task_key:
             in_work_matrix[f"{cust_key}_{task_key}"] = cnt
 
-    # «Крупная задолженность»: visit_reason содержит «Крупная задолженность».
+    # «Крупная задолженность»: visit_reason содержит «Крупн» (Крупная задолженность + Крупный/Крупные должники).
     # Матрица 2×2: просрочено/вовремя × в работе/выполнено.
     #   просрочено = не завершено за 7 дней от создания: «в работе» — создано раньше 7 дней назад;
     #                «выполнено» — выполнено позже чем через 7 дней после создания (done_day - created_at > 7).
     debt_clause = f"{vis_where} AND visit_reason LIKE :debt_reason"
-    debt_params = {**vis_params, "debt_reason": "%Крупная задолженность%"}
+    debt_params = {**vis_params, "debt_reason": "%Крупн%"}
     debt_total, ontime_in_work, ontime_completed, overdue_in_work, overdue_completed = (await db_session.execute(text(
         f"SELECT COUNT(*), "
         f"COALESCE(SUM(CASE WHEN (status IS NULL OR status NOT LIKE 'З%') AND (created_at IS NULL OR created_at > date('now', 'localtime', '-7 days')) THEN 1 ELSE 0 END), 0), "
@@ -149,31 +149,18 @@ async def api_dashboard_overview(request: Request, db_session: AsyncSession) -> 
     #   «Смешанные»  — среди строк точки учёта есть и CRM, и другие источники;
     #   «Не CRM»      — среди строк точки учёта нет CRM.
     dup_base = "metering_point IS NOT NULL AND metering_point != '' AND (status IS NULL OR status NOT LIKE 'З%')"
-    duplicates_crm = (await db_session.execute(
-        text(
-            f"SELECT COUNT(*) FROM ("
-            f"SELECT metering_point FROM main_afl WHERE {vis_where} AND {dup_base} "
-            f"GROUP BY metering_point "
-            f"HAVING COUNT(*) > 1 AND SUM(CASE WHEN task_source = 'CRM' THEN 1 ELSE 0 END) = COUNT(*)"
-            f")"
-        ), vis_params)).scalar()
-    duplicates_mixed = (await db_session.execute(
-        text(
-            f"SELECT COUNT(*) FROM ("
-            f"SELECT metering_point FROM main_afl WHERE {vis_where} AND {dup_base} "
-            f"GROUP BY metering_point "
-            f"HAVING COUNT(*) > 1 AND SUM(CASE WHEN task_source = 'CRM' THEN 1 ELSE 0 END) > 0 "
-            f"AND SUM(CASE WHEN task_source = 'CRM' THEN 1 ELSE 0 END) < COUNT(*)"
-            f")"
-        ), vis_params)).scalar()
-    duplicates_nocrm = (await db_session.execute(
-        text(
-            f"SELECT COUNT(*) FROM ("
-            f"SELECT metering_point FROM main_afl WHERE {vis_where} AND {dup_base} "
-            f"GROUP BY metering_point "
-            f"HAVING COUNT(*) > 1 AND SUM(CASE WHEN task_source = 'CRM' THEN 1 ELSE 0 END) = 0"
-            f")"
-        ), vis_params)).scalar()
+    duplicates_crm, duplicates_mixed, duplicates_nocrm = (await db_session.execute(text(
+        f"SELECT "
+        f"COALESCE(SUM(CASE WHEN crm_cnt = cnt THEN 1 ELSE 0 END), 0), "
+        f"COALESCE(SUM(CASE WHEN crm_cnt > 0 AND crm_cnt < cnt THEN 1 ELSE 0 END), 0), "
+        f"COALESCE(SUM(CASE WHEN crm_cnt = 0 THEN 1 ELSE 0 END), 0) "
+        f"FROM ("
+        f"SELECT metering_point, COUNT(*) AS cnt, "
+        f"SUM(CASE WHEN task_source = 'CRM' THEN 1 ELSE 0 END) AS crm_cnt "
+        f"FROM main_afl WHERE {vis_where} AND {dup_base} "
+        f"GROUP BY metering_point HAVING COUNT(*) > 1"
+        f")"
+    ), vis_params)).one()
 
     return Response(content=json.dumps({
         "cost": round(cost, 2),

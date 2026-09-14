@@ -45,9 +45,8 @@ def _locale_expr():
     return f"COALESCE((SELECT locale FROM users WHERE {norm_name('users.full_name')} = {norm_name('main_afl.executor')} LIMIT 1), '(без локали)')"
 
 
-def _cost_expr():
-    """SQL-выражение стоимости строки: цена из carte.price (0 — если цены нет)."""
-    return "COALESCE((SELECT price FROM carte WHERE carte.title = main_afl.task_report LIMIT 1), 0)", {}
+COST_JOIN = "LEFT JOIN carte c ON c.title = main_afl.task_report"
+COST_PRICE = "COALESCE(c.price, 0)"
 
 
 def _period_clause(period: str):
@@ -91,7 +90,7 @@ async def _next_period(db_session: AsyncSession) -> str:
     return f"{now.year:04d} {now.month:02d}"
 
 
-async def _card(db_session, where_sql, params, locale_expr, cost_expr):
+async def _card(db_session, where_sql, params, locale_expr):
     """Счётчик + раскладка по locale + сумма стоимости для одной плашки."""
     total = (await db_session.execute(
         text(f"SELECT COUNT(*) FROM main_afl WHERE {where_sql}"), params)).scalar()
@@ -99,7 +98,7 @@ async def _card(db_session, where_sql, params, locale_expr, cost_expr):
         text(f"SELECT {locale_expr} AS loc, COUNT(*) AS cnt FROM main_afl WHERE {where_sql} GROUP BY {locale_expr} ORDER BY cnt DESC"),
         params)
     cost = (await db_session.execute(
-        text(f"SELECT COALESCE(SUM({cost_expr}), 0) FROM main_afl WHERE {where_sql}"), params)).scalar()
+        text(f"SELECT COALESCE(SUM({COST_PRICE}), 0) FROM main_afl {COST_JOIN} WHERE {where_sql}"), params)).scalar()
     return {"total": total, "by_locale": [{"locale": r[0], "count": r[1]} for r in rows], "cost": round(cost or 0, 2)}
 
 
@@ -116,30 +115,29 @@ async def api_fin_report(request: Request, db_session: AsyncSession, period: str
     wt_clause, wt_params = _normal_work_types_clause()
     zone_clause, zone_params = _stop_zone_clause()
     locale_expr = _locale_expr()
-    cost_expr, cost_params = _cost_expr()
     p_clause, _period_fmt, p_params = _period_clause(period)
-    base = {**cost_params, **p_params}
+    base = {**p_params}
     base_wt = {**base, **wt_params}
 
     cards = {
-        "completed": await _card(db_session, f"{p_clause} AND status IN ('Завершено','Закрыто')", base, locale_expr, cost_expr),
-        "without_reestr": await _card(db_session, f"{p_clause} AND status IN ('Завершено','Закрыто') AND {wt_clause} AND reestr_number IS NULL", base_wt, locale_expr, cost_expr),
-        "with_errors": await _card(db_session, f"{p_clause} AND status IN ('Завершено','Закрыто') AND {wt_clause} AND reestr_number IS NULL AND (errors IS NOT NULL AND errors != '') AND {zone_clause}", {**base_wt, **zone_params}, locale_expr, cost_expr),
-        "ready": await _card(db_session, f"{p_clause} AND status IN ('Завершено','Закрыто') AND reestr_number IS NOT NULL AND reestr_number != 'Отклонён'", base, locale_expr, cost_expr),
+        "completed": await _card(db_session, f"{p_clause} AND status IN ('Завершено','Закрыто')", base, locale_expr),
+        "without_reestr": await _card(db_session, f"{p_clause} AND status IN ('Завершено','Закрыто') AND {wt_clause} AND reestr_number IS NULL", base_wt, locale_expr),
+        "with_errors": await _card(db_session, f"{p_clause} AND status IN ('Завершено','Закрыто') AND {wt_clause} AND reestr_number IS NULL AND (errors IS NOT NULL AND errors != '') AND {zone_clause}", {**base_wt, **zone_params}, locale_expr),
+        "ready": await _card(db_session, f"{p_clause} AND status IN ('Завершено','Закрыто') AND reestr_number IS NOT NULL AND reestr_number != 'Отклонён'", base, locale_expr),
     }
 
     work_types = []
     total_cost = 0.0
     rows = await db_session.execute(
-        text(f"SELECT task_report, COUNT(*), COALESCE((SELECT price FROM carte WHERE carte.title = main_afl.task_report LIMIT 1), 0) AS price FROM main_afl WHERE {p_clause} AND status IN ('Завершено','Закрыто') AND {wt_clause} GROUP BY task_report ORDER BY COUNT(*) DESC"),
+        text(f"SELECT task_report, COUNT(*), {COST_PRICE} AS price FROM main_afl {COST_JOIN} WHERE {p_clause} AND status IN ('Завершено','Закрыто') AND {wt_clause} GROUP BY task_report ORDER BY COUNT(*) DESC"),
         {**wt_params, **p_params})
     for (tr, cnt, price) in rows:
         work_types.append({"label": tr, "count": cnt})
         total_cost += (price or 0.0) * (cnt or 0)
 
     cust_rows = await db_session.execute(
-        text(f"SELECT customer, COALESCE(SUM({cost_expr}), 0) FROM main_afl WHERE {p_clause} AND status IN ('Завершено','Закрыто') AND {wt_clause} GROUP BY customer"),
-        {**wt_params, **cost_params, **p_params})
+        text(f"SELECT customer, COALESCE(SUM({COST_PRICE}), 0) FROM main_afl {COST_JOIN} WHERE {p_clause} AND status IN ('Завершено','Закрыто') AND {wt_clause} GROUP BY customer"),
+        {**wt_params, **p_params})
     cost_by_cust = {r[0]: (r[1] or 0) for r in cust_rows}
     cost_psk = round(cost_by_cust.get("ПСК", 0), 2)
     cost_rle = round(cost_by_cust.get("РЛЭ", 0), 2)
