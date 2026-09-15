@@ -9,6 +9,7 @@ export interface RleCell {
 	count: number;
 	per_executor: number;
 	per_day: number;
+	workers: number;
 }
 
 export interface RleRow {
@@ -18,6 +19,8 @@ export interface RleRow {
 
 export interface RleTotal {
 	count: number;
+	per_executor: number;
+	per_day: number;
 	executors: number;
 }
 
