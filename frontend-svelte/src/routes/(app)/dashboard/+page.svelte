@@ -101,7 +101,6 @@
 				title="Приоритеты"
 				icon={ListOrdered}
 				iconClass="bg-orange-100 text-orange-800"
-				href="/dashboard/tasks"
 			>
 				{#snippet children()}
 					<div class={cn('grid gap-2', errorGridClass(priorities.length))}>
@@ -145,7 +144,6 @@
 				title="Заданий в работе"
 				icon={ClipboardList}
 				iconClass="bg-primary/10 text-primary"
-				href="/dashboard/tasks"
 			>
 				{#snippet children()}
 					<div class="grid grid-cols-[auto_1fr_1fr] gap-2 text-sm">
@@ -168,7 +166,6 @@
 				title="Ошибки"
 				icon={TriangleAlert}
 				iconClass="bg-destructive/10 text-destructive"
-				href="/dashboard/errors"
 			>
 				{#snippet children()}
 					<div class={cn('grid gap-2', errorGridClass((errors?.by_locale ?? []).length))}>
@@ -183,7 +180,6 @@
 				title="Дубли"
 				icon={Copy}
 				iconClass="bg-slate-100 text-slate-800"
-				href="/reports/duplicates"
 			>
 				{#snippet children()}
 					<div class="space-y-2">
@@ -198,7 +194,6 @@
 				title="Активные работники"
 				icon={Users}
 				iconClass="bg-blue-100 text-blue-800"
-				href="/dashboard/workers"
 			>
 				{#snippet children()}
 					<div class="space-y-2">
@@ -213,7 +208,6 @@
 				title="Крупная задолженность"
 				icon={CircleDollarSign}
 				iconClass="bg-amber-100 text-amber-800"
-				href="/dashboard/projects"
 			>
 				{#snippet children()}
 					<div class="grid grid-cols-[auto_1fr_1fr] gap-2 text-sm">
@@ -236,7 +230,6 @@
 				title="Инструментальные проверки"
 				icon={Wrench}
 				iconClass="bg-violet-100 text-violet-800"
-				href="/dashboard/projects"
 			>
 				{#snippet children()}
 					<div class="space-y-2">

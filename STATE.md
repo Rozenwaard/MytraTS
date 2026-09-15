@@ -1,15 +1,12 @@
 # STATE — MYTRA (MytraTS)
 
 ## Что это
-Приложение управления реестрами заданий энергосбыта. Бэкенд — Litestar (JSON API) + SQLAlchemy 2, фронтенд — React SPA + TanStack.
+Приложение управления реестрами заданий энергосбыта. Бэкенд — Litestar (JSON API) + SQLAlchemy 2, фронтенд — SvelteKit + Svelte 5 (Runes).
 Бизнес-логика и правила — `docs/БИЗНЕС-ЛОГИКА.md`.
 
 ## Стек
 - **Бэкенд**: Python 3.11 (закреплено `requires-python = ">=3.11,<3.13"`), Litestar 2.24, SQLAlchemy 2 (async + aiosqlite), `uv` для зависимостей. БД — SQLite `mytra.db` (операционная) + `story.db` (архив/потребители).
-- **Фронтенд (текущий, React)**: Vite + React 19 + TypeScript (strict), Tailwind v4 + DaisyUI 5, TanStack Router/Query/Table. Менеджер — `bun`.
-- **Фронтенд (новый, «Руны»)**: SvelteKit + Svelte 5 Runes + Tailwind v4 + shadcn-svelte + TanStack Table v8 + TanStack Query, менеджер `bun`. Живёт в `frontend-svelte/` (порт 5174). Переезжаем по частям, бэкенд не трогаем. Начато: каркас (auth + shell + тема) + «Реестры → Обзор» (таблица). Детали (запуск, грабли сборки, дизайн-решения) — `frontend-svelte/STATE.md`.
-- **План (оценка)**: переход фронта на Svelte 5 — начат (проект «Руны»), черновик в `docs/SVELTE-MIGRATION.md`.
-- **Косметика (известно)**: `AddTab` ремоунтится при каждом ре-рендере `MainAflPage` — безвредно (поиск вынесен в `MainAflPage`, сеть не дублируется, состояния в `AddTab` нет). Не помогло: версия React (19.1/19.2), `key`, тернарник/`&&`, StrictMode. Надёжный фикс (если понадобится) — рендерить вкладки всегда и скрывать через CSS, а не монтировать условно.
+- **Фронтенд**: SvelteKit + Svelte 5 Runes + Tailwind v4 + shadcn-svelte + TanStack Table v8 + TanStack Query. Живёт в `frontend-svelte/` (порт 5174), менеджер `bun`. Бэкенд не трогаем.
 - **Git**: https://github.com/Rozenwaard/MytraTS
 
 ### Ограничения зависимостей (важно)
@@ -23,13 +20,10 @@
 # бэкенд (порт 8000) — в фоне, без окна
 Start-Process pwsh -WindowStyle Hidden -ArgumentList '-NoExit','-Command','cd C:\Users\ASUS\MaterialThought\MytraTS; uv run uvicorn app:app --reload --port 8000'
 
-# фронтенд React (порт 5173, прокси /api → :8000) — в фоне, без окна
-Start-Process pwsh -WindowStyle Hidden -ArgumentList '-NoExit','-Command','cd C:\Users\ASUS\MaterialThought\MytraTS\frontend; bun run dev'
-
-# фронтенд Svelte «Руны» (порт 5174, прокси /api → :8000) — в фоне, без окна
+# фронтенд Svelte (порт 5174, прокси /api → :8000) — в фоне, без окна
 Start-Process pwsh -WindowStyle Hidden -ArgumentList '-NoExit','-Command','cd C:\Users\ASUS\MaterialThought\MytraTS\frontend-svelte; bun run dev'
 ```
-Браузер: http://localhost:5173 (React) / http://localhost:5174 («Руны»). Логин: табельный номер + пароль (первый вход — пароль = табельный номер, потом смена). Тестовый юзер staff_id=2190.
+Браузер: http://localhost:5174. Логин: табельный номер + пароль (первый вход — пароль = табельный номер, потом смена). Тестовый юзер staff_id=2190.
 
 ### Проверка, что бэк поднят
 Бэкенд — **Litestar** (не FastAPI): рутов `/` и `/docs` у него нет (это FastAPI-пути), поэтому 404 там — **норма, а не падение**. Swagger-схема Litestar живёт на `/schema`.
@@ -52,14 +46,14 @@ Invoke-WebRequest http://localhost:8000/api/user/settings -UseBasicParsing
 - **401 на защищённом `/api/*`** → бэк поднят и отвечает.
 - **200 на `/schema/openapi.json`** → бэк поднят и отвечает (самый чистый вариант, без авторизации).
 
-Остановка фонового процесса: `taskkill /PID <pid> /T /F` (pid смотри через `netstat -ano | findstr :8000` / `:5173` / `:5174`).
+Остановка фонового процесса: `taskkill /PID <pid> /T /F` (pid смотри через `netstat -ano | findstr :8000` / `:5174`).
 
 ## Структура
 ```
 MytraTS/
 ├── app.py                 # точка входа: сборка Litestar-приложения из роутеров
 │                          # (request_max_body_size = 65 МБ — потолок загрузки xlsx;
-│                          #  CORSConfig только под dev-origin localhost:5173)
+│                          #  CORSConfig только под dev-origin localhost:5174)
 ├── deps.py                # get_current_user, require_auth (общие зависимости)
 ├── sql.py                 # build_in_clause, norm_name (общие SQL-хелперы: IN-клаузы + нормализация ФИО «ё/е»)
 ├── archive.py             # CLI архивации (cron 22-го числа): main_afl → story_afl → consumers
@@ -92,14 +86,16 @@ MytraTS/
 │   ├── dashboard.py        # обзор (сводка) + ошибки + отчёты дашборда
 │   ├── lookups.py          # справочники (отделения, исполнители, виды работ)
 │   └── help.py             # «Помощь»: GET/загрузка/скачивание страниц (instruction, tariffs, operators)
-├── frontend/
+├── frontend-svelte/
 │   └── src/
-│       ├── api/           # client.ts (fetch+cookie), main-afl.ts, dashboard.ts, fin-report.ts, premium.ts, rle.ts, help.ts
-│       ├── store/auth.tsx # AuthContext (user, login, logout)
-│       ├── hooks/         # use-main-afl.ts, use-dashboard.ts
-│       ├── routes/        # __root (navbar+тема), login, _authenticated/{main-afl, change-password, dashboard, reports, help}
-│       ├── components/    # data-table.tsx (клик-выбор строк), logo.tsx
-│       └── lib/use-theme.ts
+│       ├── lib/
+│       │   ├── api/       # client.ts (api<T>), main-afl.ts, dashboard.ts, fin-report.ts, premium.ts, rle.ts, help.ts, upload.ts
+│       │   ├── store/     # auth/search/toast (.svelte.ts — Runes-хранилища)
+│       │   ├── components/# ui/* (shadcn-svelte), logo.svelte, stat-card.svelte, help-content.svelte
+│       │   ├── columns.ts # 10 видимых + 17 «на раскрытие» колонок
+│       │   ├── query.ts   # QueryClient
+│       │   └── nav.ts     # TOP_NAV / SUB_NAV
+│       └── routes/        # +layout, login, (app)/{dashboard, main-afl, upload, reports, help, change-password}
 ├── docs/
 │   ├── БИЗНЕС-ЛОГИКА.md    # поток данных и бизнес-правила (классификация, ошибки, реестры, роли, дашборд)
 │   └── КЛАССИФИКАЦИЯ-ОБРАБОТКИ.md  # пошаговая логика processor.py (правила, словари, известные пробелы)
@@ -115,7 +111,7 @@ MytraTS/
 ```
 
 ## Прод (локальная сеть)
-Схема: браузер → Apache2 :80 → статика `frontend/dist` + `ProxyPass /api` → uvicorn `127.0.0.1:8000`.
+Схема: браузер → Apache2 :80 → прокси `/` на Node-сервер SvelteKit (`frontend-svelte/build`, порт 3000) + `ProxyPass /api` → uvicorn `127.0.0.1:8000`.
 Полная инструкция и боевой конфиг — `DEPLOYMENT.md`. Ключевые грабли, чтобы не наступать повторно:
 - В Apache **`ProxyPass /api http://127.0.0.1:8000/api`** — `/api` обязателен и в цели, иначе Apache
   срежет префикс, а все роутеры зарегистрированы как `Router("/api", ...)` → 404 на всё API.

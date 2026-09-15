@@ -29,7 +29,7 @@ from routers.upload import upload_router
 load_dotenv()
 session_config = CookieBackendConfig(secret=SECRET_KEY.encode())
 
-cors_config = CORSConfig(allow_origins=["http://localhost:5173"], allow_credentials=True)
+cors_config = CORSConfig(allow_origins=["http://localhost:5174"], allow_credentials=True)
 
 app = Litestar(
     route_handlers=[
