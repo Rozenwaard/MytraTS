@@ -3,7 +3,7 @@
 ## Итоговая схема
 ```
 Браузер ──:80──▶ Apache2
-                   ├── /        → статика фронтенда (frontend/dist)
+                   ├── /        → Node-сервер SvelteKit 127.0.0.1:3000 (frontend-svelte/build)
                    └── /api/*   → uvicorn 127.0.0.1:8000 (бэкенд Litestar)
 ```
 - Бэкенд слушает только `127.0.0.1:8000`; наружу смотрит только Apache.
@@ -49,17 +49,10 @@ echo "SECRET_KEY=$(openssl rand -hex 32)" > .env
 
 Первый вход: логин = табельный номер, пароль = табельный номер (система попросит сменить).
 
-## 4. Фронтенд (сборка)
-```bash
-cd /opt/mytra/frontend
-bun install
-bun run build     # → frontend/dist
-```
+## 4. Фронтенд (Svelte, `frontend-svelte/`)
 
-## 4а. Фронтенд Svelte («Руны», `frontend-svelte/`)
-
-Новый фронтенд на SvelteKit 2 + Svelte 5 (Runes), менеджер `bun`, порт **5174** (dev),
-прокси `/api` → `:8000`. Живёт рядом со старым React-фронтом (`frontend/`, порт 5173).
+Фронтенд на SvelteKit 2 + Svelte 5 (Runes), менеджер `bun`, порт **5174** (dev),
+прокси `/api` → `:8000`.
 
 ### Ключевые решения (зафиксированы, не менять без причины)
 
@@ -77,8 +70,7 @@ bun run build     # → frontend/dist
   `@sveltejs/adapter-node`: `bun run build` даёт `build/index.js`, который сам отдаёт
   статику и роутинг (SSR). `adapter-auto` не использован — на голом Debian/Ubuntu он не
   определяет среду (ищет Vercel/Netlify/Cloudflare) и пишет результат в `.svelte-kit/output/`
-  вместо `build/`. Apache должен проксировать `/` на этот сервер, а НЕ указывать
-  `DocumentRoot /opt/mytra/frontend/dist` (это старый React-фронт).
+  вместо `build/`. Apache должен проксировать `/` на этот сервер (не отдавать статикой).
 
 ### Требования
 
@@ -113,8 +105,7 @@ cd /opt/mytra/frontend-svelte && PORT=3000 bun build/index.js
 # или: node build/index.js
 ```
 
-В Apache вместо `DocumentRoot` на `frontend/dist` проксируйте `/` на `127.0.0.1:3000`,
-а `/api` — на `127.0.0.1:8000` (готовый конфиг — §6, подраздел «Svelte-фронт»).
+В Apache проксируйте `/` на `127.0.0.1:3000`, а `/api` — на `127.0.0.1:8000` (готовый конфиг — §6).
 
 
 ## 5. systemd-сервис бэкенда
@@ -139,7 +130,7 @@ WantedBy=multi-user.target
 ```bash
 sudo useradd --system --home /opt/mytra --shell /usr/sbin/nologin mytra
 sudo chown -R mytra:mytra /opt/mytra
-sudo chmod -R o+rX /opt/mytra      # Apache должен читать статику фронтенда
+sudo chmod -R o+rX /opt/mytra      # чтобы Node-сервер и Apache могли читать файлы
 sudo systemctl daemon-reload
 sudo systemctl enable --now mytra
 sudo systemctl status mytra        # active (running)
@@ -155,21 +146,18 @@ sudo a2enmod proxy proxy_http
     # Раскомментировать, если доступ по DNS-имени; для доступа по IP — оставить закрытым
     # ServerName mytra.company.ru
 
-    DocumentRoot /opt/mytra/frontend/dist
-
-    <Directory /opt/mytra/frontend/dist>
-        Options -Indexes +FollowSymLinks
-        AllowOverride None
-        Require all granted
-        FallbackResource /index.html
-    </Directory>
-
     ProxyPreserveHost On
     ProxyRequests Off
 
-    # ВАЖНО: /api обязателен и в цели — см. пояснение ниже
+    # API — на бэкенд. Обязано стоять ВЫШЕ "/": ProxyPass матчит по порядку объявления,
+    # первый совпавший выигрывает, поэтому catch-all "/" перехватил бы "/api/*" раньше бэкенда.
     ProxyPass /api http://127.0.0.1:8000/api
     ProxyPassReverse /api http://127.0.0.1:8000/api
+
+    # Svelte-приложение (adapter-node) на 127.0.0.1:3000.
+    # Слеш на конце цели обязателен — иначе Apache срежет ведущий "/" пути.
+    ProxyPass / http://127.0.0.1:3000/
+    ProxyPassReverse / http://127.0.0.1:3000/
 </VirtualHost>
 ```
 ```bash
@@ -187,7 +175,7 @@ sudo systemctl reload apache2
   `Router("/api", ...)`**, то есть каждый эндпоинт живёт под `/api/...` → получите 404 на всё API.
 - ✅ `ProxyPass /api http://127.0.0.1:8000/api` — `/api/login` → `/api/login`. Верно.
 
-Не путать с dev-режимом: Vite (`frontend/vite.config.ts`, `proxy: { "/api": "http://localhost:8000" }`)
+Не путать с dev-режимом: Vite (`frontend-svelte/vite.config.ts`, `proxy: { "/api": "http://localhost:8000" }`)
 префикс **сохраняет**, поэтому там короткая запись работает. У Apache семантика другая.
 
 ### Остальные директивы
@@ -202,36 +190,9 @@ sudo systemctl reload apache2
   и слияние идут фоновой задачей (`asyncio.create_task`), прогресс фронт опрашивает через
   `GET /api/upload/progress/{id}`. То есть долгая обработка через прокси не висит.
 - CORS в прод-режиме не участвует: фронт и API на одном origin. `CORSConfig` в `app.py`
-  прописан только под dev-origin `http://localhost:5173`.
+  прописан только под dev-origin `http://localhost:5174`.
 
-### Svelte-фронт («Руны»): Node-сервер вместо статики
-
-Если наружу смотрим новый Svelte-фронт (а не React), конфиг меняется: статику больше не
-отдаём через `DocumentRoot`, а проксируем `/` на Node-сервер SvelteKit (`build/index.js`,
-порт 3000). Файл `/etc/apache2/sites-available/mytra.conf`:
-
-```apache
-<VirtualHost *:80>
-    # ServerName mytra.company.ru
-
-    ProxyPreserveHost On
-    ProxyRequests Off
-
-    # API — на бэкенд. Обязано стоять ВЫШЕ "/": ProxyPass матчит по порядку объявления,
-    # первый совпавший выигрывает, поэтому catch-all "/" перехватил бы "/api/*" раньше бэкенда.
-    ProxyPass /api http://127.0.0.1:8000/api
-    ProxyPassReverse /api http://127.0.0.1:8000/api
-
-    # Svelte-приложение (adapter-node) на 127.0.0.1:3000.
-    # Слеш на конце цели обязателен — иначе Apache срежет ведущий "/" пути.
-    ProxyPass / http://127.0.0.1:3000/
-    ProxyPassReverse / http://127.0.0.1:3000/
-</VirtualHost>
-```
-
-```bash
-sudo apache2ctl configtest && sudo systemctl reload apache2
-```
+### Svelte-фронт: Node-сервер
 
 Сам Node-сервер запускается отдельно (dev — `bun run dev`, prod — `node build/index.js`).
 Запуск прод-сервера через `node` — каноничный рантайм `adapter-node` и самый надёжный: он
@@ -278,7 +239,7 @@ x86-64 и работают. Научные пакеты (`pyarrow`, `scipy`, `nu
 - `node build/index.js` не зависит от этих инструкций — прод-фронт безопаснее держать на `node`.
 
 ## Обновление
-Рекомендуемая команда обновления с GitHub (бэкенд + Svelte-фронт «Руны», оба сервиса):
+Рекомендуемая команда обновления с GitHub (бэкенд + Svelte-фронт, оба сервиса):
 ```bash
 sudo systemctl stop mytra mytra-frontend && \
 sudo chown -R "$USER:" /opt/mytra && \
@@ -292,7 +253,6 @@ sudo systemctl start mytra mytra-frontend
 - `git reset --hard origin/master` — сброс локальных правок на сервере (adapter-node уже в репо — `bun add`/`sed` больше не нужны).
 - `uv sync --python-preference only-system` — бэкенд на системном Python 3.11.
 - `bun install && bun run build` — собирает `frontend-svelte/build/index.js` (Node-сервер SvelteKit).
-- Если всё ещё используется React-фронт (`frontend/`), добавить `cd frontend && bun install && bun run build && cd ..` перед сборкой Svelte.
 
 ## Бэкап БД
 ```bash
@@ -302,7 +262,7 @@ sudo systemctl start mytra
 ```
 
 ## Частые проблемы
-- **404 на `/dashboard`, `/main-afl`** — не включён `FallbackResource /index.html` или не перезагружен Apache.
+- **404 на `/dashboard`, `/main-afl`** — не запущен Node-сервер SvelteKit или не настроен прокси `/` → `127.0.0.1:3000`.
 - **`/api` 404 / Connection refused** — не запущен uvicorn, не включены модули `proxy proxy_http`,
   либо в `ProxyPass`/`ProxyPassReverse` пропущен `/api` в целевом URL (тогда Apache срезает
   префикс и бэкенд не находит маршрут — см. §6).
