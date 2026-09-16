@@ -35,6 +35,25 @@ export async function fetchRle(): Promise<RleData> {
 	return api<RleData>('/api/rle');
 }
 
-export function rleDownloadUrl(): string {
-	return '/api/rle/download';
+/**
+ * «Загрузить 1С»: файл с работами РЛЭ → сводный отчёт (xlsx, вкладки «КСП» и «ИП»).
+ * Отдельный fetch: multipart требует, чтобы браузер сам выставил Content-Type с boundary.
+ */
+export async function uploadRle(file: File): Promise<{ blob: Blob; filename: string }> {
+	const form = new FormData();
+	form.append('data', file);
+	const res = await fetch('/api/rle/upload', {
+		method: 'POST',
+		credentials: 'include',
+		body: form
+	});
+	if (!res.ok) {
+		const body = (await res.json().catch(() => ({}))) as { error?: string };
+		throw new Error(body.error ?? 'Ошибка загрузки 1С');
+	}
+	const blob = await res.blob();
+	const disposition = res.headers.get('Content-Disposition') ?? '';
+	const m = disposition.match(/filename\*=UTF-8''([^;]+)/);
+	const filename = m ? decodeURIComponent(m[1]) : 'РЛЭ.xlsx';
+	return { blob, filename };
 }

@@ -1,7 +1,7 @@
 <script lang="ts">
 	import { createQuery } from '@tanstack/svelte-query';
 	import { toStore, fromStore } from 'svelte/store';
-	import { fetchRle, rleDownloadUrl, type RleData } from '$lib/api/rle';
+	import { fetchRle, uploadRle, type RleData } from '$lib/api/rle';
 	import { Button } from '$lib/components/ui/button';
 	import { Skeleton } from '$lib/components/ui/skeleton';
 	import { auth } from '$lib/store/auth.svelte';
@@ -25,12 +25,41 @@
 	const fmtNum = (v: number) =>
 		v.toLocaleString('ru-RU', { minimumFractionDigits: 1, maximumFractionDigits: 1 });
 
-	function handleDownload() {
-		const a = document.createElement('a');
-		a.href = rleDownloadUrl();
-		document.body.appendChild(a);
-		a.click();
-		a.remove();
+	let uploading = $state(false);
+	let uploadError = $state('');
+	let fileInput = $state<HTMLInputElement | undefined>(undefined);
+
+	function openPicker() {
+		if (fileInput) {
+			fileInput.value = '';
+			fileInput.click();
+		}
+	}
+
+	function onFileChange(e: Event) {
+		const input = e.currentTarget as HTMLInputElement;
+		const file = input.files?.[0];
+		if (file) handleUpload(file);
+	}
+
+	async function handleUpload(file: File) {
+		uploading = true;
+		uploadError = '';
+		try {
+			const { blob, filename } = await uploadRle(file);
+			const url = URL.createObjectURL(blob);
+			const a = document.createElement('a');
+			a.href = url;
+			a.download = filename;
+			document.body.appendChild(a);
+			a.click();
+			a.remove();
+			URL.revokeObjectURL(url);
+		} catch (e) {
+			uploadError = e instanceof Error ? e.message : 'Ошибка загрузки 1С';
+		} finally {
+			uploading = false;
+		}
 	}
 </script>
 
@@ -45,8 +74,21 @@
 		{:else if data}
 			<div class="flex min-w-0 flex-col gap-3">
 				<div class="flex items-center justify-end gap-3 border-b pb-3">
-					<Button size="sm" variant="outline" onclick={handleDownload}>Скачать</Button>
+					<input
+						bind:this={fileInput}
+						type="file"
+						accept=".xlsx,.xls"
+						class="hidden"
+						onchange={onFileChange}
+					/>
+					<Button size="sm" variant="outline" onclick={openPicker} disabled={uploading}>
+						{uploading ? 'Обработка…' : 'Загрузить 1С'}
+					</Button>
 				</div>
+
+				{#if uploadError}
+					<div class="text-sm text-destructive">{uploadError}</div>
+				{/if}
 
 				<div class="overflow-auto rounded-md border">
 					<table class="w-full border-collapse text-sm">
