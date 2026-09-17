@@ -5,14 +5,16 @@ from urllib.parse import quote
 
 from litestar import Router
 from litestar.connection import Request
-from litestar.handlers import get
+from litestar.enums import RequestEncodingType
+from litestar.handlers import get, post
+from litestar.params import Body
 from litestar.response import Response
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from deps import get_current_user, require_auth
 from sql import norm_name
-from services.dashboard import build_scope, generate_errors_xlsx, generate_balance_xlsx, generate_task_numbers_xlsx, pick_pu_type
+from services.dashboard import build_scope, generate_errors_xlsx, generate_balance_xlsx, generate_task_numbers_xlsx, pick_pu_type, get_priorities, set_priorities
 from services.report_check import split_errors, join_errors, BALANCE_ERRORS
 
 
@@ -328,8 +330,32 @@ async def api_dashboard_errors_by_locale(request: Request, db_session: AsyncSess
         ensure_ascii=False), media_type="application/json")
 
 
+@get("/dashboard/priorities", guards=[require_auth])
+async def api_dashboard_priorities(request: Request, db_session: AsyncSession) -> Response:
+    """Список приоритетов виджета «Приоритеты» (доступен всем ролям)."""
+    priorities = await get_priorities(db_session)
+    return Response(content=json.dumps({"priorities": priorities}, ensure_ascii=False), media_type="application/json")
+
+
+@post("/dashboard/priorities", guards=[require_auth])
+async def api_dashboard_priorities_save(
+    request: Request, db_session: AsyncSession,
+    data: dict = Body(media_type=RequestEncodingType.JSON),
+) -> Response:
+    """Сохраняет приоритеты (только администратор; до 6 пунктов)."""
+    user = await get_current_user(request, db_session)
+    if user.effective_role != "администратор":
+        return Response(content=json.dumps({"error": "Нет прав"}, ensure_ascii=False), media_type="application/json", status_code=403)
+    items = data.get("priorities")
+    if not isinstance(items, list):
+        return Response(content=json.dumps({"error": "Некорректный формат"}, ensure_ascii=False), media_type="application/json", status_code=400)
+    saved = await set_priorities(db_session, items)
+    return Response(content=json.dumps({"priorities": saved}, ensure_ascii=False), media_type="application/json")
+
+
 dashboard_router = Router("/api", route_handlers=[
     api_dashboard_summary, api_dashboard_overview, api_dashboard_errors_report,
     api_dashboard_balance_report, api_dashboard_date_report, api_dashboard_verified_report,
     api_dashboard_report_counts, api_dashboard_errors_by_locale,
+    api_dashboard_priorities, api_dashboard_priorities_save,
 ])

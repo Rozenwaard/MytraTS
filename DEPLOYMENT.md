@@ -45,7 +45,9 @@ cp .env.example .env
 echo "SECRET_KEY=$(openssl rand -hex 32)" > .env
 ```
 База: положите полученный от разработчика файл `mytra.db` в `/opt/mytra/mytra.db`.
-(Если база старой версии без колонки `errors` — выполните `uv run python _migrate_errors.py`.)
+Миграции схемы запускаются вручную (автозапуска при старте нет). Если база старой версии:
+- без колонки `errors` — `uv run python _migrate_errors.py`;
+- без таблицы `app_settings` (виджет «Приоритеты») — `uv run python _migrate_app_settings.py`.
 
 Первый вход: логин = табельный номер, пароль = табельный номер (система попросит сменить).
 

@@ -70,3 +70,18 @@ export interface StatusState {
 export async function fetchStatus(): Promise<StatusState> {
 	return api<StatusState>('/api/status');
 }
+
+export interface Priorities {
+	priorities: string[];
+}
+
+export async function fetchPriorities(): Promise<Priorities> {
+	return api<Priorities>('/api/dashboard/priorities');
+}
+
+export async function savePriorities(items: string[]): Promise<Priorities> {
+	return api<Priorities>('/api/dashboard/priorities', {
+		method: 'POST',
+		body: JSON.stringify({ priorities: items })
+	});
+}

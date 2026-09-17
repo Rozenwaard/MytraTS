@@ -1,8 +1,11 @@
 # -*- coding: utf-8 -*-
 """Дашборд: сводка ошибок и выгрузка отчётов по территориям стоп-фактора."""
 import io
+import json
 
 from openpyxl import Workbook
+from sqlalchemy import text
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from sql import norm_name
 from services.report_check import STOP_FACTOR_REGIONS, STOP_FACTOR_DISTRICTS
@@ -120,3 +123,45 @@ def generate_recheck_xlsx(rows, balance_rows, date_rows) -> bytes:
     buf = io.BytesIO()
     wb.save(buf)
     return buf.getvalue()
+
+
+# ─── Приоритеты виджета «Приоритеты» (app_settings: key/value) ───
+
+DEFAULT_PRIORITIES = ["Внеплан ПСК", "Внеплан РЛЭ", "Инструменталки", "План задвигаем"]
+PRIORITIES_KEY = "dashboard_priorities"
+MAX_PRIORITIES = 6
+
+
+async def get_priorities(db_session: AsyncSession) -> list[str]:
+    """Текущий список приоритетов (или дефолт, если ещё не задан)."""
+    r = await db_session.execute(
+        text("SELECT value FROM app_settings WHERE key = :k"), {"k": PRIORITIES_KEY})
+    raw = r.scalar()
+    if raw is None:
+        return list(DEFAULT_PRIORITIES)
+    try:
+        items = json.loads(raw)
+    except (ValueError, TypeError):
+        return list(DEFAULT_PRIORITIES)
+    if not isinstance(items, list):
+        return list(DEFAULT_PRIORITIES)
+    return [str(x).strip() for x in items if str(x).strip()]
+
+
+async def set_priorities(db_session: AsyncSession, items: list[str]) -> list[str]:
+    """Сохраняет список приоритетов (чистит, дедуплицирует, ограничивает 6)."""
+    seen: set[str] = set()
+    uniq: list[str] = []
+    for raw in items:
+        name = str(raw).strip()
+        if name and name not in seen:
+            seen.add(name)
+            uniq.append(name)
+    uniq = uniq[:MAX_PRIORITIES]
+
+    await db_session.execute(
+        text("INSERT INTO app_settings (key, value) VALUES (:k, :v) "
+             "ON CONFLICT(key) DO UPDATE SET value = excluded.value"),
+        {"k": PRIORITIES_KEY, "v": json.dumps(uniq, ensure_ascii=False)})
+    await db_session.commit()
+    return uniq

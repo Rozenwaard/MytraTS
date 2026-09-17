@@ -4,14 +4,17 @@
 	import {
 		fetchDashboardOverview,
 		fetchErrorsByLocale,
+		fetchPriorities,
 		fetchStatus,
 		type DashboardOverview,
 		type ErrorsByLocale,
+		type Priorities,
 		type StatusState
 	} from '$lib/api/dashboard';
 	import { Skeleton } from '$lib/components/ui/skeleton';
 	import StatCard from '$lib/components/stat-card.svelte';
 	import { cn } from '$lib/utils.js';
+	import { auth } from '$lib/store/auth.svelte';
 	import ClipboardList from '@lucide/svelte/icons/clipboard-list';
 	import Wallet from '@lucide/svelte/icons/wallet';
 	import CircleDollarSign from '@lucide/svelte/icons/circle-dollar-sign';
@@ -74,7 +77,16 @@
 	const fmtMoney = (n: number | undefined) =>
 		(n ?? 0).toLocaleString('ru-RU', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 
-	const priorities = ['Внеплан ПСК', 'Внеплан РЛЭ', 'Инструменталки', 'План задвигаем'];
+	const prioritiesQuery = createQuery<Priorities>(
+		toStore(() => ({
+			queryKey: ['dashboard-priorities'],
+			queryFn: () => fetchPriorities()
+		}))
+	);
+	const prioritiesResult = fromStore(prioritiesQuery);
+	const priorities = $derived(prioritiesResult.current.data?.priorities ?? []);
+
+	const isAdmin = $derived(auth.user?.role === 'администратор');
 
 	function errorGridClass(n: number): string {
 		if (n <= 1) return 'grid-cols-1';
@@ -101,6 +113,7 @@
 				title="Приоритеты"
 				icon={ListOrdered}
 				iconClass="bg-orange-100 text-orange-800"
+				href={isAdmin ? '/dashboard/priorities' : undefined}
 			>
 				{#snippet children()}
 					<div class={cn('grid gap-2', errorGridClass(priorities.length))}>

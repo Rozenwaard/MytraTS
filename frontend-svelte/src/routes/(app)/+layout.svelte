@@ -41,6 +41,9 @@
 		) {
 			return tabs.filter((t) => t.href !== '/main-afl/list');
 		}
+		if (currentSection === '/dashboard' && user?.role !== 'администратор') {
+			return tabs.filter((t) => t.href !== '/dashboard/priorities');
+		}
 		return tabs;
 	});
 
