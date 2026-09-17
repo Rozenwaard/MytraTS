@@ -48,7 +48,8 @@ async def api_help_upload(request: Request, db_session: AsyncSession, key: str,
         return Response(content=json.dumps({"error": "Неизвестная страница"}, ensure_ascii=False),
                         media_type="application/json", status_code=404)
 
-    filename = (data.filename or "").lower()
+    source_filename = data.filename or "Инструкция.docx"
+    filename = source_filename.lower()
     raw = await data.read()
 
     if key == "instruction":
@@ -73,6 +74,10 @@ async def api_help_upload(request: Request, db_session: AsyncSession, key: str,
     await db_session.execute(
         text("INSERT OR REPLACE INTO help_pages (key, title, content, updated_at) VALUES (:k, :t, :c, :u)"),
         {"k": key, "t": HELP_KEYS[key], "c": json.dumps({"blocks": blocks}, ensure_ascii=False), "u": now})
+    if key == "instruction":
+        await db_session.execute(
+            text("INSERT OR REPLACE INTO help_files (key, filename, data) VALUES (:k, :f, :d)"),
+            {"k": key, "f": source_filename, "d": raw})
     await db_session.commit()
 
     return Response(content=json.dumps({"success": True, "key": key, "updated_at": now}, ensure_ascii=False),
@@ -95,4 +100,21 @@ async def api_help_download(key: str, db_session: AsyncSession) -> Response:
                     headers={"Content-Disposition": f"attachment; filename*=UTF-8''{quote(filename)}"})
 
 
-help_router = Router("/api", route_handlers=[api_help_get, api_help_upload, api_help_download])
+@get("/help/{key:str}/source", guards=[require_auth])
+async def api_help_source(key: str, db_session: AsyncSession) -> Response:
+    if key not in HELP_KEYS:
+        return Response(content=json.dumps({"error": "Неизвестная страница"}, ensure_ascii=False),
+                        media_type="application/json", status_code=404)
+    result = await db_session.execute(
+        text("SELECT filename, data FROM help_files WHERE key = :k"), {"k": key})
+    row = result.fetchone()
+    if row is None:
+        return Response(content=json.dumps({"error": "Исходный файл не найден"}, ensure_ascii=False),
+                        media_type="application/json", status_code=404)
+    filename, blob = row
+    return Response(content=blob,
+                    media_type="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+                    headers={"Content-Disposition": f"attachment; filename*=UTF-8''{quote(filename)}"})
+
+
+help_router = Router("/api", route_handlers=[api_help_get, api_help_upload, api_help_download, api_help_source])

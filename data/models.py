@@ -1,6 +1,6 @@
 from typing import Optional
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
-from sqlalchemy import Float, Text, Integer
+from sqlalchemy import Float, Text, Integer, LargeBinary
 
 ROLES = ("администратор", "специалист", "менеджер", "оператор", "работник")
 FIELD_ROLES = ("оператор", "работник")
@@ -359,6 +359,14 @@ class HelpPage(Base):
     title: Mapped[str] = mapped_column(Text)
     content: Mapped[str] = mapped_column(Text)   # JSON: {"blocks": [...]}
     updated_at: Mapped[Optional[str]] = mapped_column(Text)
+
+
+class HelpFile(Base):
+    __tablename__ = 'help_files'
+
+    key: Mapped[str] = mapped_column(Text, primary_key=True)
+    filename: Mapped[str] = mapped_column(Text)
+    data: Mapped[bytes] = mapped_column(LargeBinary)
 
 
 class DiscrepanciesLog(Base):

@@ -67,6 +67,10 @@ def parse_docx_to_blocks(content: bytes) -> list[dict]:
     return blocks
 
 
+# Короткие ярлыки меню для известных приложений; для остальных ярлык берётся из «…» в заголовке.
+_APPENDIX_SHORT_MENU = {"1": "Интеллектуальные ПУ", "2": "Коды проверки"}
+
+
 def _postprocess_instruction(blocks: list[dict]) -> list[dict]:
     """Разметка разделов инструкции, правка заголовка, удаление строки версии."""
     if blocks and blocks[0]["type"] == "p":
@@ -80,11 +84,12 @@ def _postprocess_instruction(blocks: list[dict]) -> list[dict]:
             t = b["text"].strip()
             if re.match(r"^версия\s+от", t, re.I):
                 continue
-            if t.startswith("Приложение 1"):
-                out.append({"type": "h", "text": t, "menu": "Интеллектуальные ПУ"})
-                continue
-            if t.startswith("Приложение 2"):
-                out.append({"type": "h", "text": t, "menu": "Коды проверки"})
+            app = re.match(r"^Приложение\s+(\d+)\b", t)
+            if app:
+                num = app.group(1)
+                title = re.search(r"«([^»]+)»", t)
+                menu = _APPENDIX_SHORT_MENU.get(num) or (title.group(1) if title else t)
+                out.append({"type": "h", "text": t, "menu": menu})
                 continue
             if not started and re.match(r"^\d+\.", t):
                 out.append({"type": "h", "text": "Действия на линии"})

@@ -86,7 +86,7 @@ MytraTS/
 │   ├── story.py            # архив (перенос строк) + отклонение
 │   ├── dashboard.py        # обзор (сводка) + ошибки + отчёты дашборда
 │   ├── lookups.py          # справочники (отделения, исполнители, виды работ)
-│   └── help.py             # «Помощь»: GET/загрузка/скачивание страниц (instruction, tariffs, operators)
+│   └── help.py             # «Помощь»: GET/загрузка/скачивание страниц (instruction, tariffs, operators) + исходник .docx (/help/{key}/source)
 ├── frontend-svelte/
 │   └── src/
 │       ├── lib/
@@ -106,6 +106,7 @@ MytraTS/
 ├── _migrate_premium.py    # миграция: carte (заполнение справочника), utalo, main_afl.norm
 ├── _migrate_norm.py       # миграция: carte.kind/planned/detail + «Выполнение задания в Алькоре»
 ├── _migrate_extra.py      # миграция: main_afl.norm/extra INTEGER, utalo.norm_sum INTEGER
+├── migrate_help_files.py   # миграция: таблица help_files (исходник .docx для «Скачать .docx»)
 ├── _backfill_norms.py     # бэкфилл: main_afl.norm/extra по текущим правилам (apply_norms)
 ├── _backfill_errors.py    # бэкфилл: main_afl.errors по текущим правилам (recompute_errors)
 └── DEPLOYMENT.md          # развёртывание в локалке (Apache2 + uv + systemd), особенности прод-окружения

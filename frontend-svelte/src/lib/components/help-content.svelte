@@ -1,8 +1,11 @@
 <script lang="ts">
 	import { createQuery } from '@tanstack/svelte-query';
 	import { toStore, fromStore } from 'svelte/store';
-	import { fetchHelpPage, type HelpBlock, type HelpPageData } from '$lib/api/help';
+	import { fetchHelpPage, uploadHelpDocx, type HelpBlock, type HelpPageData } from '$lib/api/help';
 	import { Skeleton } from '$lib/components/ui/skeleton';
+	import { auth } from '$lib/store/auth.svelte';
+	import { toast } from '$lib/store/toast.svelte';
+	import { queryClient } from '$lib/query';
 
 	const NO_WRAP_COLS = ['Работа', 'Тип тарифа', 'Комментарий'];
 
@@ -14,6 +17,28 @@
 	}
 
 	let { key }: { key: string } = $props();
+
+	const isAdmin = $derived(auth.user?.role === 'администратор');
+	const canUpload = $derived(isAdmin && key === 'instruction');
+
+	let uploading = $state(false);
+
+	async function onFileChange(e: Event) {
+		const input = e.currentTarget as HTMLInputElement;
+		const file = input.files?.[0];
+		input.value = '';
+		if (!file) return;
+		uploading = true;
+		try {
+			await uploadHelpDocx(key, file);
+			await queryClient.invalidateQueries({ queryKey: ['help', key] });
+			toast('Инструкция обновлена');
+		} catch (err) {
+			toast(err instanceof Error ? err.message : 'Ошибка загрузки');
+		} finally {
+			uploading = false;
+		}
+	}
 
 	const query = createQuery<HelpPageData>(
 		toStore(() => ({
@@ -59,15 +84,34 @@
 		<p class="text-sm text-muted-foreground">Пока пусто</p>
 	{:else}
 		<div class="mb-4 flex items-center gap-3">
-			<a
-				href={`/api/help/${key}/download`}
-				class="inline-flex h-8 items-center rounded-md border border-input bg-background px-2.5 text-sm font-medium transition-colors hover:bg-muted"
-			>
-				Скачать
-			</a>
 			{#if page?.updated_at}
 				<span class="text-xs text-muted-foreground">Обновлено: {page.updated_at}</span>
 			{/if}
+			<div class="ml-auto flex items-center gap-3">
+				{#if key === 'instruction'}
+					<a
+						href={`/api/help/${key}/source`}
+						class="inline-flex h-8 items-center rounded-md border border-input bg-background px-2.5 text-sm font-medium transition-colors hover:bg-muted"
+					>
+						Скачать .docx
+					</a>
+					{#if canUpload}
+						<label
+							class="inline-flex h-8 cursor-pointer items-center rounded-md border border-input bg-background px-2.5 text-sm font-medium transition-colors hover:bg-muted"
+						>
+							{uploading ? 'Загрузка…' : 'Загрузить .docx'}
+							<input type="file" accept=".docx" class="hidden" onchange={onFileChange} disabled={uploading} />
+						</label>
+					{/if}
+				{:else}
+					<a
+						href={`/api/help/${key}/download`}
+						class="inline-flex h-8 items-center rounded-md border border-input bg-background px-2.5 text-sm font-medium transition-colors hover:bg-muted"
+					>
+						Скачать
+					</a>
+				{/if}
+			</div>
 		</div>
 
 		<div class="mx-auto flex max-w-5xl items-start gap-8">
