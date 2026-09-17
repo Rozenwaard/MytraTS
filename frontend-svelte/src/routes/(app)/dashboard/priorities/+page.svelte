@@ -33,6 +33,7 @@
 	);
 	const result = fromStore(query);
 	const data = $derived(result.current.data);
+	const isError = $derived(result.current.isError);
 
 	let items = $state<string[]>([]);
 	let initialized = $state(false);
@@ -105,7 +106,13 @@
 			</CardDescription>
 		</CardHeader>
 
-		{#if !initialized}
+		{#if isError}
+			<CardContent>
+				<p class="text-sm text-muted-foreground">
+					Ошибка загрузки приоритетов. Повторите позже или сообщите администратору.
+				</p>
+			</CardContent>
+		{:else if !initialized}
 			<CardContent class="space-y-3">
 				{#each Array(4) as _}
 					<Skeleton class="h-10 w-full" />
