@@ -112,16 +112,16 @@ async def api_reestr(
 async def api_download_reestr(request: Request, db_session: AsyncSession, reestr_number: str) -> Response:
     user = await get_current_user(request, db_session)
     result = await db_session.execute(
-        text("SELECT task_report, executor_organization, reestr_date FROM main_afl WHERE reestr_number = :rn LIMIT 1"),
+        text("SELECT task_report, executor_organization, reestr_date, customer FROM main_afl WHERE reestr_number = :rn LIMIT 1"),
         {"rn": reestr_number})
     row = result.fetchone()
     if not row:
         return Response(content="Реестр не найден", status_code=404)
-    task_report, dept, reestr_date = row[0], row[1], row[2]
+    task_report, dept, reestr_date, customer = row[0], row[1], row[2], row[3]
     tasks_result = await db_session.execute(
         text("SELECT task_number FROM main_afl WHERE reestr_number = :rn ORDER BY task_number"), {"rn": reestr_number})
     task_numbers = [r[0] for r in tasks_result]
-    output = await generate_reestr_xlsx_bytes(db_session, task_numbers, reestr_number, reestr_date, task_report, dept, user)
+    output = await generate_reestr_xlsx_bytes(db_session, task_numbers, reestr_number, customer, reestr_date, task_report, dept, user)
     filename = f"Реестр_{reestr_number}.xlsx"
     return Response(content=output, media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
                     headers={"Content-Disposition": f"attachment; filename*=UTF-8''{quote(filename)}"})

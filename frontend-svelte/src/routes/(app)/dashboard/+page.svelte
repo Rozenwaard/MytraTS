@@ -193,6 +193,7 @@
 				title="Дубли"
 				icon={Copy}
 				iconClass="bg-slate-100 text-slate-800"
+				downloadHref={isAdmin ? '/api/dashboard/duplicates-report' : undefined}
 			>
 				{#snippet children()}
 					<div class="space-y-2">

@@ -14,7 +14,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from deps import get_current_user, require_auth
 from sql import norm_name
-from services.dashboard import build_scope, generate_errors_xlsx, generate_balance_xlsx, generate_task_numbers_xlsx, pick_pu_type, get_priorities, set_priorities
+from services.dashboard import build_scope, generate_errors_xlsx, generate_balance_xlsx, generate_task_numbers_xlsx, generate_task_numbers_plain_xlsx, pick_pu_type, get_priorities, set_priorities
 from services.report_check import split_errors, join_errors, BALANCE_ERRORS
 
 
@@ -269,8 +269,68 @@ async def api_dashboard_verified_report(request: Request, db_session: AsyncSessi
         text(f"SELECT task_number FROM main_afl WHERE {where} ORDER BY task_number"), params)
     rows = [r[0] for r in result]
 
-    output = generate_task_numbers_xlsx(rows)
+    output = generate_task_numbers_plain_xlsx(rows)
     filename = f"Отметка_о_проверке_{datetime.now().strftime('%Y-%m-%d_%H-%M-%S')}.xlsx"
+    return Response(content=output, media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                    headers={"Content-Disposition": f"attachment; filename*=UTF-8''{quote(filename)}"})
+
+
+@get("/dashboard/duplicates-report", guards=[require_auth])
+async def api_dashboard_duplicates_report(request: Request, db_session: AsyncSession) -> Response:
+    """Выгрузка номеров заданий-дублей виджета «Дубли» (все, кроме одного «оставляемого» на точку учёта)."""
+    user = await get_current_user(request, db_session)
+    if user.effective_role != "администратор":
+        return Response(content=json.dumps({"error": "Нет прав"}, ensure_ascii=False), media_type="application/json", status_code=403)
+
+    # Та же зона видимости, что и в виджете «Дубли» на вкладке «Обзор».
+    vis_clauses: list = []
+    vis_params: dict = {}
+    if user.effective_role in ("оператор", "работник"):
+        vis_clauses.append(f"{norm_name('executor')} IN (SELECT {norm_name('full_name')} FROM users WHERE locale = :locale)")
+        vis_params["locale"] = user.locale
+    elif user.effective_role == "менеджер":
+        vis_clauses.append("executor_organization = :dept")
+        vis_params["dept"] = user.dept
+    vis_where = " AND ".join(vis_clauses) if vis_clauses else "1=1"
+
+    dup_base = "metering_point IS NOT NULL AND metering_point != '' AND (status IS NULL OR status NOT LIKE 'З%')"
+
+    result = await db_session.execute(
+        text(f"SELECT id, task_number, task_source, created_at, metering_point "
+             f"FROM main_afl WHERE {vis_where} AND {dup_base} ORDER BY metering_point"),
+        vis_params)
+
+    groups: dict[str, list[dict]] = {}
+    for rid, task_number, task_source, created_at, metering_point in result:
+        groups.setdefault(metering_point, []).append({
+            "id": rid,
+            "task_number": task_number,
+            "task_source": task_source,
+            "created_at": created_at,
+        })
+
+    def freshest(pool: list[dict]) -> dict:
+        # «Самое свежее» = максимум created_at; при равенстве (конкуренты) — любое (берём последний по номеру).
+        return sorted(
+            pool,
+            key=lambda r: ((r["created_at"] is None), r["created_at"] or "", r["task_number"] or ""),
+        )[-1]
+
+    to_export: list[str] = []
+    for rows in groups.values():
+        if len(rows) <= 1:
+            continue
+        crm = [r for r in rows if r["task_source"] == "CRM"]
+        non_crm = [r for r in rows if r["task_source"] != "CRM"]
+        # Смешанная группа (есть и CRM, и другие источники) → оставляем задание CRM.
+        pool = crm if (crm and non_crm) else rows
+        keeper = freshest(pool)
+        for r in rows:
+            if r["id"] != keeper["id"] and r["task_number"]:
+                to_export.append(r["task_number"])
+
+    output = generate_task_numbers_plain_xlsx(sorted(set(to_export)))
+    filename = f"Дубли_{datetime.now().strftime('%Y-%m-%d_%H-%M-%S')}.xlsx"
     return Response(content=output, media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
                     headers={"Content-Disposition": f"attachment; filename*=UTF-8''{quote(filename)}"})
 
@@ -356,6 +416,7 @@ async def api_dashboard_priorities_save(
 dashboard_router = Router("/api", route_handlers=[
     api_dashboard_summary, api_dashboard_overview, api_dashboard_errors_report,
     api_dashboard_balance_report, api_dashboard_date_report, api_dashboard_verified_report,
+    api_dashboard_duplicates_report,
     api_dashboard_report_counts, api_dashboard_errors_by_locale,
     api_dashboard_priorities, api_dashboard_priorities_save,
 ])

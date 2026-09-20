@@ -92,6 +92,19 @@ def generate_task_numbers_xlsx(rows) -> bytes:
     return buf.getvalue()
 
 
+def generate_task_numbers_plain_xlsx(rows) -> bytes:
+    """Отчёт из одного столбца номеров заданий без заголовка («Дубли», «Отметка о проверке»)."""
+    wb = Workbook()
+    ws = wb.active
+    ws.title = "Задания"
+    for tn in rows:
+        ws.append([tn])
+    ws.column_dimensions["A"].width = 28
+    buf = io.BytesIO()
+    wb.save(buf)
+    return buf.getvalue()
+
+
 def generate_recheck_xlsx(rows, balance_rows, date_rows) -> bytes:
     """Отчёт «Повторная проверка»: 3 вкладки — общие ошибки, балансовая принадлежность, дата работ."""
     wb = Workbook()

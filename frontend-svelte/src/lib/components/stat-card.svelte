@@ -1,5 +1,6 @@
 <script lang="ts">
 	import ArrowRight from '@lucide/svelte/icons/arrow-right';
+	import Download from '@lucide/svelte/icons/download';
 	import type { Component, Snippet } from 'svelte';
 	import { cn } from '$lib/utils.js';
 
@@ -8,12 +9,14 @@
 		icon,
 		iconClass = '',
 		href = undefined,
+		downloadHref = undefined,
 		children
 	}: {
 		title: string;
 		icon?: Component;
 		iconClass?: string;
 		href?: string;
+		downloadHref?: string;
 		children?: Snippet;
 	} = $props();
 </script>
@@ -40,6 +43,18 @@
 			>
 				<ArrowRight class="size-3.5" />
 				<span>Перейти</span>
+			</a>
+		{/if}
+		{#if downloadHref}
+			<a
+				href={downloadHref}
+				target="_blank"
+				rel="noreferrer"
+				class="flex shrink-0 items-center gap-1 rounded-md px-1.5 py-0.5 text-xs font-medium text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+				aria-label="Скачать"
+			>
+				<Download class="size-3.5" />
+				<span>Скачать</span>
 			</a>
 		{/if}
 	</div>
