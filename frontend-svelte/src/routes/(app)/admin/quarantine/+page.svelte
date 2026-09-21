@@ -66,7 +66,13 @@
 		};
 	}
 
-	const unmatchedUsers = $derived(users.filter((u) => !u.executor_name));
+	const unmatchedUsers = $derived(
+		users.filter((u) => {
+			if (u.executor_name) return false;
+			const p = (u.position || '').toLowerCase();
+			return p.includes('инженер') || p.includes('начальник') || p.includes('контрол');
+		})
+	);
 
 	const deptOptions = $derived([...new Set(users.map((u) => u.dept).filter(Boolean))].sort());
 	const localeOptions = $derived([...new Set(users.map((u) => u.locale).filter(Boolean))].sort());
