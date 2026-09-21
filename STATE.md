@@ -271,7 +271,7 @@ MytraTS/
 
 ## НЕ ДОДЕЛАНО (заглушки / TODO)
 1. **Архив (Story)** — страница `/story` в навбаре ведёт на `/main-afl` (заглушка). Бэкенд-эндпоинты готовы: `/api/story-afl` (GET с фильтрами), `/api/story-afl/reject` (POST). Нужно: страница архива + таблица с фильтрами. **План:** горячая зона `main_afl` ≤200K строк, остальное уходит в архив; в будущем архив вынесем в отдельный SQLite `archive.db` (`ATTACH DATABASE ... AS archive`) — отдельный файл не конкурирует за лок с `mytra.db` и не раздувает основную БД. `main_afl` на две таблицы не делим (решили — выигрыша по производительности нет).
-2. **Нормализация ФИО + админ-панель** — колонка `users.executor_name` добавлена (`_migrate_executor_name.py`: ALTER + backfill по `norm_name()` (только однозначные 1:1), индекс `ix_users_executor_name`, удалён временный `ix_users_full_name_norm`). Админ-панель (`/admin`, `routers/users.py`) готова: вкладки «Пользователи» и «Карантин» — users CRUD + сброс пароля + очередь из `tabel` + сопоставление/блок исполнителей (таблица `quarantine_status`). Отсев чужих в `raw_afl` теперь удаляет только заблокированных (`status='блок'`); новые исполнители попадают в карантин (виджет «Новые пользователи» на дашборде). **Осталось:** заменить `norm_name()`-JOIN'ы на равенство `users.executor_name = main_afl.executor` в `dashboard.py`, `lookups.py`, `main_afl.py`, `reestr.py`, `fin_report.py`, `services/dashboard.py`, `services/premium.py` (`processor.py` больше не использует `norm_name`).
+2. **Нормализация ФИО + админ-панель** — готово: колонка `users.executor_name` (backfill + индекс, удалён `ix_users_full_name_norm`); админ-панель (вкладки «Пользователи»/«Карантин», users CRUD + сброс пароля + очередь + сопоставление/блок, таблица `quarantine_status`); отсев чужих в `raw_afl` удаляет только заблокированных; `norm_name()`-JOIN'ы заменены на равенство `users.executor_name = main_afl.executor` (dashboard, lookups, main_afl, reestr, fin_report, services/dashboard, services/premium).
 
 
 ## Архив и потребители (сторидб)
@@ -288,7 +288,7 @@ MytraTS/
 
 ## Конвенции
 - SQL: только bindparams (`:name`), без f-string-инъекций. Для IN — `build_in_clause(prefix, values)` в sql.py. Большие списки (десятки тысяч) бить на чанки `_IN_CHUNK = 32500` — лимит SQLite на число переменных (32766).
-- Сравнение ФИО (`executor` ↔ `users.full_name`) — всегда через `norm_name()` из `sql.py` (нормализация «ё/е» на лету, данные в БД не меняем). Без неё «Артем» из выгрузки не совпадёт с «Артём» в users: строка молча потеряется при отсеве или не засчитается в премию/видимость.
+- Сопоставление исполнителя (`main_afl.executor`) с работником — через точное равенство `users.executor_name = main_afl.executor`. `norm_name()` из JOIN'ов вынесен (остался в `sql.py` как хелпер).
 - Роли проверяются через `user.effective_role`.
 - Фильтры на бэке строятся из `clauses` + `params` dict.
 - Фронт: типы в `api/main-afl.ts`, запросы через `api<T>()` (client.ts, credentials:include).

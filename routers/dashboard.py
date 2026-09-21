@@ -13,7 +13,6 @@ from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from deps import get_current_user, require_auth
-from sql import norm_name
 from services.dashboard import build_scope, generate_errors_xlsx, generate_balance_xlsx, generate_task_numbers_xlsx, generate_task_numbers_plain_xlsx, pick_pu_type, get_priorities, set_priorities
 from services.report_check import split_errors, join_errors, BALANCE_ERRORS
 
@@ -65,7 +64,7 @@ async def api_dashboard_overview(request: Request, db_session: AsyncSession) -> 
     vis_clauses: list = []
     vis_params: dict = {}
     if user.effective_role in ("оператор", "работник"):
-        vis_clauses.append(f"{norm_name('executor')} IN (SELECT {norm_name('full_name')} FROM users WHERE locale = :locale)")
+        vis_clauses.append(f"executor IN (SELECT executor_name FROM users WHERE locale = :locale)")
         vis_params["locale"] = user.locale
     elif user.effective_role == "менеджер":
         vis_clauses.append("executor_organization = :dept")
@@ -120,7 +119,7 @@ async def api_dashboard_overview(request: Request, db_session: AsyncSession) -> 
     # «Линейные работники»: уникальные исполнители за последние 10 дней (без разбивки по должностям).
     workers_clauses: list = []
     if user.effective_role in ("оператор", "работник"):
-        workers_clauses.append(f"{norm_name('m.executor')} IN (SELECT {norm_name('full_name')} FROM users WHERE locale = :locale)")
+        workers_clauses.append(f"m.executor IN (SELECT executor_name FROM users WHERE locale = :locale)")
     elif user.effective_role == "менеджер":
         workers_clauses.append("m.executor_organization = :dept")
     workers_where = " AND ".join(workers_clauses) if workers_clauses else "1=1"
@@ -290,7 +289,7 @@ async def api_dashboard_duplicates_report(request: Request, db_session: AsyncSes
     vis_clauses: list = []
     vis_params: dict = {}
     if user.effective_role in ("оператор", "работник"):
-        vis_clauses.append(f"{norm_name('executor')} IN (SELECT {norm_name('full_name')} FROM users WHERE locale = :locale)")
+        vis_clauses.append(f"executor IN (SELECT executor_name FROM users WHERE locale = :locale)")
         vis_params["locale"] = user.locale
     elif user.effective_role == "менеджер":
         vis_clauses.append("executor_organization = :dept")
@@ -382,7 +381,7 @@ async def api_dashboard_errors_by_locale(request: Request, db_session: AsyncSess
     where = " AND ".join(clauses)
 
     locale_expr = (
-        f"COALESCE((SELECT locale FROM users WHERE {norm_name('users.full_name')} = {norm_name('main_afl.executor')} LIMIT 1), '(без локали)')"
+        f"COALESCE((SELECT locale FROM users WHERE users.executor_name = main_afl.executor LIMIT 1), '(без локали)')"
     )
     result = await db_session.execute(text(
         f"SELECT {locale_expr} AS locale, COUNT(*) AS cnt FROM main_afl WHERE {where} GROUP BY locale ORDER BY cnt DESC"

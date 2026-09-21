@@ -306,7 +306,7 @@
 											{/if}
 											<optgroup label="Пользователи (без Алькор)">
 												{#each unmatchedUsers as u (u.id)}
-													<option value={`user:${u.id}`}>{u.full_name}</option>
+													<option value={`user:${u.id}`}>{u.full_name} — {u.position}</option>
 												{/each}
 											</optgroup>
 										</select>

@@ -4,7 +4,7 @@ from openpyxl import Workbook
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from sql import build_in_clause, norm_name
+from sql import build_in_clause
 
 
 # ─── Нормативы (минуты) — источник истины: таблица carte ───
@@ -135,7 +135,7 @@ async def aggregate_utalo(db_session: AsyncSession) -> int:
                u.staff_id, u.full_name, u.position, u.dept, m.task_report,
                COUNT(*), SUM(m.norm)
         FROM main_afl m
-        JOIN users u ON {norm_name('u.full_name')} = {norm_name('m.executor')}
+        JOIN users u ON u.executor_name = m.executor
         WHERE m.norm != 0 AND m.done_day IS NOT NULL
         GROUP BY 1, 2, 3, 4, 5, 6
 
@@ -149,7 +149,7 @@ async def aggregate_utalo(db_session: AsyncSession) -> int:
                ),
                COUNT(*), SUM(m.extra)
         FROM main_afl m
-        JOIN users u ON {norm_name('u.full_name')} = {norm_name('m.executor')}
+        JOIN users u ON u.executor_name = m.executor
         WHERE m.extra != 0 AND m.done_day IS NOT NULL
         GROUP BY 1, 2, 3, 4, 5, 6
     """))

@@ -213,7 +213,7 @@
 			>
 				{#snippet children()}
 					<div class="space-y-2">
-						{@render StatRow('Линейные работники', fmt(workers.total), true)}
+						{@render StatRow('Линейные работники', fmt(workers.total))}
 						{@render StatRow('Новые пользователи', fmt(newUsers.review))}
 					</div>
 				{/snippet}

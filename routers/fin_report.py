@@ -18,7 +18,6 @@ from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from deps import get_current_user, require_auth
-from sql import norm_name
 from services.dashboard import generate_recheck_xlsx, pick_pu_type
 from services.reestr import generate_dop_report_xlsx_bytes, generate_fin_report_xlsx_bytes
 from services.report_check import BALANCE_ERRORS, check_row, join_errors, STOP_FACTOR_REGIONS, STOP_FACTOR_DISTRICTS
@@ -42,7 +41,7 @@ def _stop_zone_clause():
 
 
 def _locale_expr():
-    return f"COALESCE((SELECT locale FROM users WHERE {norm_name('users.full_name')} = {norm_name('main_afl.executor')} LIMIT 1), '(без локали)')"
+    return f"COALESCE((SELECT locale FROM users WHERE users.executor_name = main_afl.executor LIMIT 1), '(без локали)')"
 
 
 COST_JOIN = "LEFT JOIN carte c ON c.title = main_afl.task_report"

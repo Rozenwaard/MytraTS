@@ -131,8 +131,7 @@ async def api_admin_quarantine(request: Request, db_session: AsyncSession) -> Re
         "  UNION "
         "  SELECT q.executor AS executor, q.executor_organization AS executor_organization, q.status AS status "
         "  FROM quarantine_status q "
-        "  WHERE q.status = 'блок' "
-        "    AND q.executor NOT IN (SELECT executor_name FROM users WHERE executor_name IS NOT NULL AND executor_name != '') "
+        "  WHERE q.executor NOT IN (SELECT executor_name FROM users WHERE executor_name IS NOT NULL AND executor_name != '') "
         ") ORDER BY status, executor"
     ))).fetchall()
 
@@ -162,8 +161,10 @@ async def api_admin_quarantine_toggle(
         text("SELECT status FROM quarantine_status WHERE executor = :e"),
         {"e": executor})).scalar()
     if current == "блок":
-        # Снятие блока → рассмотрение. Строки уже удалены; при следующей загрузке вернутся.
-        await db_session.execute(text("DELETE FROM quarantine_status WHERE executor = :e"), {"e": executor})
+        # Снятие блока → рассмотрение (строку оставляем, меняем статус).
+        await db_session.execute(
+            text("UPDATE quarantine_status SET status = 'рассмотрение' WHERE executor = :e"),
+            {"e": executor})
         new_status = "рассмотрение"
     else:
         # Блок → пометить (сохранив отделение) и вычистить строки из main_afl (бэкфил).
