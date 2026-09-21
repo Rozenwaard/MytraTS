@@ -335,6 +335,7 @@ class User(Base):
     last_seen: Mapped[str] = mapped_column(Text)
     settings: Mapped[Optional[str]] = mapped_column(Text)
     role: Mapped[Optional[str]] = mapped_column(Text)
+    executor_name: Mapped[Optional[str]] = mapped_column(Text)  # точное написание ФИО из main_afl.executor
 
     @property
     def derived_role(self) -> str:
@@ -350,6 +351,14 @@ class User(Base):
     @property
     def effective_role(self) -> str:
         return self.role or self.derived_role
+
+
+class QuarantineStatus(Base):
+    __tablename__ = 'quarantine_status'
+
+    executor: Mapped[str] = mapped_column(Text, primary_key=True)
+    status: Mapped[str] = mapped_column(Text)  # 'рассмотрение' | 'блок'
+    executor_organization: Mapped[Optional[str]] = mapped_column(Text)
 
 
 class HelpPage(Base):

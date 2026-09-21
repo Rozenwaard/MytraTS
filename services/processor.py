@@ -2,8 +2,6 @@ import re
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from sql import norm_name
-
 
 # ─── Справочники ───
 
@@ -265,14 +263,13 @@ async def process_raw_afl(db_session: AsyncSession, upload_progress: dict, uploa
             "UPDATE raw_afl SET executor = 'Петрова Юлия Сергеевна' WHERE executor = 'Петрова Юлия Сергеевна (ПЭК)'"
         ))
 
-        # Отсев чужих исполнителей по ФИО: оставляем только тех, чьё полное ФИО есть в users.
-        # Пустых исполнителей (executor IS NULL) не удаляем.
-        # Сравнение без учёта «ё/е» (нормализация на лету, данные в БД не переписываем):
-        # иначе «Артем» из выгрузки не совпадёт с «Артём» в users и строка молча удалится.
+        # Отсев чужих исполнителей: удаляем только тех, кого админ пометил «блок» в карантине.
+        # Остальные (в т.ч. новые исполнители без совпадения) проходят дальше и ждут
+        # решения админа (сопоставление с пользователем или блок) на вкладке Админ → Карантин.
+        # Пустых исполнителей (executor IS NULL / '') не удаляем.
         await db_session.execute(text(
-            f"DELETE FROM raw_afl "
-            f"WHERE {norm_name('executor')} "
-            f"NOT IN (SELECT {norm_name('full_name')} FROM users)"
+            "DELETE FROM raw_afl "
+            "WHERE executor IN (SELECT executor FROM quarantine_status WHERE status = 'блок')"
         ))
 
         # === Шаг 1: region из municipal_district ===

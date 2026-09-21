@@ -70,7 +70,8 @@
 			rle_unplan: 0
 		}
 	);
-	const workers = $derived(overview?.workers ?? { total: 0, controllers: 0, engineers: 0 });
+	const workers = $derived(overview?.workers ?? { total: 0 });
+	const newUsers = $derived(overview?.new_users ?? { review: 0 });
 	const instrumental = $derived(overview?.instrumental ?? { ordered: 0, completed: 0 });
 
 	const fmt = (n: number | undefined) => (n ?? 0).toLocaleString('ru-RU');
@@ -208,12 +209,12 @@
 				title="Активные работники"
 				icon={Users}
 				iconClass="bg-blue-100 text-blue-800"
+				href="/admin/quarantine"
 			>
 				{#snippet children()}
 					<div class="space-y-2">
-						{@render StatRow('Всего', fmt(workers.total), true)}
-						{@render StatRow('Контролёры', fmt(workers.controllers))}
-						{@render StatRow('Инженеры', fmt(workers.engineers))}
+						{@render StatRow('Линейные работники', fmt(workers.total), true)}
+						{@render StatRow('Новые пользователи', fmt(newUsers.review))}
 					</div>
 				{/snippet}
 			</StatCard>

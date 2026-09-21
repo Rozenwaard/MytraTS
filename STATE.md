@@ -60,7 +60,7 @@ MytraTS/
 ├── archive.py             # CLI архивации (cron 22-го числа): main_afl → story_afl → consumers
 ├── data/
 │   ├── config.py          # engine (mytra.db), story_engine (story.db), STORY_DB_PATH, SECRET_KEY из .env
-│   ├── models.py          # RawAfl, MainAfl (+errors, +norm, +extra), Tabel, Carte, Utalo, Calendar, User, HelpPage, DiscrepanciesLog (+ ROLES, FIELD_ROLES, ADMIN_ROLES)
+│   ├── models.py          # RawAfl, MainAfl (+errors, +norm, +extra), Tabel, Carte, Utalo, Calendar, User (+executor_name), QuarantineStatus, HelpPage, DiscrepanciesLog (+ ROLES, FIELD_ROLES, ADMIN_ROLES)
 │   └── story_models.py    # «сторидб» (story.db): Consumer (consumers), StoryAfl (story_afl)
 ├── services/
 │   ├── archive.py         # перенос main_afl → story_afl → consumers (кросс-БД через ATTACH)
@@ -86,6 +86,7 @@ MytraTS/
 │   ├── story.py            # архив (перенос строк) + отклонение
 │   ├── dashboard.py        # обзор (сводка) + ошибки + отчёты дашборда
 │   ├── lookups.py          # справочники (отделения, исполнители, виды работ)
+│   ├── users.py            # админ-панель (только администратор): users CRUD, сброс пароля, очередь из tabel, карантин (блок/сопоставление)
 │   └── help.py             # «Помощь»: GET/загрузка/скачивание страниц (instruction, tariffs, operators) + исходник .docx (/help/{key}/source)
 ├── frontend-svelte/
 │   └── src/
@@ -109,6 +110,8 @@ MytraTS/
 ├── migrate_help_files.py   # миграция: таблица help_files (исходник .docx для «Скачать .docx»)
 ├── _backfill_norms.py     # бэкфилл: main_afl.norm/extra по текущим правилам (apply_norms)
 ├── _backfill_errors.py    # бэкфилл: main_afl.errors по текущим правилам (recompute_errors)
+├── _migrate_executor_name.py # миграция: users.executor_name (ALTER + backfill по norm_name, индекс, удаление ix_users_full_name_norm)
+├── _migrate_quarantine.py  # миграция: таблица quarantine_status (статусы карантина)
 └── DEPLOYMENT.md          # развёртывание в локалке (Apache2 + uv + systemd), особенности прод-окружения
 ```
 
@@ -253,9 +256,22 @@ MytraTS/
 | POST | `/story-afl/reject` | отклонение строк архива |
 
 
+### Админ (только администратор)
+| Метод | Путь | Что делает |
+|---|---|---|
+| GET | `/admin/users?q=` | список пользователей (поиск по ФИО/табельному/должности/отделу) |
+| GET | `/admin/missing` | очередь на добавление: работники из tabel (инженер/контролёр), которых нет в users |
+| POST | `/admin/users` | создать пользователя (поля обязательны; password_hash=NULL → первый вход пароль = табельный) |
+| PATCH | `/admin/users/{id}/executor-name` | правка поля «Алькор» (точное ФИО из main_afl) |
+| DELETE | `/admin/users/{id}` | удалить (нельзя себя и последнего админа) |
+| POST | `/admin/users/{id}/reset-password` | сброс пароля (password_hash=NULL → первый вход + смена) |
+| GET | `/admin/quarantine` | карантин: исполнители main_afl без совпадения с users.executor_name |
+| POST | `/admin/quarantine/toggle` | блок/разблок исполнителя (блок удаляет его строки из main_afl) |
+
+
 ## НЕ ДОДЕЛАНО (заглушки / TODO)
 1. **Архив (Story)** — страница `/story` в навбаре ведёт на `/main-afl` (заглушка). Бэкенд-эндпоинты готовы: `/api/story-afl` (GET с фильтрами), `/api/story-afl/reject` (POST). Нужно: страница архива + таблица с фильтрами. **План:** горячая зона `main_afl` ≤200K строк, остальное уходит в архив; в будущем архив вынесем в отдельный SQLite `archive.db` (`ATTACH DATABASE ... AS archive`) — отдельный файл не конкурирует за лок с `mytra.db` и не раздувает основную БД. `main_afl` на две таблицы не делим (решили — выигрыша по производительности нет).
-2. **Нормализация ФИО + админ-панель** — вынести `norm_name()` (REPLACE ё→е) из горячих JOIN'ов: добавить в `users` колонку `executor_name` («вариант 2» = точное написание из `main_afl.executor`, сейчас 1:1, сирот нет) + индекс, backfill, и сравнивать равенством `users.executor_name = main_afl.executor` (дашборд `workers`, премия, локаль, видимость оператор/работник). Плюс топ-меню «Админ» (только администратор, полный CRUD users + список сирот `main_afl.executor`). `main_afl` не трогаем. После миграции удалить временный expression-индекс `ix_users_full_name_norm` (см. `_migrate_dashboard_indexes.py`).
+2. **Нормализация ФИО + админ-панель** — колонка `users.executor_name` добавлена (`_migrate_executor_name.py`: ALTER + backfill по `norm_name()` (только однозначные 1:1), индекс `ix_users_executor_name`, удалён временный `ix_users_full_name_norm`). Админ-панель (`/admin`, `routers/users.py`) готова: вкладки «Пользователи» и «Карантин» — users CRUD + сброс пароля + очередь из `tabel` + сопоставление/блок исполнителей (таблица `quarantine_status`). Отсев чужих в `raw_afl` теперь удаляет только заблокированных (`status='блок'`); новые исполнители попадают в карантин (виджет «Новые пользователи» на дашборде). **Осталось:** заменить `norm_name()`-JOIN'ы на равенство `users.executor_name = main_afl.executor` в `dashboard.py`, `lookups.py`, `main_afl.py`, `reestr.py`, `fin_report.py`, `services/dashboard.py`, `services/premium.py` (`processor.py` больше не использует `norm_name`).
 
 
 ## Архив и потребители (сторидб)

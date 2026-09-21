@@ -17,8 +17,10 @@ export interface InWorkMatrix {
 
 export interface Workers {
 	total: number;
-	controllers: number;
-	engineers: number;
+}
+
+export interface NewUsers {
+	review: number;
 }
 
 export interface Instrumental {
@@ -33,6 +35,7 @@ export interface DashboardOverview {
 	in_work_matrix: InWorkMatrix;
 	debt: DebtMatrix;
 	workers: Workers;
+	new_users: NewUsers;
 	instrumental: Instrumental;
 	duplicates: {
 		crm: number;

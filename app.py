@@ -25,6 +25,7 @@ from routers.report import report_router
 from routers.rle import rle_router
 from routers.story import story_router
 from routers.upload import upload_router
+from routers.users import users_router
 
 load_dotenv()
 session_config = CookieBackendConfig(secret=SECRET_KEY.encode())
@@ -35,6 +36,7 @@ app = Litestar(
     route_handlers=[
         auth_router,
         upload_router,
+        users_router,
         main_afl_router,
         premium_router,
         reestr_router,

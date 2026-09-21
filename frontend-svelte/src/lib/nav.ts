@@ -13,6 +13,7 @@ export const TOP_NAV: NavItem[] = [
 	{ href: '/main-afl', label: 'Реестры' },
 	{ href: '/upload', label: 'Загрузка' },
 	{ href: '/reports', label: 'Отчёты' },
+	{ href: '/admin', label: 'Админ' },
 	{ href: '/help', label: 'Помощь' }
 ];
 
@@ -29,6 +30,10 @@ export const SUB_NAV: Record<string, SubTab[]> = {
 		{ href: '/reports', label: 'Финотчёт' },
 		{ href: '/reports/premium', label: 'Премия' },
 		{ href: '/reports/rle', label: 'РЛЭ' }
+	],
+	'/admin': [
+		{ href: '/admin', label: 'Пользователи' },
+		{ href: '/admin/quarantine', label: 'Карантин' }
 	],
 	'/help': [
 		{ href: '/help', label: 'Инструкция' },

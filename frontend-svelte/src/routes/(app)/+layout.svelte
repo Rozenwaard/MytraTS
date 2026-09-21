@@ -19,6 +19,7 @@
 	const navItems = $derived.by(() =>
 		TOP_NAV.filter((item) => {
 			if (item.href === '/reports') return user?.role === 'администратор';
+			if (item.href === '/admin') return user?.role === 'администратор';
 			if (item.href === '/upload') {
 				return user?.role === 'администратор' || user?.role === 'специалист';
 			}

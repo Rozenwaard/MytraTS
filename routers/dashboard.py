@@ -117,26 +117,31 @@ async def api_dashboard_overview(request: Request, db_session: AsyncSession) -> 
         f"FROM main_afl WHERE {debt_clause}"
     ), debt_params)).one()
 
-    # «Работники»: контролёры (position содержит «контролёр») и инженеры (position содержит «инженер»)
-    # — по различным исполнителям за последние 10 дней работ (done_day), в зоне видимости пользователя.
+    # «Линейные работники»: уникальные исполнители за последние 10 дней (без разбивки по должностям).
     workers_clauses: list = []
     if user.effective_role in ("оператор", "работник"):
         workers_clauses.append(f"{norm_name('m.executor')} IN (SELECT {norm_name('full_name')} FROM users WHERE locale = :locale)")
     elif user.effective_role == "менеджер":
         workers_clauses.append("m.executor_organization = :dept")
     workers_where = " AND ".join(workers_clauses) if workers_clauses else "1=1"
-
-    workers_controllers, workers_engineers = (await db_session.execute(text(
+    workers_total = (await db_session.execute(text(
         "WITH last_days AS ("
         "  SELECT DISTINCT done_day FROM main_afl WHERE done_day IS NOT NULL AND done_day != '' ORDER BY done_day DESC LIMIT 10"
         ") "
-        "SELECT "
-        "COUNT(DISTINCT CASE WHEN u.position LIKE '%онтролёр%' THEN m.executor END), "
-        "COUNT(DISTINCT CASE WHEN u.position LIKE '%нженер%' THEN m.executor END) "
-        "FROM main_afl m "
-        "JOIN users u ON REPLACE(REPLACE(u.full_name,'ё','е'),'Ё','Е') = REPLACE(REPLACE(m.executor,'ё','е'),'Ё','Е') "
+        "SELECT COUNT(DISTINCT m.executor) FROM main_afl m "
         f"WHERE m.done_day IN (SELECT done_day FROM last_days) AND {workers_where}"
-    ), vis_params)).one()
+    ), vis_params)).scalar() or 0
+
+    # «Новые пользователи»: исполнители main_afl без точного совпадения с users.executor_name,
+    # со статусом «рассмотрение» (не заблокированные).
+    new_users_review = (await db_session.execute(text(
+        "SELECT COUNT(DISTINCT m.executor) "
+        "FROM main_afl m "
+        "LEFT JOIN quarantine_status q ON q.executor = m.executor "
+        "WHERE m.executor IS NOT NULL AND m.executor != '' "
+        "AND m.executor NOT IN (SELECT executor_name FROM users WHERE executor_name IS NOT NULL AND executor_name != '') "
+        "AND COALESCE(q.status, 'рассмотрение') = 'рассмотрение'"
+    ))).scalar() or 0
 
     # «Инструментальные проверки»: заказано (все строки вида работ) / выполнено (status Завершено/Закрыто).
     instr_clause = f"{vis_where} AND work_type_in_task = 'Инструментальная проверка'"
@@ -176,10 +181,9 @@ async def api_dashboard_overview(request: Request, db_session: AsyncSession) -> 
             "overdue_in_work": overdue_in_work,
             "overdue_completed": overdue_completed,
         },
-        "workers": {
-            "total": workers_controllers + workers_engineers,
-            "controllers": workers_controllers,
-            "engineers": workers_engineers,
+        "workers": {"total": workers_total},
+        "new_users": {
+            "review": new_users_review,
         },
         "instrumental": {
             "ordered": instr_ordered,
