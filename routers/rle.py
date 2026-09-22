@@ -1,4 +1,5 @@
 import json
+from datetime import date
 from urllib.parse import quote
 
 from litestar import Router
@@ -16,11 +17,14 @@ from services.rle import (
     IP_MAIN_TYPES,
     KSP_FILE_TITLES,
     KSP_MAIN_TYPES,
+    MONTH_NAMES,
     biweekly_periods,
     build_file_minutes,
     compute_merged_period_stats,
     compute_period_stats,
+    fetch_readings_register_rows,
     generate_merged_rle_xlsx_bytes,
+    generate_readings_violations_xlsx,
     generate_rle_xlsx_bytes,
     parse_rle_file,
     weekly_periods,
@@ -123,4 +127,24 @@ async def api_rle_upload(
     )
 
 
-rle_router = Router("/api", route_handlers=[api_rle, api_rle_download, api_rle_upload])
+@get("/rle/readings", guards=[require_auth])
+async def api_rle_readings(request: Request, db_session: AsyncSession) -> Response:
+    """«Реестр показаний»: показания и нарушения РЛЭ за текущий месяц → xlsx."""
+    user = await get_current_user(request, db_session)
+    if user.effective_role != "администратор":
+        return Response(content=json.dumps({"error": "Нет прав"}, ensure_ascii=False), media_type="application/json", status_code=403)
+
+    today = date.today()
+    year_month = today.strftime("%Y-%m")
+    rows = await fetch_readings_register_rows(db_session, year_month)
+    output = generate_readings_violations_xlsx(rows)
+
+    filename = f"Реестр показаний и нарушений {MONTH_NAMES[today.month]}.xlsx"
+    return Response(
+        content=output,
+        media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        headers={"Content-Disposition": f"attachment; filename*=UTF-8''{quote(filename)}"},
+    )
+
+
+rle_router = Router("/api", route_handlers=[api_rle, api_rle_download, api_rle_readings, api_rle_upload])

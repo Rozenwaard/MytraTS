@@ -487,3 +487,86 @@ def generate_merged_rle_xlsx_bytes(ksp_stats: list[dict], ip_stats: list[dict]) 
     output = io.BytesIO()
     wb.save(output)
     return output.getvalue()
+
+
+# ─── «Реестр показаний» (показания и нарушения РЛЭ за месяц) ───
+READINGS_HEADERS = [
+    "Филиал", "Задание", "Поручение", "Абонент", "Объект", "Район", "Адрес",
+    "ПУ", "Номер", "День", "Ночь", "Нарушение", "Расшифровка", "Выполнение",
+    "Билинг", "Результат", "Отчёт", "Дополнительно",
+]
+# «Расшифровка» = meter_malfunction + три следующие за ним колонки main_afl.
+VIOLATION_DETAIL_FIELDS = (
+    "meter_malfunction", "unauthorized_interference",
+    "unauthorized_connection", "additional_violations",
+)
+MONTH_NAMES = ["", "январь", "февраль", "март", "апрель", "май", "июнь",
+               "июль", "август", "сентябрь", "октябрь", "ноябрь", "декабрь"]
+
+
+def _cell(value) -> str:
+    """None → пустая строка, иначе str (все колонки реестра — Text)."""
+    return "" if value is None else str(value)
+
+
+def _first_reading(*values) -> str:
+    """Первое непустое показание (None/''/'-' пропускаем), иначе '-'."""
+    for v in values:
+        if v is not None and str(v).strip() not in ("", "-"):
+            return str(v)
+    return "-"
+
+
+async def fetch_readings_register_rows(db_session, year_month: str) -> list[list]:
+    """Строки «Реестра показаний»: РЛЭ + непустой task_report + done_day в месяце.
+
+    Показания «День»/«Ночь» ищем сначала в t1/t2, затем в t1_1/t2_1 (какие найдутся).
+    «Расшифровка» = склейка meter_malfunction + 3 следующих колонок через '; '.
+    """
+    result = await db_session.execute(text("""
+        SELECT grid, created_at, work_type_in_task, personal_account,
+               service_object_type, municipal_district, address,
+               meter_model, meter_serial_number,
+               t1, t2, t1_1, t2_1, violations,
+               meter_malfunction, unauthorized_interference,
+               unauthorized_connection, additional_violations,
+               done_day, sent_to_billing, task_output, task_report, task_detail
+        FROM main_afl
+        WHERE customer = 'РЛЭ'
+          AND task_report IS NOT NULL AND task_report != ''
+          AND SUBSTR(done_day, 1, 7) = :ym
+        ORDER BY done_day, created_at
+    """), {"ym": year_month})
+
+    rows = []
+    for r in result.fetchall():
+        m = dict(r._mapping)
+        detail = "; ".join(
+            _cell(m[field]) for field in VIOLATION_DETAIL_FIELDS
+            if m[field] is not None and str(m[field]).strip() != ""
+        )
+        rows.append([
+            _cell(m["grid"]), _cell(m["created_at"]), _cell(m["work_type_in_task"]),
+            _cell(m["personal_account"]), _cell(m["service_object_type"]),
+            _cell(m["municipal_district"]), _cell(m["address"]),
+            _cell(m["meter_model"]), _cell(m["meter_serial_number"]),
+            _first_reading(m["t1"], m["t1_1"]),
+            _first_reading(m["t2"], m["t2_1"]),
+            _cell(m["violations"]), detail, _cell(m["done_day"]),
+            _cell(m["sent_to_billing"]), _cell(m["task_output"]),
+            _cell(m["task_report"]), _cell(m["task_detail"]),
+        ])
+    return rows
+
+
+def generate_readings_violations_xlsx(rows: list[list]) -> bytes:
+    """Xlsx «Реестр показаний и нарушений»: шапка + данные."""
+    wb = Workbook()
+    ws = wb.active
+    ws.title = "Sheet1"
+    ws.append(READINGS_HEADERS)
+    for row in rows:
+        ws.append(row)
+    output = io.BytesIO()
+    wb.save(output)
+    return output.getvalue()

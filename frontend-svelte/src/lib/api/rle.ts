@@ -57,3 +57,19 @@ export async function uploadRle(file: File): Promise<{ blob: Blob; filename: str
 	const filename = m ? decodeURIComponent(m[1]) : 'РЛЭ.xlsx';
 	return { blob, filename };
 }
+
+/**
+ * «Реестр показаний»: xlsx показаний и нарушений РЛЭ за текущий месяц.
+ */
+export async function fetchReadingsRegister(): Promise<{ blob: Blob; filename: string }> {
+	const res = await fetch('/api/rle/readings', { credentials: 'include' });
+	if (!res.ok) {
+		const body = (await res.json().catch(() => ({}))) as { error?: string };
+		throw new Error(body.error ?? 'Ошибка выгрузки «Реестр показаний»');
+	}
+	const blob = await res.blob();
+	const disposition = res.headers.get('Content-Disposition') ?? '';
+	const m = disposition.match(/filename\*=UTF-8''([^;]+)/);
+	const filename = m ? decodeURIComponent(m[1]) : 'Реестр показаний и нарушений.xlsx';
+	return { blob, filename };
+}

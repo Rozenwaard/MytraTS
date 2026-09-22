@@ -1,7 +1,7 @@
 <script lang="ts">
 	import { createQuery } from '@tanstack/svelte-query';
 	import { toStore, fromStore } from 'svelte/store';
-	import { fetchRle, uploadRle, type RleData } from '$lib/api/rle';
+	import { fetchRle, fetchReadingsRegister, uploadRle, type RleData } from '$lib/api/rle';
 	import { Button } from '$lib/components/ui/button';
 	import { Skeleton } from '$lib/components/ui/skeleton';
 	import { auth } from '$lib/store/auth.svelte';
@@ -27,6 +27,8 @@
 
 	let uploading = $state(false);
 	let uploadError = $state('');
+	let downloading = $state(false);
+	let downloadError = $state('');
 	let fileInput = $state<HTMLInputElement | undefined>(undefined);
 
 	function openPicker() {
@@ -61,6 +63,26 @@
 			uploading = false;
 		}
 	}
+
+	async function downloadReadings() {
+		downloading = true;
+		downloadError = '';
+		try {
+			const { blob, filename } = await fetchReadingsRegister();
+			const url = URL.createObjectURL(blob);
+			const a = document.createElement('a');
+			a.href = url;
+			a.download = filename;
+			document.body.appendChild(a);
+			a.click();
+			a.remove();
+			URL.revokeObjectURL(url);
+		} catch (e) {
+			downloadError = e instanceof Error ? e.message : 'Ошибка выгрузки «Реестр показаний»';
+		} finally {
+			downloading = false;
+		}
+	}
 </script>
 
 {#if auth.loading}
@@ -81,10 +103,17 @@
 						class="hidden"
 						onchange={onFileChange}
 					/>
+					<Button size="sm" variant="outline" onclick={downloadReadings} disabled={downloading}>
+						{downloading ? 'Формируем…' : 'Реестр показаний'}
+					</Button>
 					<Button size="sm" variant="outline" onclick={openPicker} disabled={uploading}>
 						{uploading ? 'Обработка…' : 'Загрузить 1С'}
 					</Button>
 				</div>
+
+				{#if downloadError}
+					<div class="text-sm text-destructive">{downloadError}</div>
+				{/if}
 
 				{#if uploadError}
 					<div class="text-sm text-destructive">{uploadError}</div>
