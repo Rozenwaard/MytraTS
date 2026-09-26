@@ -156,7 +156,7 @@ TASK_OUTPUT_RULES = [
      "work_type_in_task = 'Проверка, осмотр ПУ' AND meter_status = 'Неисправен' AND violations = 'Нет' AND work_type = 'Проверка, осмотр ПУ' AND task_output IS NULL", None),
 
     ("task_output = 'Не исполнено', task_detail = 'Не подтверждено отсутствие учёта, не указано наличие учёта'",
-     "work_type_in_task = 'Проверка, осмотр ПУ' AND meter_status IS NULL AND violations = 'Нет' AND work_type = 'Проверка, осмотр ПУ' AND task_output IS NULL", None),
+     "work_type_in_task = 'Проверка, осмотр ПУ' AND meter_status IS NULL AND violations = 'Нет' AND work_type = 'Проверка, осмотр ПУ' AND (t1 = '-' OR t1 IS NULL) AND task_output IS NULL", None),
 
     ("task_output = 'Проверка', task_detail = '6'",
      "meter_status IS NULL AND work_result = 'Работа выполнена' AND task_output IS NULL", None),

@@ -110,6 +110,8 @@ MytraTS/
 ├── migrate_help_files.py   # миграция: таблица help_files (исходник .docx для «Скачать .docx»)
 ├── _backfill_norms.py     # бэкфилл: main_afl.norm/extra по текущим правилам (apply_norms)
 ├── _backfill_errors.py    # бэкфилл: main_afl.errors по текущим правилам (recompute_errors)
+├── _backfill_executor_nbsp.py # бэкфилл: нормализация executor/executor_organization (strip + убрать NBSP) в main_afl/quarantine_status + повторный backfill users.executor_name
+├── _backfill_task_detail_null_meter.py # бэкфилл: переклассификация «Проверка, осмотр ПУ» с meter_status IS NULL и снятыми показаниями (правило №20) → «Проверка 6» + вид работ/нормы/ошибки
 ├── _migrate_executor_name.py # миграция: users.executor_name (ALTER + backfill по norm_name, индекс, удаление ix_users_full_name_norm)
 ├── _migrate_quarantine.py  # миграция: таблица quarantine_status (статусы карантина)
 └── DEPLOYMENT.md          # развёртывание в локалке (Apache2 + uv + systemd), особенности прод-окружения
@@ -289,7 +291,7 @@ MytraTS/
 
 ## Конвенции
 - SQL: только bindparams (`:name`), без f-string-инъекций. Для IN — `build_in_clause(prefix, values)` в sql.py. Большие списки (десятки тысяч) бить на чанки `_IN_CHUNK = 32500` — лимит SQLite на число переменных (32766).
-- Сопоставление исполнителя (`main_afl.executor`) с работником — через точное равенство `users.executor_name = main_afl.executor`. `norm_name()` из JOIN'ов вынесен (остался в `sql.py` как хелпер).
+- Сопоставление исполнителя (`main_afl.executor`) с работником — через точное равенство `users.executor_name = main_afl.executor`. `norm_name()` из JOIN'ов вынесен (остался в `sql.py` как хелпер). При импорте xlsx `executor`/`executor_organization` нормализуются `clean_text()` (в `sql.py`): strip + неразрывные пробелы (NBSP `\xa0` и др.) → обычный пробел.
 - Роли проверяются через `user.effective_role`.
 - Фильтры на бэке строятся из `clauses` + `params` dict.
 - Фронт: типы в `api/main-afl.ts`, запросы через `api<T>()` (client.ts, credentials:include).

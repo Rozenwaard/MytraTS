@@ -7,6 +7,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from data.models import Base
 from data.config import engine
+from sql import clean_text
 
 RAW_AFL_XLSX_COLUMNS = [
     'task_number', 'task_source', 'task_type', 'work_type_in_task',
@@ -94,7 +95,12 @@ async def load_xlsx_to_raw(db_session: AsyncSession, content: bytes) -> tuple[bo
         for row in data:
             rec = {}
             for i, name in enumerate(RAW_AFL_XLSX_COLUMNS):
-                rec[name] = _cell_to_str(row[i]) if i < len(row) else None
+                value = _cell_to_str(row[i]) if i < len(row) else None
+                # Исполнитель и его отделение участвуют в точном сопоставлении с
+                # users.executor_name — убираем невидимые/неразрывные пробелы (NBSP).
+                if name in ("executor", "executor_organization"):
+                    value = clean_text(value)
+                rec[name] = value
             records.append(rec)
 
         # Удаляем старую таблицу и создаём новую

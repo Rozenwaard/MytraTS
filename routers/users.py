@@ -135,11 +135,28 @@ async def api_admin_quarantine(request: Request, db_session: AsyncSession) -> Re
         ") ORDER BY status, executor"
     ))).fetchall()
 
-    items = [{
-        "executor": r[0],
-        "executor_organization": r[1] or "",
-        "status": r[2],
-    } for r in rows]
+    # Один и тот же исполнитель может прийти из обеих веток UNION (main_afl и
+    # quarantine_status) с разным executor_organization — UNION схлопывает только
+    # полностью одинаковые строки, поэтому на выходе могут оказаться дубли по
+    # executor. На фронте таблица ключуется по executor ({#each ... (item.executor)}),
+    # и дубли роняют рендер с each_key_duplicate. Схлопываем в одну строку на executor:
+    # приоритет непустого отделения и статуса «блок».
+    items: list[dict] = []
+    seen: dict[str, dict] = {}
+    for r in rows:
+        executor = r[0]
+        org = r[1] or ""
+        status = r[2]
+        cur = seen.get(executor)
+        if cur is None:
+            cur = {"executor": executor, "executor_organization": org, "status": status}
+            seen[executor] = cur
+            items.append(cur)
+        else:
+            if not cur["executor_organization"] and org:
+                cur["executor_organization"] = org
+            if status == "блок" and cur["status"] != "блок":
+                cur["status"] = "блок"
     return _json({"items": items})
 
 
