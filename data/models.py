@@ -292,6 +292,27 @@ class Carte(Base):
     detail: Mapped[Optional[str]] = mapped_column(Text)       # task_detail для кодов/причин (NULL у base)
 
 
+class WorkCatalog(Base):
+    __tablename__ = 'work_catalog'
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    customer: Mapped[Optional[str]] = mapped_column(Text)     # 'ПСК' | 'РЛЭ' (NULL у non-base)
+    title: Mapped[str] = mapped_column(Text)                  # полное название работы
+    short: Mapped[Optional[str]] = mapped_column(Text)        # короткое = task_report
+    norm: Mapped[Optional[int]] = mapped_column(Integer)      # норматив, минуты
+    price: Mapped[Optional[float]] = mapped_column(Float)     # стоимость, ₽
+    kind: Mapped[Optional[str]] = mapped_column(Text)         # 'base' | 'replacement' | 'additional'
+    planned: Mapped[Optional[int]] = mapped_column(Integer)   # норматив при «Плановый» (NULL = как norm)
+    detail: Mapped[Optional[str]] = mapped_column(Text)       # task_detail для кодов/причин (NULL у base)
+
+
+class MeterModelPhase(Base):
+    __tablename__ = 'meter_model_phase'
+
+    meter_model: Mapped[str] = mapped_column(Text, primary_key=True)
+    phase: Mapped[str] = mapped_column(Text)                  # '1ф' | '3ф'
+
+
 class Utalo(Base):
     __tablename__ = 'utalo'
 

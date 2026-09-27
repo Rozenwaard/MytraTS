@@ -60,7 +60,7 @@ MytraTS/
 ├── archive.py             # CLI архивации (cron 22-го числа): main_afl → story_afl → consumers
 ├── data/
 │   ├── config.py          # engine (mytra.db), story_engine (story.db), STORY_DB_PATH, SECRET_KEY из .env
-│   ├── models.py          # RawAfl, MainAfl (+errors, +norm, +extra), Tabel, Carte, Utalo, Calendar, User (+executor_name), QuarantineStatus, HelpPage, DiscrepanciesLog (+ ROLES, FIELD_ROLES, ADMIN_ROLES)
+│   ├── models.py          # RawAfl, MainAfl (+errors, +norm, +extra), Tabel, Carte, WorkCatalog (новый справочник видов работ), MeterModelPhase (1ф/3ф), Utalo, Calendar, User (+executor_name), QuarantineStatus, HelpPage, DiscrepanciesLog (+ ROLES, FIELD_ROLES, ADMIN_ROLES)
 │   └── story_models.py    # «сторидб» (story.db): Consumer (consumers), StoryAfl (story_afl)
 ├── services/
 │   ├── archive.py         # перенос main_afl → story_afl → consumers (кросс-БД через ATTACH)
@@ -275,6 +275,7 @@ MytraTS/
 ## НЕ ДОДЕЛАНО (заглушки / TODO)
 1. **Архив (Story)** — страница `/story` в навбаре ведёт на `/main-afl` (заглушка). Бэкенд-эндпоинты готовы: `/api/story-afl` (GET с фильтрами), `/api/story-afl/reject` (POST). Нужно: страница архива + таблица с фильтрами. **План:** горячая зона `main_afl` ≤200K строк, остальное уходит в архив; в будущем архив вынесем в отдельный SQLite `archive.db` (`ATTACH DATABASE ... AS archive`) — отдельный файл не конкурирует за лок с `mytra.db` и не раздувает основную БД. `main_afl` на две таблицы не делим (решили — выигрыша по производительности нет).
 2. **Нормализация ФИО + админ-панель** — готово: колонка `users.executor_name` (backfill + индекс, удалён `ix_users_full_name_norm`); админ-панель (вкладки «Пользователи»/«Карантин», users CRUD + сброс пароля + очередь + сопоставление/блок, таблица `quarantine_status`); отсев чужих в `raw_afl` удаляет только заблокированных; `norm_name()`-JOIN'ы заменены на равенство `users.executor_name = main_afl.executor` (dashboard, lookups, main_afl, reestr, fin_report, services/dashboard, services/premium).
+3. **Новые виды работ (переход на `work_catalog`, с 2026-10-01)** — готово: таблица `work_catalog` (31 новый base из «Лимиты.xlsx» РЛЭ+ПСК + base 13/14/26 «Выявление безучётного потребления …» + non-base 27–42 из carte как есть; миграция `_migrate_work_catalog.py`) и справочник `meter_model_phase` 1ф/3ф (миграция `_migrate_meter_phase.py`: `rated_current`/`rated_voltage` начинается с `3*`/`3х`/`3x`/`3Х`/`3X` ИЛИ `rated_voltage` — одинокое чистое число ≥380 либо `380/400`/`380(400)` → 3ф, иначе 1ф; модели без сигнала/с разнобоем не попадают). НЕ сделано: `processor27.py` (старый алгоритм + новый Шаг 5 — task_report из нового base), ветвление `apply_norms` по `done_day` (`CUTOVER_DAY='2026-10-01'`), нормативы/новые коды (ждут от пользователя), вкладка «ПСК ЮЛ», правило `address` (ПСК «Штучный план»: если МКД — анализ соседних заданий, отличающихся только номером квартиры). Старая `carte` — read-only до конца сентября (исторические строки main_afl уже корректны).
 
 
 ## Архив и потребители (сторидб)
