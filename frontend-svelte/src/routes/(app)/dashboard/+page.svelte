@@ -223,6 +223,7 @@
 				title="Крупная задолженность"
 				icon={CircleDollarSign}
 				iconClass="bg-amber-100 text-amber-800"
+				downloadHref="/api/dashboard/debt-report"
 			>
 				{#snippet children()}
 					<div class="grid grid-cols-[auto_1fr_1fr] gap-2 text-sm">

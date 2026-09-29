@@ -104,6 +104,25 @@ def generate_task_numbers_plain_xlsx(rows) -> bytes:
     return buf.getvalue()
 
 
+def generate_debt_xlsx(rows) -> bytes:
+    """Выгрузка «Крупная задолженность» — квадрат «В работе / Вовремя» (6 колонок)."""
+    wb = Workbook()
+    ws = wb.active
+    ws.title = "Крупная задолженность"
+    ws.append(["Номер задания", "Дата создания", "Лицевой счет", "Адрес", "Муниципальный район", "Организация задания"])
+    for row in rows:
+        ws.append(row)
+    ws.column_dimensions["A"].width = 28
+    ws.column_dimensions["B"].width = 22
+    ws.column_dimensions["C"].width = 22
+    ws.column_dimensions["D"].width = 50
+    ws.column_dimensions["E"].width = 30
+    ws.column_dimensions["F"].width = 30
+    buf = io.BytesIO()
+    wb.save(buf)
+    return buf.getvalue()
+
+
 def generate_recheck_xlsx(rows, balance_rows, date_rows) -> bytes:
     """Отчёт «Повторная проверка»: 3 вкладки — общие ошибки, балансовая принадлежность, дата работ."""
     wb = Workbook()

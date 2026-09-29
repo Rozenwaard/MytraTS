@@ -13,7 +13,7 @@ from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from deps import get_current_user, require_auth
-from services.dashboard import build_scope, generate_errors_xlsx, generate_balance_xlsx, generate_task_numbers_xlsx, generate_task_numbers_plain_xlsx, pick_pu_type, get_priorities, set_priorities
+from services.dashboard import build_scope, generate_errors_xlsx, generate_balance_xlsx, generate_task_numbers_xlsx, generate_task_numbers_plain_xlsx, generate_debt_xlsx, pick_pu_type, get_priorities, set_priorities
 from services.report_check import split_errors, join_errors, BALANCE_ERRORS
 
 
@@ -338,6 +338,42 @@ async def api_dashboard_duplicates_report(request: Request, db_session: AsyncSes
                     headers={"Content-Disposition": f"attachment; filename*=UTF-8''{quote(filename)}"})
 
 
+@get("/dashboard/debt-report", guards=[require_auth])
+async def api_dashboard_debt_report(request: Request, db_session: AsyncSession) -> Response:
+    """Выгрузка «Крупная задолженность» — квадрат «В работе / Вовремя» (задания в работе, созданные менее 7 дней назад)."""
+    user = await get_current_user(request, db_session)
+
+    # Та же зона видимости, что и в виджете «Крупная задолженность» на вкладке «Обзор».
+    vis_clauses: list = []
+    vis_params: dict = {}
+    if user.effective_role in ("оператор", "работник"):
+        vis_clauses.append(f"executor IN (SELECT executor_name FROM users WHERE locale = :locale)")
+        vis_params["locale"] = user.locale
+    elif user.effective_role == "менеджер":
+        vis_clauses.append("executor_organization = :dept")
+        vis_params["dept"] = user.dept
+    vis_where = " AND ".join(vis_clauses) if vis_clauses else "1=1"
+
+    debt_clause = f"{vis_where} AND visit_reason LIKE :debt_reason"
+    debt_params = {**vis_params, "debt_reason": "%Крупн%"}
+
+    # «В работе» (status не «Завершено»/«Закрыто») И «Вовремя» (создано меньше 7 дней назад или без даты создания).
+    where = (
+        f"{debt_clause} AND (status IS NULL OR status NOT LIKE 'З%') "
+        f"AND (created_at IS NULL OR created_at > date('now', 'localtime', '-7 days'))"
+    )
+
+    result = await db_session.execute(
+        text(f"SELECT task_number, created_at, personal_account, address, municipal_district, task_organization "
+             f"FROM main_afl WHERE {where} ORDER BY task_number"), debt_params)
+    rows = [tuple(r) for r in result]
+
+    output = generate_debt_xlsx(rows)
+    filename = f"Крупная_задолженность_{datetime.now().strftime('%Y-%m-%d_%H-%M-%S')}.xlsx"
+    return Response(content=output, media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                    headers={"Content-Disposition": f"attachment; filename*=UTF-8''{quote(filename)}"})
+
+
 @get("/dashboard/report-counts", guards=[require_auth])
 async def api_dashboard_report_counts(request: Request, db_session: AsyncSession) -> Response:
     """Число строк в отчётах «Балансовая», «Дата работ», «Отметка о проверке», «Отчёт об ошибках» (зона стоп-фактора + видимость роли)."""
@@ -419,7 +455,7 @@ async def api_dashboard_priorities_save(
 dashboard_router = Router("/api", route_handlers=[
     api_dashboard_summary, api_dashboard_overview, api_dashboard_errors_report,
     api_dashboard_balance_report, api_dashboard_date_report, api_dashboard_verified_report,
-    api_dashboard_duplicates_report,
+    api_dashboard_duplicates_report, api_dashboard_debt_report,
     api_dashboard_report_counts, api_dashboard_errors_by_locale,
     api_dashboard_priorities, api_dashboard_priorities_save,
 ])
