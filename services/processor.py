@@ -112,8 +112,9 @@ TASK_OUTPUT_RULES = [
     ("task_output = 'Контроль', task_detail = '1'",
      f"{_in('work_type_in_task', CONTROL_WORK_TYPES)} AND work_result = 'Работа выполнена'", 40),
 
-    # Недопуск: «Допуск ПУ» + старый серийник = новый + «невозможно выполнить допуск ПУ» + есть показания
-    ("task_output = 'Недопуск', task_detail = 'Недопуск ПУ'",
+    # Недопуск ПУ — это результат работы «Допуск ПУ» (вид работ остаётся «Допуск»):
+    # «Допуск ПУ» + старый серийник = новый + «невозможно выполнить допуск ПУ» + есть показания
+    ("task_output = 'Допуск', task_detail = 'Недопуск ПУ'",
      "work_type_in_task = 'Допуск ПУ' AND meter_serial_number = meter_serial_number_2 AND work_result LIKE '%невозможно выполнить допуск ПУ%' AND (t1 <> '-' OR t1_1 <> '-') AND task_output IS NULL", None),
 
     # Допуск 2 / 3

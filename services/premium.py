@@ -64,6 +64,12 @@ async def _apply_norms_scoped(db_session: AsyncSession, task_numbers: list[str] 
         "task_report IS NOT NULL AND task_detail NOT IN ('Дубли', 'Ручная проверка')",
     )
 
+    # 1a. «Перепрограммирование ПУ»: вид работ остаётся «Бытовые заявки», но норматив 50 (а не 30).
+    await run(
+        "norm = 50",
+        "work_type_in_task = 'Перепрограммирование ПУ' AND task_report = 'Бытовые заявки' AND task_detail NOT IN ('Дубли', 'Ручная проверка')",
+    )
+
     # 2. МКД-разбивка (norm = 40)
     await run(
         f"norm = {BP_MKD}, extra = 0",
