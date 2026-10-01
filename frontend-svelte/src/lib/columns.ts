@@ -33,13 +33,13 @@ export const EXPAND_GROUPS: ExpandGroup[] = [
 			{ key: 'task_source', header: 'Источник' },
 			{ key: 'task_type', header: 'Вид задания' },
 			{ key: 'visit_reason', header: 'Основание' },
-			{ key: 'grid', header: 'Сеть' }
+			{ key: 'created_at', header: 'Создано' }
 		]
 	},
 	{
 		title: 'Потребитель',
 		columns: [
-			{ key: 'subscriber_type', header: 'Лицо' },
+			{ key: 'grid', header: 'Сеть' },
 			{ key: 'subscriber_name', header: 'Потребитель' },
 			{ key: 'municipal_district', header: 'Район' },
 			{ key: 'house_type', header: 'Тип дома' },
