@@ -100,6 +100,14 @@ def _should_warn_missing(position) -> bool:
     return "инженер" in p or "контрол" in p
 
 
+def _is_line_position(position) -> bool:
+    """Линейные должности для вкладки «Линия»: контролёр, инженер 1/2 категории."""
+    p = (position or "").lower()
+    if "контрол" in p:
+        return True
+    return "инженер" in p and ("1 категори" in p or "2 категори" in p)
+
+
 @get("/premium/summary", guards=[require_auth])
 async def api_premium_summary(request: Request, db_session: AsyncSession, period: str = "") -> Response:
     """Сводка вкладки «Премия»: список периодов + плашки по выбранному периоду."""
@@ -235,10 +243,26 @@ async def api_premium_norms(
 
 @get("/premium/download", guards=[require_auth])
 async def api_premium_download(request: Request, db_session: AsyncSession, period: str = "") -> Response:
-    """Скачивает отчёт по нормативам из utalo за период (вкладки: Алькор / Проект)."""
-    await get_current_user(request, db_session)
+    """Скачивает отчёт по нормативам за период (вкладки: Линия / Алькор / Проект)."""
+    user = await get_current_user(request, db_session)
+    if user.effective_role != "администратор":
+        return Response(content=json.dumps({"error": "Нет прав"}, ensure_ascii=False), media_type="application/json", status_code=403)
     if not period:
         return Response(content=json.dumps({"error": "Выберите период"}, ensure_ascii=False), media_type="application/json", status_code=400)
+
+    line_result = await db_session.execute(text(
+        "SELECT t.staff_id, t.name, t.position, u.dept, t.minutes "
+        "FROM tabel t LEFT JOIN users u ON u.staff_id = t.staff_id "
+        "WHERE t.period = :p ORDER BY t.staff_id"
+    ), {"p": period})
+    line_rows = []
+    for r in line_result:
+        if not _is_line_position(r[2]):
+            continue
+        minutes = r[4]
+        if isinstance(minutes, float) and minutes.is_integer():
+            minutes = int(minutes)
+        line_rows.append([r[0], r[1], r[2], r[3], minutes])
 
     alcor_rows = (await db_session.execute(text(
         "SELECT full_name, position, dept, task_report, count, norm_sum FROM utalo "
@@ -252,7 +276,7 @@ async def api_premium_download(request: Request, db_session: AsyncSession, perio
         "ORDER BY full_name, task_report"
     ), {"p": period})).fetchall()
 
-    output = generate_premium_xlsx_bytes(alcor_rows, project_rows)
+    output = generate_premium_xlsx_bytes(line_rows, alcor_rows, project_rows)
     filename = f"Отчёт_по_нормативам_{period.replace(' ', '_')}.xlsx"
     return Response(
         content=output,

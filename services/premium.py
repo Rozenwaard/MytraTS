@@ -163,12 +163,18 @@ async def aggregate_utalo(db_session: AsyncSession) -> int:
     return (await db_session.execute(text("SELECT COUNT(*) FROM utalo"))).scalar()
 
 
-def generate_premium_xlsx_bytes(alcor_rows, project_rows) -> bytes:
-    """Xlsx отчёта по нормативам: вкладки «Алькор» (база) и «Проект» (доп.)."""
-    headers = ["ФИО", "Должность", "Отделение", "Работа", "Количество", "Норматив"]
+def generate_premium_xlsx_bytes(line_rows, alcor_rows, project_rows) -> bytes:
+    """Xlsx отчёта по нормативам: вкладки «Линия», «Алькор» (база) и «Проект» (доп.)."""
     wb = Workbook()
-    ws_alcor = wb.active
-    ws_alcor.title = "Алькор"
+
+    ws_line = wb.active
+    ws_line.title = "Линия"
+    ws_line.append(["Табель", "ФИО", "Должность", "Отделение", "Время"])
+    for row in line_rows:
+        ws_line.append(list(row))
+
+    headers = ["ФИО", "Должность", "Отделение", "Работа", "Количество", "Норматив"]
+    ws_alcor = wb.create_sheet("Алькор")
     ws_project = wb.create_sheet("Проект")
 
     for ws, rows in ((ws_alcor, alcor_rows), (ws_project, project_rows)):

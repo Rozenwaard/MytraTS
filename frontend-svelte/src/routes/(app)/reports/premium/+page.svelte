@@ -28,7 +28,7 @@
 	let period = $state('');
 	let loading = $state(true);
 	let uploading = $state(false);
-	let aggregating = $state(false);
+	let downloading = $state(false);
 	let fileInput = $state<HTMLInputElement | undefined>(undefined);
 	let started = $state(false);
 
@@ -85,21 +85,17 @@
 		}
 	}
 
-	async function handleAggregate() {
-		aggregating = true;
-		try {
-			const res = await aggregateNorms();
-			toast(`Нормативы агрегированы: ${res.rows} строк`);
-		} catch (e) {
-			toast(e instanceof Error ? e.message : 'Ошибка агрегации нормативов');
-		} finally {
-			aggregating = false;
-		}
-	}
-
-	function handleDownload() {
+	async function handleDownload() {
 		if (!period) {
 			toast('Выберите период');
+			return;
+		}
+		downloading = true;
+		try {
+			await aggregateNorms();
+		} catch (e) {
+			toast(e instanceof Error ? e.message : 'Ошибка формирования отчёта');
+			downloading = false;
 			return;
 		}
 		const a = document.createElement('a');
@@ -107,6 +103,7 @@
 		document.body.appendChild(a);
 		a.click();
 		a.remove();
+		downloading = false;
 	}
 </script>
 
@@ -144,12 +141,8 @@
 				{/each}
 			</select>
 
-			<Button size="sm" onclick={handleAggregate} disabled={aggregating}>
-				{aggregating ? 'Агрегируем…' : 'Отчёт по нормативам'}
-			</Button>
-
-			<Button size="sm" variant="outline" onclick={handleDownload} disabled={!period}>
-				Скачать отчёт
+			<Button size="sm" onclick={handleDownload} disabled={downloading || !period}>
+				{downloading ? 'Формируем…' : 'Скачать отчёт по нормативам'}
 			</Button>
 		</div>
 
