@@ -38,7 +38,7 @@ LOCALE_SUFFIXES = {
     "Тосно": "Т",
 }
 
-async def generate_reestr_xlsx_bytes(db_session, task_numbers, reestr_number, customer, reestr_date, task_report, dept, current_user):
+async def generate_reestr_xlsx_bytes(db_session, task_numbers, reestr_number, customer, grid, reestr_date, task_report, dept, current_user):
     placeholders = ','.join([f"'{tn}'" for tn in task_numbers])
     
     result = await db_session.execute(
@@ -95,7 +95,8 @@ async def generate_reestr_xlsx_bytes(db_session, task_numbers, reestr_number, cu
     # Строка 1: номер, заказчик и дата
     ws.merge_cells(f'A{row}:F{row}')
     customer_part = f" {customer}" if customer else ""
-    ws[f'A{row}'] = f'Реестр № {reestr_number}{customer_part} от {reestr_date_formatted}'
+    grid_part = f" {grid}" if grid and grid != "-" else ""
+    ws[f'A{row}'] = f'Реестр № {reestr_number}{customer_part}{grid_part} от {reestr_date_formatted}'
     ws[f'A{row}'].font = Font(bold=True, size=12)
     ws[f'A{row}'].alignment = Alignment(horizontal='center')
     row += 1

@@ -197,7 +197,7 @@ MytraTS/
 | Метод | Путь | Что делает |
 |---|---|---|
 | POST | `/reestr` | формирование реестра (возвращает `blocked`) |
-| GET | `/download-reestr/{reestr_number}` | выгрузка реестра xlsx |
+| GET | `/download-reestr/{reestr_number}` | выгрузка реестра xlsx (шапка «Реестр № … заказчик сеть от …») |
 | POST | `/reestr/reset` | сброс реестра |
 | GET | `/reestr-list` | список реестров |
 | GET | `/reestr/find?q=` | поиск реестра по № задания / лицевому счёту |
