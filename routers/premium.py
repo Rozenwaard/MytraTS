@@ -17,7 +17,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from urllib.parse import quote
 
 from deps import get_current_user, require_auth
-from services.premium import aggregate_utalo, generate_premium_xlsx_bytes
+from services.premium import aggregate_utalo, build_1c_rows, generate_premium_xlsx_bytes
 
 MAN_DAY_MINUTES = 480  # 8 часов в человеко-дне
 
@@ -227,31 +227,31 @@ async def api_premium_tabel(
     }, ensure_ascii=False), media_type="application/json")
 
 
-@post("/premium/norms", guards=[require_auth])
-async def api_premium_norms(
+@post("/premium/upload-1c", guards=[require_auth])
+async def api_premium_upload_1c(
     request: Request, db_session: AsyncSession,
-    data: dict = Body(media_type=RequestEncodingType.JSON),
+    period: str = "",
+    data: UploadFile = Body(media_type=RequestEncodingType.MULTI_PART),
 ) -> Response:
-    """«Отчёт по нормативам»: агрегирует текущие main_afl в utalo (все строки с norm/extra)."""
+    """«Добавить 1С»: файл 1С → отчёт по нормативам (вкладки: Линия / 1С / Алькор / Проект)."""
     user = await get_current_user(request, db_session)
     if user.effective_role != "администратор":
         return Response(content=json.dumps({"error": "Нет прав"}, ensure_ascii=False), media_type="application/json", status_code=403)
-
-    rows = await aggregate_utalo(db_session)
-    return Response(content=json.dumps({"success": True, "rows": rows}, ensure_ascii=False), media_type="application/json")
-
-
-@get("/premium/download", guards=[require_auth])
-async def api_premium_download(request: Request, db_session: AsyncSession, period: str = "") -> Response:
-    """Скачивает отчёт по нормативам за период (вкладки: Линия / Алькор / Проект)."""
-    user = await get_current_user(request, db_session)
-    if user.effective_role != "администратор":
-        return Response(content=json.dumps({"error": "Нет прав"}, ensure_ascii=False), media_type="application/json", status_code=403)
+    if not data or not data.filename.lower().endswith((".xlsx", ".xls")):
+        return Response(content=json.dumps({"error": "Нужен файл .xlsx или .xls"}, ensure_ascii=False), media_type="application/json", status_code=400)
     if not period:
         return Response(content=json.dumps({"error": "Выберите период"}, ensure_ascii=False), media_type="application/json", status_code=400)
 
+    content = await data.read()
+    try:
+        s1c_rows = await build_1c_rows(db_session, content)
+    except Exception:
+        return Response(content=json.dumps({"error": "Файл не соответствует формату 1С"}, ensure_ascii=False), media_type="application/json", status_code=400)
+
+    await aggregate_utalo(db_session)
+
     line_result = await db_session.execute(text(
-        "SELECT t.staff_id, t.name, t.position, u.dept, t.minutes "
+        "SELECT t.staff_id, COALESCE(u.executor_name, t.name), t.position, u.dept, t.minutes "
         "FROM tabel t LEFT JOIN users u ON u.staff_id = t.staff_id "
         "WHERE t.period = :p ORDER BY t.staff_id"
     ), {"p": period})
@@ -276,7 +276,7 @@ async def api_premium_download(request: Request, db_session: AsyncSession, perio
         "ORDER BY full_name, task_report"
     ), {"p": period})).fetchall()
 
-    output = generate_premium_xlsx_bytes(line_rows, alcor_rows, project_rows)
+    output = generate_premium_xlsx_bytes(line_rows, s1c_rows, alcor_rows, project_rows)
     filename = f"Отчёт_по_нормативам_{period.replace(' ', '_')}.xlsx"
     return Response(
         content=output,
@@ -285,6 +285,6 @@ async def api_premium_download(request: Request, db_session: AsyncSession, perio
     )
 
 
-premium_router = Router("/api", route_handlers=[api_premium_summary, api_premium_tabel, api_premium_norms, api_premium_download])
+premium_router = Router("/api", route_handlers=[api_premium_summary, api_premium_tabel, api_premium_upload_1c])
 
 

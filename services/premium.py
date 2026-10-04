@@ -1,6 +1,8 @@
 import io as io_module
+from collections import defaultdict
 
-from openpyxl import Workbook
+from openpyxl import Workbook, load_workbook
+from python_calamine import CalamineWorkbook
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -21,6 +23,77 @@ ALCOR_TITLE = "Выполнение задания в Алькоре"
 
 
 _IN_CHUNK = 32500
+
+
+# ─── 1С-файл (вкладка «1С» отчёта по нормативам) ───
+# TDSheet: «Поручение контрагента» (8), «Непосредственный исполнитель1» (18),
+# «Непосредственный исполнитель2» (19). Нормативы — временный словарь (из «Лист2» файла).
+WORK_NORM_1C = {
+    "Бытовая заявка": 30,
+    "Допуск ПУ": 80,
+    "Допуск ПУ ИЖС": 40,
+    "Доставка уведомлений": 5,
+    "Жалоба на некач. эл.": 65,
+    "Замеры": 80,
+    "Инструментальная проверка": 105,
+    "Неучтенное потребление ЮЛ": 120,
+    "Осмотр": 90,
+    "Периодический контроль ЮЛ": 30,
+    "Снятие показаний": 35,
+}
+COL_1C_WORK = 8
+COL_1C_EXECUTOR1 = 18
+COL_1C_EXECUTOR2 = 19
+
+
+def _norm_name(name):
+    """Нормализация ФИО «ё/е» для сравнения (как в rle._norm)."""
+    return (name or "").strip().replace("ё", "е").replace("Ё", "Е")
+
+
+def _read_1c_sheet(content: bytes) -> list[list]:
+    """Читает TDSheet из 1С-файла (calamine, fallback openpyxl)."""
+    try:
+        wb = CalamineWorkbook.from_filelike(io_module.BytesIO(content))
+        return [list(row) for row in wb.get_sheet_by_name("TDSheet").to_python()]
+    except Exception:
+        wb = load_workbook(io_module.BytesIO(content), read_only=True, data_only=True)
+        return [list(row) for row in wb["TDSheet"].iter_rows(values_only=True)]
+
+
+async def build_1c_rows(db_session: AsyncSession, content: bytes) -> list[list]:
+    """Строки вкладки «1С»: [ФИО, Должность, Отделение, Работа, Количество, Норматив].
+
+    «Непосредственный исполнитель2» (если заполнен) — самостоятельная строка.
+    Должность/отделение — из users по full_name (сравнение «ё/е»).
+    """
+    sheet = _read_1c_sheet(content)
+    counts: dict[tuple[str, str], int] = defaultdict(int)
+    for row in sheet[1:]:
+        if not row:
+            continue
+        work = str(row[COL_1C_WORK]).strip() if len(row) > COL_1C_WORK and row[COL_1C_WORK] else ""
+        if not work:
+            continue
+        for idx in (COL_1C_EXECUTOR1, COL_1C_EXECUTOR2):
+            if len(row) > idx and row[idx]:
+                executor = str(row[idx]).strip()
+                if executor:
+                    counts[(executor, work)] += 1
+
+    if not counts:
+        return []
+
+    users = (await db_session.execute(text("SELECT full_name, position, dept FROM users"))).fetchall()
+    user_by_name = {}
+    for full_name, position, dept in users:
+        user_by_name[_norm_name(full_name)] = (position or "", dept or "")
+
+    rows = []
+    for (executor, work), count in sorted(counts.items(), key=lambda kv: (_norm_name(kv[0][0]), kv[0][1])):
+        position, dept = user_by_name.get(_norm_name(executor), ("", ""))
+        rows.append([executor, position, dept, work, count, count * WORK_NORM_1C.get(work, 0)])
+    return rows
 
 
 async def apply_norms(db_session: AsyncSession, task_numbers: list[str] | None = None) -> None:
@@ -163,8 +236,8 @@ async def aggregate_utalo(db_session: AsyncSession) -> int:
     return (await db_session.execute(text("SELECT COUNT(*) FROM utalo"))).scalar()
 
 
-def generate_premium_xlsx_bytes(line_rows, alcor_rows, project_rows) -> bytes:
-    """Xlsx отчёта по нормативам: вкладки «Линия», «Алькор» (база) и «Проект» (доп.)."""
+def generate_premium_xlsx_bytes(line_rows, s1c_rows, alcor_rows, project_rows) -> bytes:
+    """Xlsx отчёта по нормативам: вкладки «Линия», «1С», «Алькор» (база) и «Проект» (доп.)."""
     wb = Workbook()
 
     ws_line = wb.active
@@ -174,6 +247,12 @@ def generate_premium_xlsx_bytes(line_rows, alcor_rows, project_rows) -> bytes:
         ws_line.append(list(row))
 
     headers = ["ФИО", "Должность", "Отделение", "Работа", "Количество", "Норматив"]
+
+    ws_1c = wb.create_sheet("1С")
+    ws_1c.append(headers)
+    for row in s1c_rows:
+        ws_1c.append(list(row))
+
     ws_alcor = wb.create_sheet("Алькор")
     ws_project = wb.create_sheet("Проект")
 

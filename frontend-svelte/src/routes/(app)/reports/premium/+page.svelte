@@ -2,8 +2,7 @@
 	import {
 		fetchPremiumSummary,
 		uploadTabel,
-		aggregateNorms,
-		premiumDownloadUrl,
+		upload1c,
 		type PremiumSummary
 	} from '$lib/api/premium';
 	import { Button } from '$lib/components/ui/button';
@@ -28,8 +27,9 @@
 	let period = $state('');
 	let loading = $state(true);
 	let uploading = $state(false);
-	let downloading = $state(false);
+	let uploading1c = $state(false);
 	let fileInput = $state<HTMLInputElement | undefined>(undefined);
+	let fileInput1c = $state<HTMLInputElement | undefined>(undefined);
 	let started = $state(false);
 
 	function premiumPeriodLabel(p: string): string {
@@ -85,25 +85,40 @@
 		}
 	}
 
-	async function handleDownload() {
+	function openS1cPicker() {
+		if (fileInput1c) {
+			fileInput1c.value = '';
+			fileInput1c.click();
+		}
+	}
+
+	function onS1cChange(e: Event) {
+		const input = e.currentTarget as HTMLInputElement;
+		const file = input.files?.[0];
+		if (file) handleS1cUpload(file);
+	}
+
+	async function handleS1cUpload(file: File) {
 		if (!period) {
 			toast('Выберите период');
 			return;
 		}
-		downloading = true;
+		uploading1c = true;
 		try {
-			await aggregateNorms();
+			const { blob, filename } = await upload1c(file, period);
+			const url = URL.createObjectURL(blob);
+			const a = document.createElement('a');
+			a.href = url;
+			a.download = filename;
+			document.body.appendChild(a);
+			a.click();
+			a.remove();
+			URL.revokeObjectURL(url);
 		} catch (e) {
-			toast(e instanceof Error ? e.message : 'Ошибка формирования отчёта');
-			downloading = false;
-			return;
+			toast(e instanceof Error ? e.message : 'Ошибка загрузки 1С');
+		} finally {
+			uploading1c = false;
 		}
-		const a = document.createElement('a');
-		a.href = premiumDownloadUrl(period);
-		document.body.appendChild(a);
-		a.click();
-		a.remove();
-		downloading = false;
 	}
 </script>
 
@@ -141,8 +156,15 @@
 				{/each}
 			</select>
 
-			<Button size="sm" onclick={handleDownload} disabled={downloading || !period}>
-				{downloading ? 'Формируем…' : 'Скачать отчёт по нормативам'}
+			<input
+				bind:this={fileInput1c}
+				type="file"
+				accept=".xlsx,.xls"
+				class="hidden"
+				onchange={onS1cChange}
+			/>
+			<Button size="sm" onclick={openS1cPicker} disabled={uploading1c || !period}>
+				{uploading1c ? 'Обработка…' : 'Добавить 1С'}
 			</Button>
 		</div>
 

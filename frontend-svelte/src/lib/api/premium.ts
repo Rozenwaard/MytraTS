@@ -42,13 +42,24 @@ export async function uploadTabel(file: File): Promise<TabelUploadResult> {
 	return (await res.json()) as TabelUploadResult;
 }
 
-export async function aggregateNorms(): Promise<{ success: boolean; rows: number }> {
-	return api('/api/premium/norms', {
+export async function upload1c(
+	file: File,
+	period: string
+): Promise<{ blob: Blob; filename: string }> {
+	const form = new FormData();
+	form.append('data', file);
+	const res = await fetch(`/api/premium/upload-1c?period=${encodeURIComponent(period)}`, {
 		method: 'POST',
-		body: JSON.stringify({})
+		credentials: 'include',
+		body: form
 	});
-}
-
-export function premiumDownloadUrl(period: string): string {
-	return `/api/premium/download?period=${encodeURIComponent(period)}`;
+	if (!res.ok) {
+		const body = (await res.json().catch(() => ({}))) as { error?: string };
+		throw new Error(body.error ?? 'Ошибка загрузки 1С');
+	}
+	const blob = await res.blob();
+	const disposition = res.headers.get('Content-Disposition') ?? '';
+	const m = disposition.match(/filename\*=UTF-8''([^;]+)/);
+	const filename = m ? decodeURIComponent(m[1]) : 'Отчёт_по_нормативам.xlsx';
+	return { blob, filename };
 }
