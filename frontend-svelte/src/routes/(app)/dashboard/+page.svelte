@@ -6,12 +6,15 @@
 		fetchErrorsByLocale,
 		fetchPriorities,
 		fetchStatus,
+		fetchDebtMonth,
 		type DashboardOverview,
+		type DebtMonth,
 		type ErrorsByLocale,
 		type Priorities,
 		type StatusState
 	} from '$lib/api/dashboard';
 	import { Skeleton } from '$lib/components/ui/skeleton';
+	import { Button } from '$lib/components/ui/button';
 	import StatCard from '$lib/components/stat-card.svelte';
 	import { cn } from '$lib/utils.js';
 	import { auth } from '$lib/store/auth.svelte';
@@ -22,8 +25,10 @@
 	import Wrench from '@lucide/svelte/icons/wrench';
 	import TriangleAlert from '@lucide/svelte/icons/triangle-alert';
 	import ListOrdered from '@lucide/svelte/icons/list-ordered';
+	import ListTodo from '@lucide/svelte/icons/list-todo';
 	import Activity from '@lucide/svelte/icons/activity';
 	import Copy from '@lucide/svelte/icons/copy';
+	import X from '@lucide/svelte/icons/x';
 
 	const overviewQuery = createQuery<DashboardOverview>(
 		toStore(() => ({
@@ -98,6 +103,29 @@
 	function statusValue(count: string | null | undefined, at: string | null | undefined): string {
 		if (!at) return '—';
 		return `${count ?? '—'} · ${at}`;
+	}
+
+	let debtMonthOpen = $state(false);
+	let debtMonthLoading = $state(false);
+	let debtMonthError = $state<string | null>(null);
+	let debtMonth = $state<DebtMonth | null>(null);
+
+	async function openDebtMonth() {
+		debtMonthOpen = true;
+		debtMonthLoading = true;
+		debtMonthError = null;
+		try {
+			debtMonth = await fetchDebtMonth();
+		} catch {
+			debtMonth = null;
+			debtMonthError = 'Не удалось загрузить данные';
+		} finally {
+			debtMonthLoading = false;
+		}
+	}
+
+	function closeDebtMonth() {
+		debtMonthOpen = false;
 	}
 </script>
 
@@ -224,6 +252,9 @@
 				icon={CircleDollarSign}
 				iconClass="bg-amber-100 text-amber-800"
 				downloadHref="/api/dashboard/debt-report"
+				downloadLabel="Задания"
+				downloadIcon={ListTodo}
+				onMonth={isAdmin ? openDebtMonth : undefined}
 			>
 				{#snippet children()}
 					<div class="grid grid-cols-[auto_1fr_1fr] gap-2 text-sm">
@@ -281,3 +312,53 @@
 		{fmt(n)}
 	</div>
 {/snippet}
+
+{#if debtMonthOpen}
+	<div
+		class="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4"
+		role="button"
+		tabindex="-1"
+		aria-label="Закрыть"
+		onclick={(e) => {
+			if (e.target === e.currentTarget) closeDebtMonth();
+		}}
+		onkeydown={(e) => {
+			if (e.key === 'Escape') closeDebtMonth();
+		}}
+	>
+		<div class="w-full max-w-sm rounded-lg border bg-card p-4 shadow-lg" role="dialog" aria-modal="true">
+			<div class="mb-3 flex items-center justify-between">
+				<h3 class="text-base font-semibold">Крупная задолженность</h3>
+				<Button variant="ghost" size="icon-sm" onclick={closeDebtMonth} aria-label="Закрыть">
+					<X class="size-4" />
+				</Button>
+			</div>
+
+			<div class="space-y-2 text-sm">
+				<div class="flex items-center justify-between rounded-md border bg-muted/40 px-3 py-2">
+					<span class="text-muted-foreground">Период</span>
+					<span class="font-semibold tabular-nums">{debtMonth?.period ?? '—'}</span>
+				</div>
+				<div class="flex items-center justify-between rounded-md border bg-muted/40 px-3 py-2">
+					<span class="text-muted-foreground">Поступило</span>
+					<span class="font-semibold tabular-nums">{fmt(debtMonth?.received)}</span>
+				</div>
+				<div class="flex items-center justify-between rounded-md border bg-muted/40 px-3 py-2">
+					<span class="text-muted-foreground">Выполнено</span>
+					<span class="font-semibold tabular-nums">{fmt(debtMonth?.completed)}</span>
+				</div>
+				<div class="flex items-center justify-between rounded-md border bg-muted/40 px-3 py-2">
+					<span class="text-muted-foreground">В срок</span>
+					<span class="font-semibold tabular-nums">{fmt(debtMonth?.on_time)}</span>
+				</div>
+			</div>
+
+			{#if debtMonthLoading}
+				<p class="mt-3 text-center text-xs text-muted-foreground">Загрузка…</p>
+			{:else if debtMonthError}
+				<p class="mt-3 text-center text-xs text-destructive">{debtMonthError}</p>
+			{/if}
+		</div>
+	</div>
+{/if}
+

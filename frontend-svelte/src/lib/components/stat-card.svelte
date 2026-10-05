@@ -1,6 +1,7 @@
 <script lang="ts">
 	import ArrowRight from '@lucide/svelte/icons/arrow-right';
 	import Download from '@lucide/svelte/icons/download';
+	import CalendarDays from '@lucide/svelte/icons/calendar-days';
 	import type { Component, Snippet } from 'svelte';
 	import { cn } from '$lib/utils.js';
 
@@ -10,6 +11,11 @@
 		iconClass = '',
 		href = undefined,
 		downloadHref = undefined,
+		downloadLabel = 'Скачать',
+		downloadIcon = Download,
+		onMonth = undefined,
+		monthLabel = 'Месяц',
+		monthIcon = CalendarDays,
 		children
 	}: {
 		title: string;
@@ -17,6 +23,11 @@
 		iconClass?: string;
 		href?: string;
 		downloadHref?: string;
+		downloadLabel?: string;
+		downloadIcon?: Component;
+		onMonth?: () => void;
+		monthLabel?: string;
+		monthIcon?: Component;
 		children?: Snippet;
 	} = $props();
 </script>
@@ -45,16 +56,29 @@
 				<span>Перейти</span>
 			</a>
 		{/if}
+		{#if onMonth}
+			{@const MonthIcon = monthIcon}
+			<button
+				type="button"
+				onclick={onMonth}
+				class="flex shrink-0 items-center gap-1 rounded-md px-1.5 py-0.5 text-xs font-medium text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+				aria-label={monthLabel}
+			>
+				<MonthIcon class="size-3.5" />
+				<span>{monthLabel}</span>
+			</button>
+		{/if}
 		{#if downloadHref}
+			{@const DownloadIcon = downloadIcon}
 			<a
 				href={downloadHref}
 				target="_blank"
 				rel="noreferrer"
 				class="flex shrink-0 items-center gap-1 rounded-md px-1.5 py-0.5 text-xs font-medium text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
-				aria-label="Скачать"
+				aria-label={downloadLabel}
 			>
-				<Download class="size-3.5" />
-				<span>Скачать</span>
+				<DownloadIcon class="size-3.5" />
+				<span>{downloadLabel}</span>
 			</a>
 		{/if}
 	</div>

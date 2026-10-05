@@ -374,6 +374,51 @@ async def api_dashboard_debt_report(request: Request, db_session: AsyncSession) 
                     headers={"Content-Disposition": f"attachment; filename*=UTF-8''{quote(filename)}"})
 
 
+@get("/dashboard/debt-month", guards=[require_auth])
+async def api_dashboard_debt_month(request: Request, db_session: AsyncSession) -> Response:
+    """Диалог «Месяц» виджета «Крупная задолженность» — сводка за предыдущий месяц (только администратор)."""
+    user = await get_current_user(request, db_session)
+    if user.effective_role != "администратор":
+        return Response(content=json.dumps({"error": "Нет прав"}, ensure_ascii=False), media_type="application/json", status_code=403)
+
+    now = datetime.now()
+    year = now.year
+    month = now.month - 1
+    if month == 0:
+        month = 12
+        year -= 1
+    month_names = ["", "январь", "февраль", "март", "апрель", "май", "июнь",
+                   "июль", "август", "сентябрь", "октябрь", "ноябрь", "декабрь"]
+    period = f"{month_names[month].capitalize()} {year}"
+    month_prefix = f"{year:04d}-{month:02d}%"
+
+    # Каскад подмножеств по базе периода (created_at в предыдущем месяце):
+    #   Поступило ⊇ Выполнено ⊇ В срок.
+    # Выполнение может «наезжать» на следующий месяц (создано 30 сентября — выполнено 6 октября).
+    base = "visit_reason LIKE :debt_reason AND created_at LIKE :month_prefix"
+    completed_clause = "task_report IS NOT NULL AND task_report != ''"
+    params = {"debt_reason": "%Крупн%", "month_prefix": month_prefix}
+
+    received = (await db_session.execute(
+        text(f"SELECT COUNT(*) FROM main_afl WHERE {base}"), params)).scalar() or 0
+
+    completed = (await db_session.execute(
+        text(f"SELECT COUNT(*) FROM main_afl WHERE {base} AND {completed_clause}"), params)).scalar() or 0
+
+    on_time = (await db_session.execute(
+        text(f"SELECT COUNT(*) FROM main_afl WHERE {base} AND {completed_clause} "
+             f"AND done_day IS NOT NULL AND done_day != '' "
+             f"AND julianday(done_day) - julianday(created_at) <= 7"),
+        params)).scalar() or 0
+
+    return Response(content=json.dumps({
+        "period": period,
+        "received": received,
+        "completed": completed,
+        "on_time": on_time,
+    }, ensure_ascii=False), media_type="application/json")
+
+
 @get("/dashboard/report-counts", guards=[require_auth])
 async def api_dashboard_report_counts(request: Request, db_session: AsyncSession) -> Response:
     """Число строк в отчётах «Балансовая», «Дата работ», «Отметка о проверке», «Отчёт об ошибках» (зона стоп-фактора + видимость роли)."""
@@ -455,7 +500,7 @@ async def api_dashboard_priorities_save(
 dashboard_router = Router("/api", route_handlers=[
     api_dashboard_summary, api_dashboard_overview, api_dashboard_errors_report,
     api_dashboard_balance_report, api_dashboard_date_report, api_dashboard_verified_report,
-    api_dashboard_duplicates_report, api_dashboard_debt_report,
+    api_dashboard_duplicates_report, api_dashboard_debt_report, api_dashboard_debt_month,
     api_dashboard_report_counts, api_dashboard_errors_by_locale,
     api_dashboard_priorities, api_dashboard_priorities_save,
 ])

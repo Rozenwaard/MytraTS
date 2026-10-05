@@ -8,6 +8,13 @@ export interface DebtMatrix {
 	overdue_completed: number;
 }
 
+export interface DebtMonth {
+	period: string;
+	received: number;
+	completed: number;
+	on_time: number;
+}
+
 export interface InWorkMatrix {
 	psk_plan: number;
 	psk_unplan: number;
@@ -46,6 +53,10 @@ export interface DashboardOverview {
 
 export async function fetchDashboardOverview(): Promise<DashboardOverview> {
 	return api<DashboardOverview>('/api/dashboard/overview');
+}
+
+export async function fetchDebtMonth(): Promise<DebtMonth> {
+	return api<DebtMonth>('/api/dashboard/debt-month');
 }
 
 export interface ErrorsByLocaleItem {
