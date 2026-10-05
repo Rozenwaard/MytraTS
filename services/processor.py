@@ -435,6 +435,16 @@ async def process_raw_afl(db_session: AsyncSession, upload_progress: dict, uploa
             "OR unauthorized_connection IS NOT NULL OR additional_violations IS NOT NULL)"
         ))
 
+        # === Флаг: Допуск/ИП РЛЭ с неопределяемой моделью ПУ ===
+        # (модель не в meter_model_phase → нельзя определить 1ф/3ф → task_report NULL).
+        await db_session.execute(text(
+            f"UPDATE raw_afl SET task_detail = 'Невозможно определить вид работ по модели ПУ' "
+            f"WHERE {_DONE_DAY} >= :cutover AND task_report IS NULL AND ("
+            f"  (task_output = 'Допуск' AND customer = 'РЛЭ') "
+            f"  OR (work_type_in_task = 'Инструментальная проверка' AND customer = 'РЛЭ' "
+            f"      AND {_in('task_output', RESULT_OUTPUTS)}))"
+        ), {"cutover": CUTOVER_DAY})
+
         # === Не исполнено 14 ===
         await db_session.execute(text(
             "UPDATE raw_afl SET task_output = 'Не исполнено', task_report = NULL, task_detail = '14' "
