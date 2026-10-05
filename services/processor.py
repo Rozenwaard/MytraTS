@@ -3,6 +3,16 @@ from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 
+# Дата перехода на новый справочник видов работ (work_catalog): строки с датой
+# выполнения >= CUTOVER_DAY классифицируются по NEW_TASK_REPORT_RULES, более ранние —
+# по старому TASK_REPORT_RULES (carte, read-only до конца сентября).
+CUTOVER_DAY = "2026-10-01"
+# done_day (ГГГГ-ММ-ДД) из work_end_date (ДД.ММ.ГГГГ ЧЧ:ММ:СС) — SQL-выражение.
+_DONE_DAY = ("SUBSTR(work_end_date, 7, 4) || '-' || "
+             "SUBSTR(work_end_date, 4, 2) || '-' || "
+             "SUBSTR(work_end_date, 1, 2)")
+
+
 # ─── Справочники ───
 
 NORM_MAP = {
@@ -237,10 +247,79 @@ TASK_REPORT_RULES = [
 ]
 
 
-async def _apply_rules(db_session, rules, upload_progress, upload_id, total_rows) -> None:
+# ─── Правила Шага 5 (новый справочник work_catalog, done_day >= CUTOVER_DAY) ───
+# В этой итерации НЕ обрабатываются (task_report остаётся NULL, потом бэкфил):
+#   • «недопуск как вид работ» («Недопуск по/без уведомления», «Недопуск план …»,
+#     «Недопуск штучный …», «Недопуск чтение архива») — следующий проход «из нулей»;
+#   • виды, требующие новых кодов: восстановление опроса, привязка КЛ/ВЛ, идентификация,
+#     жалобы на качество, чтение архива ПСК, нагрев;
+#   • «Выявление безучётного потребления …» — влияет на нормы, а не на вид работ.
+# Нормативы (norm) здесь НЕ проставляются — только корректный task_report (нормы бэкфилом).
+
+PHASE_1 = "meter_model IN (SELECT meter_model FROM meter_model_phase WHERE phase = '1ф')"
+PHASE_3 = "meter_model IN (SELECT meter_model FROM meter_model_phase WHERE phase = '3ф')"
+
+NEW_TASK_REPORT_RULES = [
+    # ── Допуск ПУ (task_output='Допуск') ──
+    ("task_report = 'Трёхфазный ДПУ'",
+     f"task_output = 'Допуск' AND customer = 'РЛЭ' AND {PHASE_3} AND task_report IS NULL", None),
+    ("task_report = 'Однофазный ДПУ'",
+     f"task_output = 'Допуск' AND customer = 'РЛЭ' AND {PHASE_1} AND task_report IS NULL", None),
+    ("task_report = 'Допуск ПУ ФЛ'",
+     "task_output = 'Допуск' AND customer = 'ПСК' AND task_report IS NULL", None),
+
+    # ── Инструментальная проверка ──
+    ("task_report = 'Трёхфазная ИП'",
+     f"work_type_in_task = 'Инструментальная проверка' AND customer = 'РЛЭ' AND {_in('task_output', RESULT_OUTPUTS)} AND {PHASE_3} AND task_report IS NULL", None),
+    ("task_report = 'Однофазная ИП'",
+     f"work_type_in_task = 'Инструментальная проверка' AND customer = 'РЛЭ' AND {_in('task_output', RESULT_OUTPUTS)} AND {PHASE_1} AND task_report IS NULL", None),
+    ("task_report = 'ИП ФЛ'",
+     f"work_type_in_task = 'Инструментальная проверка' AND customer = 'ПСК' AND {_in('task_output', RESULT_OUTPUTS)} AND task_report IS NULL", None),
+
+    # ── Перепрограммирование ПУ / Чтение архива ──
+    ("task_report = 'Чтение архива РЛЭ'",
+     "work_type_in_task = 'Перепрограммирование ПУ' AND customer = 'РЛЭ' AND task_output = 'Показания' AND task_report IS NULL", None),
+    ("task_report = 'Перепрограммирование ПУ'",
+     "work_type_in_task = 'Перепрограммирование ПУ' AND customer = 'ПСК' AND task_output = 'Показания' AND task_report IS NULL", None),
+
+    # ── Контроль (Проверка РО) ──
+    ("task_report = 'Проверка РО РЛЭ'",
+     "task_output = 'Контроль' AND customer = 'РЛЭ' AND task_report IS NULL", None),
+    ("task_report = 'Проверка РО ПСК'",
+     "task_output = 'Контроль' AND customer = 'ПСК' AND task_report IS NULL", None),
+
+    # ── Отключение ──
+    ("task_report = 'Отключение в МКД'",
+     f"{_in('work_type_in_task', ('Отключение ЭЭ', 'Отключение ЭЭ за СП'))} AND customer = 'ПСК' AND task_output = 'Показания' AND task_report IS NULL", None),
+
+    # ── Проверка, осмотр ПУ (ПСК, плановые) ──
+    ("task_report = 'Плановое КСП лестница'",
+     f"work_type_in_task = 'Проверка, осмотр ПУ' AND {_in('task_output', RESULT_OUTPUTS)} AND task_type = 'Плановый' AND customer = 'ПСК' AND {_in('service_object_type', MKD_OBJECT_TYPES)} AND ({_not_in('meter_installation_place', PLAN_INDOOR_PLACES)} OR meter_installation_place IS NULL) AND task_report IS NULL", None),
+    ("task_report = 'Плановое КСП квартира'",
+     f"work_type_in_task = 'Проверка, осмотр ПУ' AND {_in('task_output', RESULT_OUTPUTS)} AND task_type = 'Плановый' AND customer = 'ПСК' AND {_in('service_object_type', MKD_OBJECT_TYPES)} AND {_in('meter_installation_place', PLAN_INDOOR_PLACES)} AND task_report IS NULL", None),
+    ("task_report = 'Штучный план'",
+     f"work_type_in_task = 'Проверка, осмотр ПУ' AND {_in('task_output', RESULT_OUTPUTS)} AND task_type = 'Плановый' AND customer = 'ПСК' AND {_not_in('service_object_type', MKD_OBJECT_TYPES)} AND task_report IS NULL", None),
+
+    # ── Проверка, осмотр ПУ (ПСК, внеплановые) ──
+    ("task_report = 'Штучное КСП ФЛ'",
+     f"work_type_in_task = 'Проверка, осмотр ПУ' AND {_in('task_output', RESULT_OUTPUTS)} AND task_type = 'Внеплановый' AND customer = 'ПСК' AND task_report IS NULL", None),
+
+    # ── Проверка, осмотр ПУ (РЛЭ) ──
+    ("task_report = 'Массовое КСП'",
+     f"work_type_in_task = 'Проверка, осмотр ПУ' AND {_in('task_output', RESULT_OUTPUTS)} AND task_type = 'Плановый' AND customer = 'РЛЭ' AND task_report IS NULL", None),
+    ("task_report = 'Штучное КСП'",
+     f"work_type_in_task = 'Проверка, осмотр ПУ' AND {_in('task_output', RESULT_OUTPUTS)} AND task_type = 'Внеплановый' AND customer = 'РЛЭ' AND task_report IS NULL", None),
+]
+
+
+async def _apply_rules(db_session, rules, upload_progress, upload_id, total_rows, extra_where=None, extra_params=None) -> None:
     """Последовательно выполняет правила классификации (UPDATE raw_afl)."""
     for set_clause, where, progress in rules:
-        await db_session.execute(text(f"UPDATE raw_afl SET {set_clause} WHERE {where}"))
+        w = f"({where}) AND {extra_where}" if extra_where else where
+        if extra_params:
+            await db_session.execute(text(f"UPDATE raw_afl SET {set_clause} WHERE {w}"), extra_params)
+        else:
+            await db_session.execute(text(f"UPDATE raw_afl SET {set_clause} WHERE {w}"))
         if progress is not None:
             upload_progress[upload_id] = {"status": "processing", "progress": progress, "total": total_rows}
 
@@ -309,8 +388,17 @@ async def process_raw_afl(db_session: AsyncSession, upload_progress: dict, uploa
         # === Проверки по comment (CS) через REGEXP ===
         await _apply_rules(db_session, COMMENT_RULES, upload_progress, upload_id, total_rows)
 
-        # === Шаг 5: task_report (DJ) ===
-        await _apply_rules(db_session, TASK_REPORT_RULES, upload_progress, upload_id, total_rows)
+        # === Шаг 5: task_report (DJ) — ветвление по дате выполнения ===
+        await _apply_rules(
+            db_session, TASK_REPORT_RULES, upload_progress, upload_id, total_rows,
+            extra_where=f"{_DONE_DAY} < :cutover",
+            extra_params={"cutover": CUTOVER_DAY},
+        )
+        await _apply_rules(
+            db_session, NEW_TASK_REPORT_RULES, upload_progress, upload_id, total_rows,
+            extra_where=f"{_DONE_DAY} >= :cutover",
+            extra_params={"cutover": CUTOVER_DAY},
+        )
 
         # Коды 66 «Объект эксплуатируется» и 33 «Отсутствует связь с ВПУ» (только ПСК)
         # не дают вид работ → task_report = NULL (иначе попадали бы в «Бытовые заявки»).
