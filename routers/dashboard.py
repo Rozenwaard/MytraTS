@@ -76,14 +76,23 @@ async def api_dashboard_overview(request: Request, db_session: AsyncSession) -> 
         base_where += f" AND {vis_where}"
     params = vis_params
 
-    # Стоимость = завершённые (status Завершено/Закрыто) строки без отчёта, по carte.price.
+    # Стоимость = завершённые (status Завершено/Закрыто) строки без отчёта.
+    # Расценка: старые виды работ — carte.price, новые (work_catalog) — work_catalog.price.
     cost = (await db_session.execute(
-        text(f"SELECT COALESCE(SUM(COALESCE(c.price, 0)), 0) FROM main_afl LEFT JOIN carte c ON c.title = main_afl.task_report WHERE {base_where}"),
+        text(f"SELECT COALESCE(SUM(COALESCE(c.price, wc.price, 0)), 0) "
+             f"FROM main_afl "
+             f"LEFT JOIN carte c ON c.title = main_afl.task_report "
+             f"LEFT JOIN work_catalog wc ON wc.short = main_afl.task_report "
+             f"WHERE {base_where}"),
         params)).scalar()
 
     # Разбивка стоимости по заказчикам (customer = ПСК/РЛЭ) — для раскрытия плашки «Стоимость».
     cost_by_cust_result = await db_session.execute(
-        text(f"SELECT customer, COALESCE(SUM(COALESCE(c.price, 0)), 0) FROM main_afl LEFT JOIN carte c ON c.title = main_afl.task_report WHERE {base_where} GROUP BY customer"),
+        text(f"SELECT main_afl.customer, COALESCE(SUM(COALESCE(c.price, wc.price, 0)), 0) "
+             f"FROM main_afl "
+             f"LEFT JOIN carte c ON c.title = main_afl.task_report "
+             f"LEFT JOIN work_catalog wc ON wc.short = main_afl.task_report "
+             f"WHERE {base_where} GROUP BY main_afl.customer"),
         params)
     cost_by_cust = {row[0]: (row[1] or 0) for row in cost_by_cust_result}
 
