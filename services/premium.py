@@ -146,7 +146,7 @@ async def _apply_norms_scoped(db_session: AsyncSession, task_numbers: list[str] 
     # 2. МКД-разбивка (norm = 40)
     await run(
         f"norm = {BP_MKD}, extra = 0",
-        "task_report = 'Выявление безучетного потребления БП' "
+        "task_report = 'Выявление безучетного потребления БП ИЖС' "
         f"AND service_object_type IN ({MKD_IN}) AND task_detail NOT IN ('Дубли', 'Ручная проверка')",
     )
 
@@ -188,9 +188,9 @@ async def apply_manual_norm(db_session: AsyncSession, task_numbers: list[str]) -
         UPDATE main_afl SET
             norm = CASE
                 WHEN task_report IS NULL THEN 0
-                WHEN task_report = 'Выявление безучетного потребления БП'
+                WHEN task_report = 'Выявление безучетного потребления БП ИЖС'
                      AND service_object_type IN ({MKD_IN}) THEN {BP_MKD}
-                WHEN task_report = 'Выявление безучетного потребления БП' THEN {BP_IZHS}
+                WHEN task_report = 'Выявление безучетного потребления БП ИЖС' THEN {BP_IZHS}
                 ELSE (SELECT absolute FROM carte WHERE carte.kind = 'base' AND carte.title = main_afl.task_report LIMIT 1)
             END,
             extra = CASE

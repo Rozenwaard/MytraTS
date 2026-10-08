@@ -221,10 +221,10 @@ TASK_REPORT_RULES = [
      f"task_output = 'Допуск' AND {_not_in('service_object_type', MKD_OBJECT_TYPES)} AND task_report IS NULL", None),
     ("task_report = 'Допуск ПУ в МКД'",
      f"task_output = 'Допуск' AND {_in('service_object_type', MKD_OBJECT_TYPES)} AND task_report IS NULL", None),
-    ("task_report = 'Выявление безучетного потребления БП'",
+    ("task_report = 'Выявление безучетного потребления БП ИЖС'",
      f"{_in('work_type_in_task', UNMETERED_WORK_TYPES)} AND task_detail = 'Акт неучтённого потребления' AND task_type = 'Внеплановый' AND task_report IS NULL", None),
     ("task_report = 'Бытовые заявки'",
-     "task_report = 'Выявление безучетного потребления БП' AND task_number LIKE 'ОФТП%'", None),
+     "task_report = 'Выявление безучетного потребления БП ИЖС' AND task_number LIKE 'ОФТП%'", None),
     ("task_report = 'Инструментальная проверка'",
      "work_type_in_task = 'Инструментальная проверка' AND task_output = 'Показания' AND task_report IS NULL", None),
     ("task_report = 'Инструментальная проверка'",
@@ -465,11 +465,11 @@ async def process_raw_afl(db_session: AsyncSession, upload_progress: dict, uploa
         # === Не исполнено 14 ===
         await db_session.execute(text(
             "UPDATE raw_afl SET task_output = 'Не исполнено', task_report = NULL, task_detail = '14' "
-            "WHERE meter_type IS NULL AND meter_type_2 IS NULL AND task_report = 'Выявление безучетного потребления БП'"
+            "WHERE meter_type IS NULL AND meter_type_2 IS NULL AND task_report = 'Выявление безучетного потребления БП ИЖС'"
         ))
         await db_session.execute(text(
             "UPDATE raw_afl SET task_report = 'Бытовые заявки' "
-            "WHERE task_report = 'Выявление безучетного потребления БП' AND customer = 'ПСК'"
+            "WHERE task_report = 'Выявление безучетного потребления БП ИЖС' AND customer = 'ПСК'"
         ))
 
         # === Шаг 7: done_day из work_end_date ===

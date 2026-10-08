@@ -291,8 +291,9 @@ MytraTS/
    **Бэкфил рабочей базы (сессия доработок, порядок):**
    1) `uv run python _migrate_work_catalog_norms.py` — work_catalog (нормативы, переименования, ЮЛ + строки 51–54) + rename `main_afl.task_report`;
    2) `uv run python _backfill_work_catalog_marks.py` — норматив 60 «Чтение архива», метки `detail`, «Недопуск по уведомлению» на удаление, «Выявление безучетного потребления» → `replacement`;
-   3) `uv run python _backfill_processor27.py` — пересчёт `task_report` октябрь+ по `NEW_TASK_REPORT_RULES` (включая «недопуски»);
-   4) `uv run python _backfill_help_tariffs.py` — пересборка страницы «Помощь – Тарифы» из `work_catalog` (без заказчика → РЛЭ → ПСК).
+   3) `uv run python _backfill_bp_izhs_rename.py` — «Выявление безучетного потребления БП» → «…БП ИЖС» (carte.title + work_catalog.short + main_afl.task_report);
+   4) `uv run python _backfill_processor27.py` — пересчёт `task_report` октябрь+ по `NEW_TASK_REPORT_RULES` (включая «недопуски»);
+   5) `uv run python _backfill_help_tariffs.py` — пересборка страницы «Помощь – Тарифы» из `work_catalog` (без заказчика → РЛЭ → ПСК).
 4. **Бэкфилы «Недопуск ПУ» → «Допуск ПУ» (ПРОГНАТЬ НА РАБОЧЕЙ БАЗЕ)** — на тестовой применены и проверены: `_backfill_nedopusk.py` (переклассификация 17 строк `task_output='Недопуск'`/`task_detail='Недопуск ПУ'` с пустым `task_report` → `task_output='Допуск'`, вид работ «Допуск ПУ в МКД/ИЖС», сброс `reestr_number='Отклонён'`, пересчёт norm/errors) и `_cleanup_nedopusk_task_output.py` (12 легаси-строк `task_output='Недопуск'` → `'Допуск'`). Причина — правка правила №5 в `services/processor.py` (было `task_output='Недопуск'`, стало `'Допуск'`).
 5. **Норматив «Перепрограммирование ПУ» = 50 (ПРОГНАТЬ НА РАБОЧЕЙ БАЗЕ)** — вид работ остаётся «Бытовые заявки», но норматив 50 (а не 30). Правка — правило 1a в `services/premium.py` (`apply_norms`): `work_type_in_task='Перепрограммирование ПУ' AND task_report='Бытовые заявки'` → `norm=50`. Бэкфил `_backfill_reprog.py` пересчитывает `norm` для строк `work_type_in_task='Перепрограммирование ПУ'`.
 
