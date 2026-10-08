@@ -152,16 +152,15 @@ async def _apply_norms_scoped(db_session: AsyncSession, task_numbers: list[str] 
         f"work_type_in_task = 'Перепрограммирование ПУ' AND task_report = 'Бытовые заявки' AND task_detail NOT IN ('Дубли', 'Ручная проверка') AND {old}",
     )
 
-    # 2. МКД-разбивка (norm = 40) — только старый справочник.
+    # 2. «Акт неучтённого потребления» → замещающий норматив «Выявление безучетного потребления»
+    # (это НЕ вид работ, влияет только на нормативы): ИЖС = 60, МКД = 40.
     await run(
-        f"norm = {BP_MKD}, extra = 0",
-        f"task_report = 'Выявление безучетного потребления БП ИЖС' AND service_object_type IN ({MKD_IN}) AND task_detail NOT IN ('Дубли', 'Ручная проверка') AND {old}",
+        f"norm = (SELECT norm FROM work_catalog WHERE work_catalog.short = 'Выявление безучетного потребления БП ИЖС' LIMIT 1), extra = 0",
+        "task_detail = 'Акт неучтённого потребления'",
     )
-
-    # 2a. «Выявление безучетного потребления …» — замещающий, ставится по task_report (новый справочник).
     await run(
-        "norm = (SELECT norm FROM work_catalog WHERE work_catalog.short = main_afl.task_report AND work_catalog.short LIKE 'Выявление безучетного потребления%' LIMIT 1), extra = 0",
-        f"task_report LIKE 'Выявление безучетного потребления%' AND task_detail NOT IN ('Дубли', 'Ручная проверка') AND {new}",
+        f"norm = (SELECT norm FROM work_catalog WHERE work_catalog.short = 'Выявление безучетного потребления БП МКД' LIMIT 1), extra = 0",
+        f"task_detail = 'Акт неучтённого потребления' AND service_object_type IN ({MKD_IN})",
     )
 
     # 3. Замещающие тарифы: norm=0, extra=тариф
@@ -216,9 +215,6 @@ async def apply_manual_norm(db_session: AsyncSession, task_numbers: list[str]) -
         UPDATE main_afl SET
             norm = CASE
                 WHEN task_report IS NULL THEN 0
-                WHEN done_day < '{CUTOVER_DAY}' AND task_report = 'Выявление безучетного потребления БП ИЖС'
-                     AND service_object_type IN ({MKD_IN}) THEN {BP_MKD}
-                WHEN done_day < '{CUTOVER_DAY}' AND task_report = 'Выявление безучетного потребления БП ИЖС' THEN {BP_IZHS}
                 WHEN done_day < '{CUTOVER_DAY}' THEN (SELECT absolute FROM carte WHERE carte.kind = 'base' AND carte.title = main_afl.task_report LIMIT 1)
                 WHEN done_day >= '{CUTOVER_DAY}' THEN (SELECT norm FROM work_catalog WHERE work_catalog.short = main_afl.task_report LIMIT 1)
                 ELSE 0
