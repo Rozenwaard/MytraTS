@@ -8,11 +8,12 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from sql import build_in_clause
 
+from services.processor import CUTOVER_DAY
 
-# ─── Нормативы (минуты) — источник истины: таблица carte ───
-# carte.kind:    'base' (базовый тариф), 'replacement' (замещающий), 'additional' (дополнительный).
-# carte.planned: норматив при task_type='Плановый' (NULL = как absolute).
-# carte.detail:  task_detail, которым сопоставляется код/причина (NULL у base).
+
+# ─── Нормативы (минуты) ───
+# done_day <  CUTOVER_DAY → carte (старый справочник): absolute / planned / detail.
+# done_day >= CUTOVER_DAY → work_catalog (новый справочник): norm / planned / detail (short=task_report).
 
 MKD_OBJECT_TYPES = ("Квартира", "Коммунальная квартира", "Дом блокированной застройки")
 MKD_IN = ", ".join(f"'{t}'" for t in MKD_OBJECT_TYPES)
@@ -97,10 +98,11 @@ async def build_1c_rows(db_session: AsyncSession, content: bytes) -> list[list]:
 
 
 async def apply_norms(db_session: AsyncSession, task_numbers: list[str] | None = None) -> None:
-    """Проставляет main_afl.norm (база) и main_afl.extra (доп.) по «Тарифы.xlsx».
+    """Проставляет main_afl.norm (база) и main_afl.extra (доп.).
 
-    norm — основной вид работ (carte.kind='base'); extra — остальное
-    («Код …», «Причина…», «+5 Выполнение задания в Алькоре»).
+    done_day <  CUTOVER_DAY — по старому справочнику carte;
+    done_day >= CUTOVER_DAY — по новому справочнику work_catalog.
+    norm — основной вид работ; extra — остальное («Код …», «Причина…», «+5 Алькор»).
     «Дубли» и «Ручная проверка» → norm=0, extra=0.
     """
     if task_numbers:
@@ -125,6 +127,9 @@ async def _apply_norms_scoped(db_session: AsyncSession, task_numbers: list[str] 
             dict(scope_params),
         )
 
+    old = f"done_day < '{CUTOVER_DAY}'"     # старый справочник carte
+    new = f"done_day >= '{CUTOVER_DAY}'"    # новый справочник work_catalog
+
     # Сброс
     await run("norm = NULL, extra = NULL", "1=1")
 
@@ -134,45 +139,68 @@ async def _apply_norms_scoped(db_session: AsyncSession, task_numbers: list[str] 
     # 1. Базовый тариф (norm)
     await run(
         "norm = (SELECT absolute FROM carte WHERE carte.kind = 'base' AND carte.title = main_afl.task_report LIMIT 1), extra = 0",
-        "task_report IS NOT NULL AND task_detail NOT IN ('Дубли', 'Ручная проверка')",
+        f"task_report IS NOT NULL AND task_detail NOT IN ('Дубли', 'Ручная проверка') AND {old}",
+    )
+    await run(
+        "norm = (SELECT norm FROM work_catalog WHERE work_catalog.kind = 'base' AND work_catalog.short = main_afl.task_report LIMIT 1), extra = 0",
+        f"task_report IS NOT NULL AND task_detail NOT IN ('Дубли', 'Ручная проверка') AND {new}",
     )
 
-    # 1a. «Перепрограммирование ПУ»: вид работ остаётся «Бытовые заявки», но норматив 50 (а не 30).
+    # 1a. «Перепрограммирование ПУ»: вид работ остаётся «Бытовые заявки», но норматив 50 (старый справочник).
     await run(
         "norm = 50",
-        "work_type_in_task = 'Перепрограммирование ПУ' AND task_report = 'Бытовые заявки' AND task_detail NOT IN ('Дубли', 'Ручная проверка')",
+        f"work_type_in_task = 'Перепрограммирование ПУ' AND task_report = 'Бытовые заявки' AND task_detail NOT IN ('Дубли', 'Ручная проверка') AND {old}",
     )
 
-    # 2. МКД-разбивка (norm = 40)
+    # 2. МКД-разбивка (norm = 40) — только старый справочник.
     await run(
         f"norm = {BP_MKD}, extra = 0",
-        "task_report = 'Выявление безучетного потребления БП ИЖС' "
-        f"AND service_object_type IN ({MKD_IN}) AND task_detail NOT IN ('Дубли', 'Ручная проверка')",
+        f"task_report = 'Выявление безучетного потребления БП ИЖС' AND service_object_type IN ({MKD_IN}) AND task_detail NOT IN ('Дубли', 'Ручная проверка') AND {old}",
+    )
+
+    # 2a. «Выявление безучетного потребления …» — замещающий, ставится по task_report (новый справочник).
+    await run(
+        "norm = (SELECT norm FROM work_catalog WHERE work_catalog.short = main_afl.task_report AND work_catalog.short LIKE 'Выявление безучетного потребления%' LIMIT 1), extra = 0",
+        f"task_report LIKE 'Выявление безучетного потребления%' AND task_detail NOT IN ('Дубли', 'Ручная проверка') AND {new}",
     )
 
     # 3. Замещающие тарифы: norm=0, extra=тариф
     await run(
         "norm = 0, extra = (SELECT absolute FROM carte WHERE carte.kind = 'replacement' AND carte.detail = main_afl.task_detail LIMIT 1)",
-        "task_detail IN (SELECT detail FROM carte WHERE carte.kind = 'replacement' AND carte.detail IS NOT NULL) "
-        "AND COALESCE(task_type, '') != 'Плановый'",
+        f"task_detail IN (SELECT detail FROM carte WHERE carte.kind = 'replacement' AND carte.detail IS NOT NULL) AND COALESCE(task_type, '') != 'Плановый' AND {old}",
     )
     await run(
         "norm = 0, extra = (SELECT planned FROM carte WHERE carte.kind = 'replacement' AND carte.detail = main_afl.task_detail LIMIT 1)",
-        "task_detail IN (SELECT detail FROM carte WHERE carte.kind = 'replacement' AND carte.detail IS NOT NULL) "
-        "AND task_type = 'Плановый'",
+        f"task_detail IN (SELECT detail FROM carte WHERE carte.kind = 'replacement' AND carte.detail IS NOT NULL) AND task_type = 'Плановый' AND {old}",
+    )
+    await run(
+        "norm = 0, extra = (SELECT norm FROM work_catalog WHERE work_catalog.kind = 'replacement' AND work_catalog.detail = main_afl.task_detail LIMIT 1)",
+        f"task_detail IN (SELECT detail FROM work_catalog WHERE work_catalog.kind = 'replacement' AND work_catalog.detail IS NOT NULL) AND COALESCE(task_type, '') != 'Плановый' AND {new}",
+    )
+    await run(
+        "norm = 0, extra = (SELECT planned FROM work_catalog WHERE work_catalog.kind = 'replacement' AND work_catalog.detail = main_afl.task_detail LIMIT 1)",
+        f"task_detail IN (SELECT detail FROM work_catalog WHERE work_catalog.kind = 'replacement' AND work_catalog.detail IS NOT NULL) AND task_type = 'Плановый' AND {new}",
     )
 
     # 4. Дополнительные тарифы: extra += тариф
     await run(
         "extra = extra + (SELECT absolute FROM carte WHERE carte.kind = 'additional' AND carte.detail = main_afl.task_detail LIMIT 1)",
-        "task_detail IN (SELECT detail FROM carte WHERE carte.kind = 'additional' AND carte.detail IS NOT NULL)",
+        f"task_detail IN (SELECT detail FROM carte WHERE carte.kind = 'additional' AND carte.detail IS NOT NULL) AND {old}",
+    )
+    await run(
+        "extra = extra + (SELECT norm FROM work_catalog WHERE work_catalog.kind = 'additional' AND work_catalog.detail = main_afl.task_detail LIMIT 1)",
+        f"task_detail IN (SELECT detail FROM work_catalog WHERE work_catalog.kind = 'additional' AND work_catalog.detail IS NOT NULL) AND {new}",
     )
 
     # 5. «Выполнение задания в Алькоре» +5 → extra
     # (дублям по task_report не начисляем, даже если их task_detail был позже перезаписан)
     await run(
         f"extra = extra + (SELECT absolute FROM carte WHERE carte.title = '{ALCOR_TITLE}' LIMIT 1)",
-        "COALESCE(task_report, '') <> 'Дубли' AND task_detail NOT IN ('Дубли', 'Ручная проверка') AND (norm IS NOT NULL OR extra IS NOT NULL)",
+        f"COALESCE(task_report, '') <> 'Дубли' AND task_detail NOT IN ('Дубли', 'Ручная проверка') AND (norm IS NOT NULL OR extra IS NOT NULL) AND {old}",
+    )
+    await run(
+        f"extra = extra + (SELECT norm FROM work_catalog WHERE work_catalog.short = '{ALCOR_TITLE}' LIMIT 1)",
+        f"COALESCE(task_report, '') <> 'Дубли' AND task_detail NOT IN ('Дубли', 'Ручная проверка') AND (norm IS NOT NULL OR extra IS NOT NULL) AND {new}",
     )
 
 
@@ -188,14 +216,18 @@ async def apply_manual_norm(db_session: AsyncSession, task_numbers: list[str]) -
         UPDATE main_afl SET
             norm = CASE
                 WHEN task_report IS NULL THEN 0
-                WHEN task_report = 'Выявление безучетного потребления БП ИЖС'
+                WHEN done_day < '{CUTOVER_DAY}' AND task_report = 'Выявление безучетного потребления БП ИЖС'
                      AND service_object_type IN ({MKD_IN}) THEN {BP_MKD}
-                WHEN task_report = 'Выявление безучетного потребления БП ИЖС' THEN {BP_IZHS}
-                ELSE (SELECT absolute FROM carte WHERE carte.kind = 'base' AND carte.title = main_afl.task_report LIMIT 1)
+                WHEN done_day < '{CUTOVER_DAY}' AND task_report = 'Выявление безучетного потребления БП ИЖС' THEN {BP_IZHS}
+                WHEN done_day < '{CUTOVER_DAY}' THEN (SELECT absolute FROM carte WHERE carte.kind = 'base' AND carte.title = main_afl.task_report LIMIT 1)
+                WHEN done_day >= '{CUTOVER_DAY}' THEN (SELECT norm FROM work_catalog WHERE work_catalog.short = main_afl.task_report LIMIT 1)
+                ELSE 0
             END,
             extra = CASE
                 WHEN task_report IS NULL THEN 0
-                ELSE (SELECT absolute FROM carte WHERE carte.title = '{ALCOR_TITLE}' LIMIT 1)
+                WHEN done_day < '{CUTOVER_DAY}' THEN (SELECT absolute FROM carte WHERE carte.title = '{ALCOR_TITLE}' LIMIT 1)
+                WHEN done_day >= '{CUTOVER_DAY}' THEN (SELECT norm FROM work_catalog WHERE work_catalog.short = '{ALCOR_TITLE}' LIMIT 1)
+                ELSE 0
             END
         WHERE task_number IN ({names})
     """), params)
