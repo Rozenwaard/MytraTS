@@ -24,7 +24,9 @@ Start-Process pwsh -WindowStyle Hidden -ArgumentList '-NoExit','-Command','cd C:
 # фронтенд Svelte (порт 5174, прокси /api → :8000) — в фоне, без окна
 Start-Process pwsh -WindowStyle Hidden -ArgumentList '-NoExit','-Command','cd C:\Users\ASUS\MaterialThought\MytraTS\frontend-svelte; bun run dev'
 ```
-Браузер: http://localhost:5174. Логин: табельный номер + пароль (первый вход — пароль = табельный номер, потом смена). Тестовый юзер staff_id=2190.
+Браузер: http://localhost:5174. Логин: табельный номер + пароль (первый вход — пароль = табельный номер, потом смена).
+
+Локальные отладочные креды (админ) — в gitignored `_credentials.py` (`TEST_ADMIN_STAFF_ID` / `TEST_ADMIN_PASSWORD`); в git не попадают (маска `_*.py`).
 
 ### Проверка, что бэк поднят
 Бэкенд — **Litestar** (не FastAPI): рутов `/` и `/docs` у него нет (это FastAPI-пути), поэтому 404 там — **норма, а не падение**. Swagger-схема Litestar живёт на `/schema`.
