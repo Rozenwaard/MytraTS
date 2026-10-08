@@ -24,8 +24,9 @@ from services.report_check import BALANCE_ERRORS, check_row, join_errors, STOP_F
 
 
 def _normal_work_types_clause():
-    """IN-условие по «нормальным» видам работ (base-тарифы carte)."""
-    return "task_report IN (SELECT title FROM carte WHERE kind = 'base')", {}
+    """IN-условие по «нормальным» видам работ (base-тарифы carte + work_catalog)."""
+    return ("task_report IN (SELECT title FROM carte WHERE kind = 'base' "
+            "UNION SELECT short FROM work_catalog WHERE kind = 'base')"), {}
 
 
 def _stop_zone_clause():
@@ -44,8 +45,9 @@ def _locale_expr():
     return f"COALESCE((SELECT locale FROM users WHERE users.executor_name = main_afl.executor LIMIT 1), '(без локали)')"
 
 
-COST_JOIN = "LEFT JOIN carte c ON c.title = main_afl.task_report"
-COST_PRICE = "COALESCE(c.price, 0)"
+COST_JOIN = ("LEFT JOIN carte c ON c.title = main_afl.task_report "
+             "LEFT JOIN work_catalog wc ON wc.short = main_afl.task_report")
+COST_PRICE = "COALESCE(c.price, wc.price, 0)"
 
 
 def _period_clause(period: str):

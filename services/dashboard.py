@@ -11,7 +11,7 @@ from services.report_check import STOP_FACTOR_REGIONS, STOP_FACTOR_DISTRICTS
 
 
 def build_scope(user, dept: str = "") -> tuple[list, dict]:
-    """Зона видимости: территории стоп-фактора + виды работ из carte.kind='base' + (отделение) + видимость по роли (все заказчики)."""
+    """Зона видимости: территории стоп-фактора + виды работ (base из carte + work_catalog) + (отделение) + видимость по роли (все заказчики)."""
     clauses: list[str] = []
     params: dict = {}
 
@@ -19,7 +19,10 @@ def build_scope(user, dept: str = "") -> tuple[list, dict]:
         clauses.append("executor_organization = :dept_filter")
         params["dept_filter"] = dept
 
-    clauses.append("task_report IN (SELECT title FROM carte WHERE kind = 'base')")
+    clauses.append(
+        "task_report IN (SELECT title FROM carte WHERE kind = 'base' "
+        "UNION SELECT short FROM work_catalog WHERE kind = 'base')"
+    )
 
     regions = sorted(STOP_FACTOR_REGIONS)
     districts = sorted(STOP_FACTOR_DISTRICTS)

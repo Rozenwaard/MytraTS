@@ -266,13 +266,15 @@ async def api_premium_upload_1c(
 
     alcor_rows = (await db_session.execute(text(
         "SELECT full_name, position, dept, task_report, count, norm_sum FROM utalo "
-        "WHERE period = :p AND task_report IN (SELECT title FROM carte WHERE kind = 'base') "
+        "WHERE period = :p AND task_report IN (SELECT title FROM carte WHERE kind = 'base' "
+        "UNION SELECT short FROM work_catalog WHERE kind = 'base') "
         "ORDER BY full_name, task_report"
     ), {"p": period})).fetchall()
 
     project_rows = (await db_session.execute(text(
         "SELECT full_name, position, dept, task_report, count, norm_sum FROM utalo "
-        "WHERE period = :p AND task_report NOT IN (SELECT title FROM carte WHERE kind = 'base') "
+        "WHERE period = :p AND task_report NOT IN (SELECT title FROM carte WHERE kind = 'base' "
+        "UNION SELECT short FROM work_catalog WHERE kind = 'base') "
         "ORDER BY full_name, task_report"
     ), {"p": period})).fetchall()
 
