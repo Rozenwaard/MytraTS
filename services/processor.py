@@ -285,11 +285,11 @@ NEW_TASK_REPORT_RULES = [
     # ── Контроль (Проверка РО) ──
     ("task_report = 'Проверка РО РЛЭ'",
      "task_output = 'Контроль' AND customer = 'РЛЭ' AND task_report IS NULL", None),
-    ("task_report = 'Проверка РО ПСК'",
+    ("task_report = 'Проверка РО ФЛ'",
      "task_output = 'Контроль' AND customer = 'ПСК' AND task_report IS NULL", None),
 
     # ── Отключение ──
-    ("task_report = 'Отключение в МКД'",
+    ("task_report = 'Отключение безучётной нагрузки'",
      f"{_in('work_type_in_task', ('Отключение ЭЭ', 'Отключение ЭЭ за СП'))} AND customer = 'ПСК' AND task_output = 'Показания' AND task_report IS NULL", None),
 
     # ── Проверка, осмотр ПУ (ПСК, плановые) ──
@@ -309,6 +309,23 @@ NEW_TASK_REPORT_RULES = [
      f"work_type_in_task = 'Проверка, осмотр ПУ' AND {_in('task_output', RESULT_OUTPUTS)} AND task_type = 'Плановый' AND customer = 'РЛЭ' AND task_report IS NULL", None),
     ("task_report = 'Штучное КСП'",
      f"work_type_in_task = 'Проверка, осмотр ПУ' AND {_in('task_output', RESULT_OUTPUTS)} AND task_type = 'Внеплановый' AND customer = 'РЛЭ' AND task_report IS NULL", None),
+
+    # ── Недопуск как вид работ (по «Нет доступа до ПУ») ──
+    # «Недопуск по уведомлению» здесь НЕ определяется (вне системы, помечен на удаление в work_catalog.detail).
+    # РЛЭ: любой вид работ + «Нет доступа до ПУ» → «Недопуск без уведомления».
+    ("task_report = 'Недопуск без уведомления'",
+     "customer = 'РЛЭ' AND unsuccessful_inspection_reason = 'Нет доступа до ПУ' AND task_report IS NULL", None),
+    # ПСК: пара работ (первый → недопуск), если у первого «Нет доступа до ПУ».
+    ("task_report = 'Недопуск план лестница'",
+     f"work_type_in_task = 'Проверка, осмотр ПУ' AND unsuccessful_inspection_reason = 'Нет доступа до ПУ' AND task_type = 'Плановый' AND customer = 'ПСК' AND {_in('service_object_type', MKD_OBJECT_TYPES)} AND ({_not_in('meter_installation_place', PLAN_INDOOR_PLACES)} OR meter_installation_place IS NULL) AND task_report IS NULL", None),
+    ("task_report = 'Недопуск план квартира'",
+     f"work_type_in_task = 'Проверка, осмотр ПУ' AND unsuccessful_inspection_reason = 'Нет доступа до ПУ' AND task_type = 'Плановый' AND customer = 'ПСК' AND {_in('service_object_type', MKD_OBJECT_TYPES)} AND {_in('meter_installation_place', PLAN_INDOOR_PLACES)} AND task_report IS NULL", None),
+    ("task_report = 'Недопуск штучный план'",
+     f"work_type_in_task = 'Проверка, осмотр ПУ' AND unsuccessful_inspection_reason = 'Нет доступа до ПУ' AND task_type = 'Плановый' AND customer = 'ПСК' AND {_not_in('service_object_type', MKD_OBJECT_TYPES)} AND task_report IS NULL", None),
+    ("task_report = 'Недопуск штучное КСП ФЛ'",
+     "work_type_in_task = 'Проверка, осмотр ПУ' AND unsuccessful_inspection_reason = 'Нет доступа до ПУ' AND task_type = 'Внеплановый' AND customer = 'ПСК' AND task_report IS NULL", None),
+    ("task_report = 'Недопуск чтение архива'",
+     "work_type_in_task = 'Перепрограммирование ПУ' AND customer = 'ПСК' AND unsuccessful_inspection_reason = 'Нет доступа до ПУ' AND task_report IS NULL", None),
 ]
 
 
