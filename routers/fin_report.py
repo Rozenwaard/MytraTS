@@ -137,7 +137,7 @@ async def api_fin_report(request: Request, db_session: AsyncSession, period: str
         total_cost += (price or 0.0) * (cnt or 0)
 
     cust_rows = await db_session.execute(
-        text(f"SELECT customer, COALESCE(SUM({COST_PRICE}), 0) FROM main_afl {COST_JOIN} WHERE {p_clause} AND status IN ('Завершено','Закрыто') AND {wt_clause} GROUP BY customer"),
+        text(f"SELECT main_afl.customer, COALESCE(SUM({COST_PRICE}), 0) FROM main_afl {COST_JOIN} WHERE {p_clause} AND status IN ('Завершено','Закрыто') AND {wt_clause} GROUP BY main_afl.customer"),
         {**wt_params, **p_params})
     cost_by_cust = {r[0]: (r[1] or 0) for r in cust_rows}
     cost_psk = round(cost_by_cust.get("ПСК", 0), 2)
