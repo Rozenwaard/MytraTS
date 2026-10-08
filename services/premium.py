@@ -153,14 +153,12 @@ async def _apply_norms_scoped(db_session: AsyncSession, task_numbers: list[str] 
     )
 
     # 2. «Акт неучтённого потребления» → замещающий норматив «Выявление безучетного потребления»
-    # (это НЕ вид работ, влияет только на нормативы): ИЖС = 60, МКД = 40.
+    # (не вид работ, влияет только на нормативы): ИЖС = 60, МКД = 40.
+    # Оверрайд только если оригинальный норматив не выше безучётного.
     await run(
-        f"norm = (SELECT norm FROM work_catalog WHERE work_catalog.short = 'Выявление безучетного потребления БП ИЖС' LIMIT 1), extra = 0",
-        "task_detail = 'Акт неучтённого потребления'",
-    )
-    await run(
-        f"norm = (SELECT norm FROM work_catalog WHERE work_catalog.short = 'Выявление безучетного потребления БП МКД' LIMIT 1), extra = 0",
-        f"task_detail = 'Акт неучтённого потребления' AND service_object_type IN ({MKD_IN})",
+        f"norm = CASE WHEN service_object_type IN ({MKD_IN}) THEN {BP_MKD} ELSE {BP_IZHS} END, extra = 0",
+        f"task_detail = 'Акт неучтённого потребления' "
+        f"AND COALESCE(norm, 0) <= CASE WHEN service_object_type IN ({MKD_IN}) THEN {BP_MKD} ELSE {BP_IZHS} END",
     )
 
     # 3. Замещающие тарифы: norm=0, extra=тариф
