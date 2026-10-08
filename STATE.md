@@ -321,7 +321,7 @@ MytraTS/
 - Фильтры на бэке строятся из `clauses` + `params` dict.
 - Фронт: типы в `api/main-afl.ts`, запросы через `api<T>()` (client.ts, credentials:include).
 - Коммиты атомарные, ветка master, пушится на GitHub.
-- Read-only smoke-тест (`_smoke_test.py`, локальный, gitignored) — логин админом + прогон всех GET-рутов; держать актуальным (дополнять список при новых GET-эндпоинтах) и прогонять после каждых 3–5 коммитов.
+- Read-only smoke-тест (`_smoke_test.py`, локальный, gitignored) — логин админом + прогон всех GET-рутов; держать актуальным и прогонять после каждых 3–5 коммитов. Новые GET-эндпоинты — дописывать путь в `JSON_GETS` / `BINARY_GETS`; временно падающие — в `KNOWN_SKIPS`.
 - Перед коммитом — обновить доки (`STATE.md`, `docs/*.md`); если просят запустить проект — стартуем и бэк, и фронт (см. «Запуск (dev)»).
 - Зависимости: pandas/numpy не используем. Для xlsx — `python-calamine` (чтение) / `openpyxl` (чтение fallback + выгрузки); вставка — сырой SQL `executemany`.
 - ORM/доступ к БД: SQLAlchemy оставляем как есть — фактически это «async engine + сессия + сырой SQL через `text()`/bindparams», ORM-слой не используется. Tortoise ORM и SQLModel рассмотрены и отвергнуты: Tortoise тянет за собой ORM-стиль, который проекту не нужен, а SQLModel — тот же SQLAlchemy + Pydantic (дублирует валидацию Litestar).
