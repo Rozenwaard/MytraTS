@@ -420,3 +420,19 @@ class AppSetting(Base):
 
     key: Mapped[str] = mapped_column(Text, primary_key=True)
     value: Mapped[str] = mapped_column(Text)
+
+
+class Ticket(Base):
+    __tablename__ = 'tickets'
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    task_numbers: Mapped[str] = mapped_column(Text)     # JSON-массив номеров заданий
+    question: Mapped[str] = mapped_column(Text)
+    answer: Mapped[Optional[str]] = mapped_column(Text)
+    status: Mapped[str] = mapped_column(Text)           # 'open' | 'closed'
+    author_id: Mapped[int] = mapped_column(Integer)     # users.id автора
+    author_name: Mapped[str] = mapped_column(Text)      # снапшот ФИО автора
+    author_staff_id: Mapped[str] = mapped_column(Text)  # табельный номер автора
+    created_at: Mapped[str] = mapped_column(Text)
+    answered_at: Mapped[Optional[str]] = mapped_column(Text)
+    answered_by: Mapped[Optional[str]] = mapped_column(Text)

@@ -27,6 +27,7 @@
 	import ShieldAlert from '@lucide/svelte/icons/shield-alert';
 	import Copy from '@lucide/svelte/icons/copy';
 	import X from '@lucide/svelte/icons/x';
+	import Ticket from '@lucide/svelte/icons/ticket';
 
 	const overviewQuery = createQuery<DashboardOverview>(
 		toStore(() => ({
@@ -68,6 +69,7 @@
 	const newUsers = $derived(overview?.new_users ?? { review: 0 });
 	const instrumental = $derived(overview?.instrumental ?? { ordered: 0, completed: 0 });
 	const nedopuski = $derived(overview?.nedopuski ?? []);
+	const tickets = $derived(overview?.tickets ?? { unanswered: 0 });
 
 	const fmt = (n: number | undefined) => (n ?? 0).toLocaleString('ru-RU');
 	const fmtMoney = (n: number | undefined) =>
@@ -227,11 +229,15 @@
 				icon={Users}
 				iconClass="bg-blue-100 text-blue-800"
 				href="/admin/quarantine"
+				preHref={isAdmin ? '/help/questions' : undefined}
+				preIcon={Ticket}
+				preLabel="Тикеты"
 			>
 				{#snippet children()}
 					<div class="space-y-2">
 						{@render StatRow('Линейные работники', fmt(workers.total))}
 						{@render StatRow('Новые пользователи', fmt(newUsers.review))}
+						{@render StatRow('Тикеты', fmt(tickets.unanswered))}
 					</div>
 				{/snippet}
 			</StatCard>

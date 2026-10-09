@@ -48,6 +48,7 @@ export interface DashboardOverview {
 	in_work_matrix: InWorkMatrix;
 	debt: DebtMatrix;
 	workers: Workers;
+	tickets: { unanswered: number };
 	new_users: NewUsers;
 	instrumental: Instrumental;
 	duplicates: {

@@ -165,6 +165,15 @@ async def api_dashboard_overview(request: Request, db_session: AsyncSession) -> 
         "AND COALESCE(q.status, 'рассмотрение') = 'рассмотрение'"
     ))).scalar() or 0
 
+    # «Тикеты»: неотвеченные (open). Админ видит все, остальные — только свои.
+    if user.effective_role == "администратор":
+        tickets_unanswered = (await db_session.execute(
+            text("SELECT COUNT(*) FROM tickets WHERE status = 'open'"))).scalar() or 0
+    else:
+        tickets_unanswered = (await db_session.execute(
+            text("SELECT COUNT(*) FROM tickets WHERE status = 'open' AND author_id = :aid"),
+            {"aid": user.id})).scalar() or 0
+
     # «Инструментальные проверки»: заказано (все строки вида работ) / выполнено (status Завершено/Закрыто).
     instr_clause = f"{vis_where} AND work_type_in_task = 'Инструментальная проверка'"
     instr_ordered = (await db_session.execute(
@@ -236,6 +245,7 @@ async def api_dashboard_overview(request: Request, db_session: AsyncSession) -> 
             "overdue_completed": overdue_completed,
         },
         "workers": {"total": workers_total},
+        "tickets": {"unanswered": tickets_unanswered},
         "new_users": {
             "review": new_users_review,
         },

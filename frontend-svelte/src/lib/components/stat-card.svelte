@@ -16,6 +16,9 @@
 		onMonth = undefined,
 		monthLabel = 'Месяц',
 		monthIcon = CalendarDays,
+		preHref = undefined,
+		preIcon = undefined,
+		preLabel = 'Открыть',
 		children
 	}: {
 		title: string;
@@ -28,6 +31,9 @@
 		onMonth?: () => void;
 		monthLabel?: string;
 		monthIcon?: Component;
+		preHref?: string;
+		preIcon?: Component;
+		preLabel?: string;
 		children?: Snippet;
 	} = $props();
 </script>
@@ -46,6 +52,16 @@
 			</span>
 		{/if}
 		<span class="min-w-0 flex-1 truncate text-sm font-medium">{title}</span>
+		{#if preHref && preIcon}
+			{@const PreIcon = preIcon}
+			<a
+				href={preHref}
+				class="flex shrink-0 items-center rounded-md p-1.5 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+				aria-label={preLabel}
+			>
+				<PreIcon class="size-4" />
+			</a>
+		{/if}
 		{#if href}
 			<a
 				href={href}
