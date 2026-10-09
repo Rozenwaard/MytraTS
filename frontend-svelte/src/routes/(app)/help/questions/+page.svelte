@@ -1,7 +1,7 @@
 <script lang="ts">
 	import { createQuery } from '@tanstack/svelte-query';
 	import { toStore, fromStore } from 'svelte/store';
-	import { fetchTickets, createTicket, answerTicket, type Ticket } from '$lib/api/tickets';
+	import { fetchTickets, createTicket, uploadAttachments, answerTicket, type Ticket } from '$lib/api/tickets';
 	import { auth } from '$lib/store/auth.svelte';
 	import { toast } from '$lib/store/toast.svelte';
 	import { queryClient } from '$lib/query';
@@ -16,6 +16,7 @@
 	} from '$lib/components/ui/card';
 	import TicketIcon from '@lucide/svelte/icons/ticket';
 	import Send from '@lucide/svelte/icons/send';
+	import Paperclip from '@lucide/svelte/icons/paperclip';
 	import CircleCheck from '@lucide/svelte/icons/circle-check';
 	import CircleDashed from '@lucide/svelte/icons/circle-dashed';
 
@@ -33,22 +34,47 @@
 
 	let taskNumbers = $state('');
 	let question = $state('');
+	let files = $state<File[]>([]);
 	let submitting = $state(false);
 	let answers: Record<number, string> = $state({});
 	let answeringId = $state<number | null>(null);
 
 	const canSubmit = $derived(taskNumbers.trim() !== '' && question.trim() !== '' && !submitting);
 
+	function onFilesChange(e: Event) {
+		const input = e.currentTarget as HTMLInputElement;
+		files = Array.from(input.files ?? []);
+		input.value = '';
+	}
+
+	function fmtSize(bytes: number): string {
+		if (bytes < 1024) return `${bytes} Б`;
+		if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(0)} КБ`;
+		return `${(bytes / (1024 * 1024)).toFixed(1)} МБ`;
+	}
+
 	async function submit() {
 		if (!taskNumbers.trim() || !question.trim()) {
 			toast('Укажите номер задания и текст вопроса');
 			return;
 		}
+		if (files.length > 5) {
+			toast('Не более 5 файлов на тикет');
+			return;
+		}
+		if (files.some((f) => f.size > 10 * 1024 * 1024)) {
+			toast('Файл больше 10 МБ');
+			return;
+		}
 		submitting = true;
 		try {
-			await createTicket(taskNumbers, question);
+			const { id } = await createTicket(taskNumbers, question);
+			if (files.length > 0) {
+				await uploadAttachments(id, files);
+			}
 			taskNumbers = '';
 			question = '';
+			files = [];
 			await queryClient.invalidateQueries({ queryKey: ['tickets'] });
 			await queryClient.invalidateQueries({ queryKey: ['dashboard-overview'] });
 			toast('Тикет создан');
@@ -112,6 +138,26 @@
 					placeholder="Текст вопроса"
 				></textarea>
 			</div>
+			<div class="space-y-1.5">
+				<label class="text-sm font-medium" for="t-files">
+					Файлы (картинки/PDF/xlsx, до 5 шт. по 10 МБ)
+				</label>
+				<input
+					id="t-files"
+					type="file"
+					multiple
+					accept=".png,.jpg,.jpeg,.webp,.gif,.pdf,.xlsx"
+					class="block w-full text-sm text-muted-foreground file:mr-3 file:rounded-md file:border-0 file:bg-muted file:px-3 file:py-1.5 file:text-sm file:font-medium"
+					onchange={onFilesChange}
+				/>
+				{#if files.length > 0}
+					<ul class="space-y-1 text-xs text-muted-foreground">
+						{#each files as f}
+							<li>{f.name} · {fmtSize(f.size)}</li>
+						{/each}
+					</ul>
+				{/if}
+			</div>
 			<Button onclick={submit} disabled={!canSubmit} class="gap-2">
 				<Send class="size-4" />
 				{submitting ? 'Отправка…' : 'Отправить'}
@@ -160,6 +206,21 @@
 						</div>
 
 						<p class="whitespace-pre-line text-sm">{t.question}</p>
+
+						{#if t.attachments?.length}
+							<div class="space-y-1">
+								{#each t.attachments as a (a.id)}
+									<a
+										href={`/api/tickets/${t.id}/attachments/${a.id}`}
+										class="inline-flex items-center gap-1.5 text-sm text-primary hover:underline"
+									>
+										<Paperclip class="size-3.5" />
+										{a.filename}
+										<span class="text-xs text-muted-foreground">({fmtSize(a.size)})</span>
+									</a>
+								{/each}
+							</div>
+						{/if}
 
 						{#if t.answer}
 							<div class="rounded-md border bg-muted/40 px-3 py-2 text-sm">

@@ -49,7 +49,7 @@ echo "SECRET_KEY=$(openssl rand -hex 32)" > .env
 - без колонки `errors` — `uv run python _migrate_errors.py`;
 - без таблицы `app_settings` (виджет «Приоритеты») — `uv run python _migrate_app_settings.py`.
 - без таблицы `help_files` (исходник .docx для «Скачать .docx») — `uv run python migrate_help_files.py`.
-- без таблицы `tickets` (тикеты «Вопросы») — `uv run python _migrate_tickets.py`.
+- без таблицы `tickets` (mytra.db) и `ticket_attachments` (tickets.db, вложения тикетов) — `uv run python _migrate_tickets.py`.
 
 Первый вход: логин = табельный номер, пароль = табельный номер (система попросит сменить).
 
