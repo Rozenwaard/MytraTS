@@ -256,8 +256,12 @@ TASK_REPORT_RULES = [
 #   • «Выявление безучётного потребления …» — влияет на нормы, а не на вид работ.
 # Нормативы (norm) здесь НЕ проставляются — только корректный task_report (нормы бэкфилом).
 
-PHASE_1 = "meter_model IN (SELECT meter_model FROM meter_model_phase WHERE phase = '1ф')"
-PHASE_3 = "meter_model IN (SELECT meter_model FROM meter_model_phase WHERE phase = '3ф')"
+# Модель ПУ для 1ф/3ф: новое ПУ (meter_model_2) приоритетнее старого — для «Допуск»/«ИП»
+# счётчик лежит в meter_model_2, а meter_model/meter_model_1 при этом пусты.
+PHASE_1 = ("COALESCE(NULLIF(meter_model_2, ''), NULLIF(meter_model_1, ''), NULLIF(meter_model, '')) "
+           "IN (SELECT meter_model FROM meter_model_phase WHERE phase = '1ф')")
+PHASE_3 = ("COALESCE(NULLIF(meter_model_2, ''), NULLIF(meter_model_1, ''), NULLIF(meter_model, '')) "
+           "IN (SELECT meter_model FROM meter_model_phase WHERE phase = '3ф')")
 
 NEW_TASK_REPORT_RULES = [
     # ── Допуск ПУ (task_output='Допуск') ──
