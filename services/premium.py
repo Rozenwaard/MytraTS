@@ -139,17 +139,17 @@ async def _apply_norms_scoped(db_session: AsyncSession, task_numbers: list[str] 
     # 1. Базовый тариф (norm)
     await run(
         "norm = (SELECT absolute FROM carte WHERE carte.kind = 'base' AND carte.title = main_afl.task_report LIMIT 1), extra = 0",
-        f"task_report IS NOT NULL AND task_detail NOT IN ('Дубли', 'Ручная проверка') AND {old}",
+        f"task_report IS NOT NULL AND COALESCE(task_detail, '') NOT IN ('Дубли', 'Ручная проверка') AND {old}",
     )
     await run(
         "norm = (SELECT norm FROM work_catalog WHERE work_catalog.kind = 'base' AND work_catalog.short = main_afl.task_report LIMIT 1), extra = 0",
-        f"task_report IS NOT NULL AND task_detail NOT IN ('Дубли', 'Ручная проверка') AND {new}",
+        f"task_report IS NOT NULL AND COALESCE(task_detail, '') NOT IN ('Дубли', 'Ручная проверка') AND {new}",
     )
 
     # 1a. «Перепрограммирование ПУ»: вид работ остаётся «Бытовые заявки», но норматив 50 (старый справочник).
     await run(
         "norm = 50",
-        f"work_type_in_task = 'Перепрограммирование ПУ' AND task_report = 'Бытовые заявки' AND task_detail NOT IN ('Дубли', 'Ручная проверка') AND {old}",
+        f"work_type_in_task = 'Перепрограммирование ПУ' AND task_report = 'Бытовые заявки' AND COALESCE(task_detail, '') NOT IN ('Дубли', 'Ручная проверка') AND {old}",
     )
 
     # 2. «Акт неучтённого потребления» → замещающий норматив «Выявление безучетного потребления»
@@ -193,11 +193,11 @@ async def _apply_norms_scoped(db_session: AsyncSession, task_numbers: list[str] 
     # (дублям по task_report не начисляем, даже если их task_detail был позже перезаписан)
     await run(
         f"extra = extra + (SELECT absolute FROM carte WHERE carte.title = '{ALCOR_TITLE}' LIMIT 1)",
-        f"COALESCE(task_report, '') <> 'Дубли' AND task_detail NOT IN ('Дубли', 'Ручная проверка') AND (norm IS NOT NULL OR extra IS NOT NULL) AND {old}",
+        f"COALESCE(task_report, '') <> 'Дубли' AND COALESCE(task_detail, '') NOT IN ('Дубли', 'Ручная проверка') AND (norm IS NOT NULL OR extra IS NOT NULL) AND {old}",
     )
     await run(
         f"extra = extra + (SELECT norm FROM work_catalog WHERE work_catalog.short = '{ALCOR_TITLE}' LIMIT 1)",
-        f"COALESCE(task_report, '') <> 'Дубли' AND task_detail NOT IN ('Дубли', 'Ручная проверка') AND (norm IS NOT NULL OR extra IS NOT NULL) AND {new}",
+        f"COALESCE(task_report, '') <> 'Дубли' AND COALESCE(task_detail, '') NOT IN ('Дубли', 'Ручная проверка') AND (norm IS NOT NULL OR extra IS NOT NULL) AND {new}",
     )
 
 
