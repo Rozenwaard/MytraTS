@@ -5,13 +5,11 @@
 		fetchDashboardOverview,
 		fetchErrorsByLocale,
 		fetchPriorities,
-		fetchStatus,
 		fetchDebtMonth,
 		type DashboardOverview,
 		type DebtMonth,
 		type ErrorsByLocale,
-		type Priorities,
-		type StatusState
+		type Priorities
 	} from '$lib/api/dashboard';
 	import { Skeleton } from '$lib/components/ui/skeleton';
 	import { Button } from '$lib/components/ui/button';
@@ -26,7 +24,7 @@
 	import TriangleAlert from '@lucide/svelte/icons/triangle-alert';
 	import ListOrdered from '@lucide/svelte/icons/list-ordered';
 	import ListTodo from '@lucide/svelte/icons/list-todo';
-	import Activity from '@lucide/svelte/icons/activity';
+	import ShieldAlert from '@lucide/svelte/icons/shield-alert';
 	import Copy from '@lucide/svelte/icons/copy';
 	import X from '@lucide/svelte/icons/x';
 
@@ -49,15 +47,6 @@
 	const errorsResult = fromStore(errorsQuery);
 	const errors = $derived(errorsResult.current.data);
 
-	const statusQuery = createQuery<StatusState>(
-		toStore(() => ({
-			queryKey: ['status'],
-			queryFn: () => fetchStatus()
-		}))
-	);
-	const statusResult = fromStore(statusQuery);
-	const status = $derived(statusResult.current.data);
-
 	const debt = $derived(
 		overview?.debt ?? {
 			total: 0,
@@ -78,10 +67,15 @@
 	const workers = $derived(overview?.workers ?? { total: 0 });
 	const newUsers = $derived(overview?.new_users ?? { review: 0 });
 	const instrumental = $derived(overview?.instrumental ?? { ordered: 0, completed: 0 });
+	const nedopuski = $derived(overview?.nedopuski ?? []);
 
 	const fmt = (n: number | undefined) => (n ?? 0).toLocaleString('ru-RU');
 	const fmtMoney = (n: number | undefined) =>
 		(n ?? 0).toLocaleString('ru-RU', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+	const fmtPercent = (n: number | null | undefined) =>
+		n == null
+			? '—'
+			: `${n.toLocaleString('ru-RU', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}%`;
 
 	const prioritiesQuery = createQuery<Priorities>(
 		toStore(() => ({
@@ -98,11 +92,6 @@
 		if (n <= 1) return 'grid-cols-1';
 		if (n <= 4) return 'grid-cols-2';
 		return 'grid-flow-col grid-rows-3';
-	}
-
-	function statusValue(count: string | null | undefined, at: string | null | undefined): string {
-		if (!at) return '—';
-		return `${count ?? '—'} · ${at}`;
 	}
 
 	let debtMonthOpen = $state(false);
@@ -169,15 +158,15 @@
 			</StatCard>
 
 			<StatCard
-				title="Состояние"
-				icon={Activity}
-				iconClass="bg-emerald-100 text-emerald-800"
-				href="/upload"
+				title="Недопуски"
+				icon={ShieldAlert}
+				iconClass="bg-red-100 text-red-800"
 			>
 				{#snippet children()}
-					<div class="space-y-2">
-						{@render StatRow('Задания в работе', statusValue(status?.in_work_count, status?.in_work_at), true)}
-						{@render StatRow('Новые задания', statusValue(status?.new_tasks_count, status?.new_tasks_at))}
+					<div class={cn('grid gap-2', errorGridClass(nedopuski.length))}>
+						{#each nedopuski as item (item.id)}
+							{@render StatRow(item.label, fmtPercent(item.percent))}
+						{/each}
 					</div>
 				{/snippet}
 			</StatCard>

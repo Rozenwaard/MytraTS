@@ -35,6 +35,12 @@ export interface Instrumental {
 	completed: number;
 }
 
+export interface NedopuskItem {
+	id: number;
+	label: string;
+	percent: number | null;
+}
+
 export interface DashboardOverview {
 	cost: number;
 	cost_psk: number;
@@ -49,6 +55,7 @@ export interface DashboardOverview {
 		mixed: number;
 		non_crm: number;
 	};
+	nedopuski: NedopuskItem[];
 }
 
 export async function fetchDashboardOverview(): Promise<DashboardOverview> {

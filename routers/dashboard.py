@@ -15,6 +15,20 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from deps import get_current_user, require_auth
 from services.dashboard import build_scope, generate_errors_xlsx, generate_balance_xlsx, generate_task_numbers_xlsx, generate_task_numbers_plain_xlsx, generate_debt_xlsx, pick_pu_type, get_priorities, set_priorities
 from services.report_check import split_errors, join_errors, BALANCE_ERRORS
+from sql import build_in_clause
+
+
+# Доля разрешённых недопусков (в процентах) по work_catalog.id.
+# base — task_report родительской работы; для РЛЭ «Недопуск без уведомления» база — вся РЛЭ-зона
+# (любой вид работ РЛЭ с непустым task_report, кроме самих недопусков).
+NEDOPUSKI = [
+    {"id": 14, "short": "Недопуск без уведомления", "label": "РЛЭ", "share": 30, "base": "РЛЭ"},
+    {"id": 16, "short": "Недопуск план лестница", "label": "план лестница", "share": 10, "base": "Плановое КСП лестница"},
+    {"id": 18, "short": "Недопуск план квартира", "label": "план квартира", "share": 46, "base": "Плановое КСП квартира"},
+    {"id": 20, "short": "Недопуск штучный план", "label": "штучный план", "share": 70, "base": "Штучный план"},
+    {"id": 22, "short": "Недопуск штучное КСП ФЛ", "label": "штучное КСП ФЛ", "share": 10, "base": "Штучное КСП ФЛ"},
+    {"id": 29, "short": "Недопуск чтение архива", "label": "чтение архива", "share": 30, "base": "Чтение архива ПСК"},
+]
 
 
 @get("/dashboard/summary", guards=[require_auth])
@@ -177,8 +191,40 @@ async def api_dashboard_overview(request: Request, db_session: AsyncSession) -> 
         f")"
     ), vis_params)).one()
 
+    # ─── Недопуски ───
+    # Доля разрешённых недопусков — в NEDOPUSKI (по work_catalog.id, %).
+    # Считаем в той же зоне «завершено/закрыто без отчёта» + непустой task_report.
+    nedopusk_scope = f"{base_where} AND task_report IS NOT NULL AND task_report != ''"
+
+    nd_in, nd_params = build_in_clause("nd", [n["short"] for n in NEDOPUSKI])
+    nd_counts: dict = {}
+    for row in await db_session.execute(
+        text(f"SELECT task_report, COUNT(*) FROM main_afl WHERE {nedopusk_scope} AND task_report IN ({nd_in}) GROUP BY task_report"),
+        {**params, **nd_params}):
+        nd_counts[row[0]] = row[1]
+
+    base_in, base_params = build_in_clause("nb", [n["base"] for n in NEDOPUSKI if n["base"] != "РЛЭ"])
+    base_counts: dict = {}
+    for row in await db_session.execute(
+        text(f"SELECT task_report, COUNT(*) FROM main_afl WHERE {nedopusk_scope} AND task_report IN ({base_in}) GROUP BY task_report"),
+        {**params, **base_params}):
+        base_counts[row[0]] = row[1]
+
+    rle_base = (await db_session.execute(
+        text(f"SELECT COUNT(*) FROM main_afl WHERE {nedopusk_scope} AND customer = 'РЛЭ' AND task_report NOT LIKE 'Недопуск%'"),
+        params)).scalar() or 0
+
+    nedopuski = []
+    for n in NEDOPUSKI:
+        nd_count = nd_counts.get(n["short"], 0)
+        base = rle_base if n["base"] == "РЛЭ" else base_counts.get(n["base"], 0)
+        limit = base * n["share"] / 100.0
+        percent = round(nd_count / limit * 100, 2) if limit else None
+        nedopuski.append({"id": n["id"], "label": n["label"], "percent": percent})
+
     return Response(content=json.dumps({
         "cost": round(cost, 2),
+        "nedopuski": nedopuski,
         "cost_psk": round(cost_by_cust.get("ПСК", 0), 2),
         "cost_rle": round(cost_by_cust.get("РЛЭ", 0), 2),
         "in_work_matrix": in_work_matrix,
