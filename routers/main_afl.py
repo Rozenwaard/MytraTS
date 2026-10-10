@@ -19,7 +19,8 @@ MAIN_AFL_DISPLAY_COLUMNS = [
     "service_object_type", "subscriber_name", "subscriber_type",
     "meter_installation_place", "meter_model", "meter_status",
     "meter_ownership", "violations", "comment",
-    "executor", "visit_reason", "customer", "task_output", "task_report",
+    "executor", "executor_organization", "visit_reason", "customer",
+    "task_output", "task_report",
     "task_detail", "grid", "done_day", "reestr_number", "reestr_date",
     "errors", "norm"
 ]

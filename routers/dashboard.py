@@ -16,6 +16,7 @@ from deps import get_current_user, require_auth
 from services.dashboard import build_scope, generate_errors_xlsx, generate_balance_xlsx, generate_task_numbers_xlsx, generate_task_numbers_plain_xlsx, generate_debt_xlsx, pick_pu_type, get_priorities, set_priorities
 from services.report_check import split_errors, join_errors, BALANCE_ERRORS
 from sql import build_in_clause
+from routers.main_afl import MAIN_AFL_DISPLAY_COLUMNS
 
 
 # Доля разрешённых недопусков (в процентах) по work_catalog.id.
@@ -562,10 +563,217 @@ async def api_dashboard_priorities_save(
     return Response(content=json.dumps({"priorities": saved}, ensure_ascii=False), media_type="application/json")
 
 
+REVOKED_EXECUTOR = "Филиппов Павел Леонидович"
+AGE_DAYS_EXPR = "CAST(julianday(date('now')) - julianday(created_at) AS INTEGER)"
+IN_WORK_STATUS_ORDER = ["Сформировано", "Назначено", "Доставлено на МП", "В работе", "Возвращено"]
+
+
+def _build_in_work_clauses(user, search, customer, task_report, executor_org,
+                           executor_filter, task_type, done_day, exact,
+                           revoked, queue, status):
+    """Фильтры вкладки «В работе»: строки со статусом ≠ Завершено/Закрыто (не LIKE 'З%')."""
+    clauses = ["(status IS NULL OR status NOT LIKE 'З%')"]
+    params: dict = {}
+
+    if user.effective_role in ("оператор", "работник"):
+        clauses.append("executor IN (SELECT executor_name FROM users WHERE locale = :locale)")
+        params["locale"] = user.locale
+    elif user.effective_role == "менеджер":
+        clauses.append("executor_organization = :dept")
+        params["dept"] = user.dept
+
+    if search:
+        clauses.append("(task_number LIKE :s OR personal_account LIKE :s OR address LIKE :s)")
+        params["s"] = f"%{search}%"
+    if customer:
+        clauses.append("customer = :customer")
+        params["customer"] = customer
+    if task_report:
+        clauses.append("task_report = :task_report")
+        params["task_report"] = task_report
+    if task_type:
+        clauses.append("task_type = :task_type")
+        params["task_type"] = task_type
+    if executor_org:
+        clauses.append("executor_organization = :executor_org")
+        params["executor_org"] = executor_org
+    if executor_filter:
+        clauses.append("executor = :executor_filter")
+        params["executor_filter"] = executor_filter
+    if done_day:
+        clauses.append("done_day = :done_day")
+        params["done_day"] = done_day
+    if exact:
+        clauses.append("(task_number = :exact COLLATE NOCASE OR personal_account = :exact)")
+        params["exact"] = exact
+    if revoked:
+        clauses.append("executor = :revoked")
+        params["revoked"] = REVOKED_EXECUTOR
+    if queue:
+        clauses.append("(executor IS NULL OR executor != :revoked_excl)")
+        params["revoked_excl"] = REVOKED_EXECUTOR
+        if queue == "10":
+            clauses.append(f"{AGE_DAYS_EXPR} < 10")
+        elif queue == "20":
+            clauses.append(f"{AGE_DAYS_EXPR} >= 10 AND {AGE_DAYS_EXPR} < 20")
+        elif queue == "30":
+            clauses.append(f"{AGE_DAYS_EXPR} >= 20 AND {AGE_DAYS_EXPR} < 30")
+        elif queue == "40":
+            clauses.append(f"{AGE_DAYS_EXPR} >= 30 AND {AGE_DAYS_EXPR} < 40")
+        elif queue == "more":
+            clauses.append(f"{AGE_DAYS_EXPR} >= 40")
+    if status:
+        clauses.append("(executor IS NULL OR executor != :revoked_excl)")
+        params["revoked_excl"] = REVOKED_EXECUTOR
+        clauses.append("status = :status")
+        params["status"] = status
+
+    return clauses, params
+
+
+@get("/dashboard/in-work", guards=[require_auth])
+async def api_dashboard_in_work(
+    request: Request, db_session: AsyncSession,
+    page: int = 1, per_page: int = 50, sort: str = "", search: str = "",
+    order: str = "asc", customer: str = "", task_report: str = "",
+    executor_org: str = "", executor_filter: str = "",
+    task_type: str = "", done_day: str = "", exact: str = "",
+    revoked: bool = False, queue: str = "", status: str = "",
+) -> Response:
+    """Таблица вкладки «В работе» — задания в статусах, отличных от завершено/закрыто."""
+    user = await get_current_user(request, db_session)
+    clauses, params = _build_in_work_clauses(
+        user, search, customer, task_report, executor_org, executor_filter,
+        task_type, done_day, exact, revoked, queue, status)
+
+    safe_sort = sort if sort in MAIN_AFL_DISPLAY_COLUMNS else ""
+    where_sql = " AND ".join(clauses)
+    order_col = "COALESCE(norm, 0) + COALESCE(extra, 0)" if safe_sort == "norm" else safe_sort
+    sort_sql = f" ORDER BY {order_col} {'ASC' if order == 'asc' else 'DESC'}" if safe_sort else ""
+    columns_sql = ", ".join(
+        "COALESCE(norm, 0) + COALESCE(extra, 0) AS norm" if c == "norm" else c
+        for c in MAIN_AFL_DISPLAY_COLUMNS
+    )
+
+    count_result = await db_session.execute(
+        text(f"SELECT COUNT(*) FROM main_afl WHERE {where_sql}"), params)
+    total = count_result.scalar()
+
+    params["limit"] = per_page
+    params["offset"] = (page - 1) * per_page
+    result = await db_session.execute(
+        text(f"SELECT {columns_sql} FROM main_afl WHERE {where_sql}{sort_sql} LIMIT :limit OFFSET :offset"), params)
+    rows = [dict(row._mapping) for row in result]
+
+    return Response(content=json.dumps(
+        {"rows": rows, "total": total, "page": page, "per_page": per_page},
+        ensure_ascii=False, default=str), media_type="application/json")
+
+
+@get("/dashboard/in-work/stats", guards=[require_auth])
+async def api_dashboard_in_work_stats(request: Request, db_session: AsyncSession) -> Response:
+    """Статистика вкладки «В работе»: ПСК/РЛЭ/План/Внеплан + Отозвано + очередь по возрасту."""
+    user = await get_current_user(request, db_session)
+    base_where = "(status IS NULL OR status NOT LIKE 'З%')"
+    params = {}
+
+    if user.effective_role in ("оператор", "работник"):
+        base_where += " AND executor IN (SELECT executor_name FROM users WHERE locale = :locale)"
+        params["locale"] = user.locale
+    elif user.effective_role == "менеджер":
+        base_where += " AND executor_organization = :dept"
+        params["dept"] = user.dept
+
+    cust_result = await db_session.execute(
+        text(f"SELECT customer, COUNT(*) FROM main_afl WHERE {base_where} GROUP BY customer"), params)
+    customers = {row[0] or "(пусто)": row[1] for row in cust_result}
+
+    plan_result = await db_session.execute(
+        text(f"SELECT task_type, COUNT(*) FROM main_afl WHERE {base_where} AND task_type IN ('Плановый', 'Внеплановый') GROUP BY task_type"), params)
+    plan_counts = {row[0]: row[1] for row in plan_result}
+
+    revoked = await db_session.execute(
+        text(f"SELECT COUNT(*) FROM main_afl WHERE {base_where} AND executor = :revoked"),
+        {**params, "revoked": REVOKED_EXECUTOR})
+
+    queue_where = f"{base_where} AND (executor IS NULL OR executor != :revoked_excl)"
+    queue_params = {**params, "revoked_excl": REVOKED_EXECUTOR}
+    queue_result = await db_session.execute(text(
+        f"SELECT "
+        f"SUM(CASE WHEN {AGE_DAYS_EXPR} < 10 THEN 1 ELSE 0 END), "
+        f"SUM(CASE WHEN {AGE_DAYS_EXPR} >= 10 AND {AGE_DAYS_EXPR} < 20 THEN 1 ELSE 0 END), "
+        f"SUM(CASE WHEN {AGE_DAYS_EXPR} >= 20 AND {AGE_DAYS_EXPR} < 30 THEN 1 ELSE 0 END), "
+        f"SUM(CASE WHEN {AGE_DAYS_EXPR} >= 30 AND {AGE_DAYS_EXPR} < 40 THEN 1 ELSE 0 END), "
+        f"SUM(CASE WHEN {AGE_DAYS_EXPR} >= 40 THEN 1 ELSE 0 END) "
+        f"FROM main_afl WHERE {queue_where}"), queue_params)
+    q = queue_result.one()
+    queue = [
+        {"label": "до 10 дней", "value": "10", "count": q[0] or 0},
+        {"label": "до 20 дней", "value": "20", "count": q[1] or 0},
+        {"label": "до 30 дней", "value": "30", "count": q[2] or 0},
+        {"label": "до 40 дней", "value": "40", "count": q[3] or 0},
+        {"label": "более", "value": "more", "count": q[4] or 0},
+    ]
+
+    status_where = f"{base_where} AND (executor IS NULL OR executor != :revoked_excl)"
+    status_result = await db_session.execute(
+        text(f"SELECT COALESCE(status, '(пусто)'), COUNT(*) FROM main_afl WHERE {status_where} GROUP BY status"),
+        {**params, "revoked_excl": REVOKED_EXECUTOR})
+    status_counts = {row[0]: row[1] for row in status_result}
+    statuses = [
+        {"label": label, "count": status_counts[label]}
+        for label in IN_WORK_STATUS_ORDER
+        if label in status_counts
+    ]
+    statuses += [
+        {"label": label, "count": count}
+        for label, count in sorted(status_counts.items(), key=lambda kv: -kv[1])
+        if label not in IN_WORK_STATUS_ORDER
+    ]
+
+    dept_result = await db_session.execute(
+        text(f"SELECT DISTINCT executor_organization FROM main_afl WHERE {base_where} AND executor_organization IS NOT NULL ORDER BY executor_organization"), params)
+    depts = [row[0] for row in dept_result]
+
+    unenriched = await db_session.execute(
+        text(f"SELECT COUNT(*) FROM main_afl WHERE {base_where} AND personal_account IS NULL"), params)
+
+    return Response(content=json.dumps({
+        "customers": customers,
+        "plan": plan_counts.get("Плановый", 0),
+        "unplan": plan_counts.get("Внеплановый", 0),
+        "revoked": revoked.scalar(),
+        "queue": queue,
+        "statuses": statuses,
+        "depts": depts,
+        "unenriched": unenriched.scalar(),
+    }, ensure_ascii=False), media_type="application/json")
+
+
+@get("/dashboard/in-work/unenriched-report", guards=[require_auth])
+async def api_dashboard_in_work_unenriched_report(request: Request, db_session: AsyncSession) -> Response:
+    """Выгрузка номеров заданий «Не обогащено» (personal_account IS NULL) — только администратор."""
+    user = await get_current_user(request, db_session)
+    if user.effective_role != "администратор":
+        return Response(content=json.dumps({"error": "Нет прав"}, ensure_ascii=False), media_type="application/json", status_code=403)
+
+    where = "(status IS NULL OR status NOT LIKE 'З%') AND personal_account IS NULL"
+    result = await db_session.execute(
+        text(f"SELECT task_number FROM main_afl WHERE {where} ORDER BY task_number"))
+    rows = [r[0] for r in result]
+
+    output = generate_task_numbers_plain_xlsx(rows)
+    filename = f"Не_обогащено_{datetime.now().strftime('%Y-%m-%d_%H-%M-%S')}.xlsx"
+    return Response(content=output, media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                    headers={"Content-Disposition": f"attachment; filename*=UTF-8''{quote(filename)}"})
+
+
 dashboard_router = Router("/api", route_handlers=[
     api_dashboard_summary, api_dashboard_overview, api_dashboard_errors_report,
     api_dashboard_balance_report, api_dashboard_date_report, api_dashboard_verified_report,
     api_dashboard_duplicates_report, api_dashboard_debt_report, api_dashboard_debt_month,
     api_dashboard_report_counts, api_dashboard_errors_by_locale,
     api_dashboard_priorities, api_dashboard_priorities_save,
+    api_dashboard_in_work, api_dashboard_in_work_stats,
+    api_dashboard_in_work_unenriched_report,
 ])

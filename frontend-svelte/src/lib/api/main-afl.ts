@@ -20,6 +20,7 @@ export interface MainAflRow {
 	violations: string | null;
 	comment: string | null;
 	executor: string | null;
+	executor_organization: string | null;
 	visit_reason: string | null;
 	customer: string | null;
 	task_output: string | null;
