@@ -568,10 +568,30 @@ AGE_DAYS_EXPR = "CAST(julianday(date('now')) - julianday(created_at) AS INTEGER)
 IN_WORK_STATUS_ORDER = ["Сформировано", "Назначено", "Доставлено на МП", "В работе", "Возвращено"]
 
 
-def _build_in_work_clauses(user, search, customer, task_report, executor_org,
-                           executor_filter, task_type, done_day, exact,
-                           revoked, queue, status):
-    """Фильтры вкладки «В работе»: строки со статусом ≠ Завершено/Закрыто (не LIKE 'З%')."""
+def _queue_age_clause(queue: str) -> str:
+    """Возраст задания (в днях от created_at) для фильтра «Очередь»."""
+    if queue == "10":
+        return f"{AGE_DAYS_EXPR} < 10"
+    if queue == "20":
+        return f"{AGE_DAYS_EXPR} >= 10 AND {AGE_DAYS_EXPR} < 20"
+    if queue == "30":
+        return f"{AGE_DAYS_EXPR} >= 20 AND {AGE_DAYS_EXPR} < 30"
+    if queue == "40":
+        return f"{AGE_DAYS_EXPR} >= 30 AND {AGE_DAYS_EXPR} < 40"
+    if queue == "more":
+        return f"{AGE_DAYS_EXPR} >= 40"
+    return ""
+
+
+def _in_work_filter_where(user, *, executor_org: str = "", customer: str = "",
+                          task_type: str = "", revoked: bool = False,
+                          queue: str = "", status: str = ""):
+    """WHERE-условия фильтров вкладки «В работе» (база + отделение + колонки-фильтры).
+
+    База — статус ≠ Завершено/Закрыто (`status IS NULL OR status NOT LIKE 'З%'`)
+    плюс зона видимости пользователя. Поиск/вид работ/дата сюда НЕ входят —
+    они есть только в табличной версии `_build_in_work_clauses`.
+    """
     clauses = ["(status IS NULL OR status NOT LIKE 'З%')"]
     params: dict = {}
 
@@ -582,21 +602,45 @@ def _build_in_work_clauses(user, search, customer, task_report, executor_org,
         clauses.append("executor_organization = :dept")
         params["dept"] = user.dept
 
-    if search:
-        clauses.append("(task_number LIKE :s OR personal_account LIKE :s OR address LIKE :s)")
-        params["s"] = f"%{search}%"
-    if customer:
-        clauses.append("customer = :customer")
-        params["customer"] = customer
-    if task_report:
-        clauses.append("task_report = :task_report")
-        params["task_report"] = task_report
-    if task_type:
-        clauses.append("task_type = :task_type")
-        params["task_type"] = task_type
     if executor_org:
         clauses.append("executor_organization = :executor_org")
         params["executor_org"] = executor_org
+    if customer:
+        clauses.append("customer = :customer")
+        params["customer"] = customer
+    if task_type:
+        clauses.append("task_type = :task_type")
+        params["task_type"] = task_type
+    if revoked:
+        clauses.append("executor = :revoked")
+        params["revoked"] = REVOKED_EXECUTOR
+    if queue:
+        clauses.append("(executor IS NULL OR executor != :revoked_excl)")
+        params["revoked_excl"] = REVOKED_EXECUTOR
+        clauses.append(_queue_age_clause(queue))
+    if status:
+        clauses.append("(executor IS NULL OR executor != :revoked_excl)")
+        params["revoked_excl"] = REVOKED_EXECUTOR
+        clauses.append("status = :status")
+        params["status"] = status
+
+    return clauses, params
+
+
+def _build_in_work_clauses(user, search, customer, task_report, executor_org,
+                           executor_filter, task_type, done_day, exact,
+                           revoked, queue, status):
+    """Фильтры вкладки «В работе» (таблица) — базовые + поиск/вид работ/дата."""
+    clauses, params = _in_work_filter_where(
+        user, executor_org=executor_org, customer=customer,
+        task_type=task_type, revoked=revoked, queue=queue, status=status)
+
+    if search:
+        clauses.append("(task_number LIKE :s OR personal_account LIKE :s OR address LIKE :s)")
+        params["s"] = f"%{search}%"
+    if task_report:
+        clauses.append("task_report = :task_report")
+        params["task_report"] = task_report
     if executor_filter:
         clauses.append("executor = :executor_filter")
         params["executor_filter"] = executor_filter
@@ -606,27 +650,6 @@ def _build_in_work_clauses(user, search, customer, task_report, executor_org,
     if exact:
         clauses.append("(task_number = :exact COLLATE NOCASE OR personal_account = :exact)")
         params["exact"] = exact
-    if revoked:
-        clauses.append("executor = :revoked")
-        params["revoked"] = REVOKED_EXECUTOR
-    if queue:
-        clauses.append("(executor IS NULL OR executor != :revoked_excl)")
-        params["revoked_excl"] = REVOKED_EXECUTOR
-        if queue == "10":
-            clauses.append(f"{AGE_DAYS_EXPR} < 10")
-        elif queue == "20":
-            clauses.append(f"{AGE_DAYS_EXPR} >= 10 AND {AGE_DAYS_EXPR} < 20")
-        elif queue == "30":
-            clauses.append(f"{AGE_DAYS_EXPR} >= 20 AND {AGE_DAYS_EXPR} < 30")
-        elif queue == "40":
-            clauses.append(f"{AGE_DAYS_EXPR} >= 30 AND {AGE_DAYS_EXPR} < 40")
-        elif queue == "more":
-            clauses.append(f"{AGE_DAYS_EXPR} >= 40")
-    if status:
-        clauses.append("(executor IS NULL OR executor != :revoked_excl)")
-        params["revoked_excl"] = REVOKED_EXECUTOR
-        clauses.append("status = :status")
-        params["status"] = status
 
     return clauses, params
 
@@ -671,33 +694,48 @@ async def api_dashboard_in_work(
 
 
 @get("/dashboard/in-work/stats", guards=[require_auth])
-async def api_dashboard_in_work_stats(request: Request, db_session: AsyncSession) -> Response:
-    """Статистика вкладки «В работе»: ПСК/РЛЭ/План/Внеплан + Отозвано + очередь по возрасту."""
-    user = await get_current_user(request, db_session)
-    base_where = "(status IS NULL OR status NOT LIKE 'З%')"
-    params = {}
+async def api_dashboard_in_work_stats(
+    request: Request, db_session: AsyncSession,
+    customer: str = "", task_type: str = "", revoked: bool = False,
+    queue: str = "", status: str = "", executor_org: str = "",
+) -> Response:
+    """Живая статистика фильтров вкладки «В работе».
 
-    if user.effective_role in ("оператор", "работник"):
-        base_where += " AND executor IN (SELECT executor_name FROM users WHERE locale = :locale)"
-        params["locale"] = user.locale
-    elif user.effective_role == "менеджер":
-        base_where += " AND executor_organization = :dept"
-        params["dept"] = user.dept
+    Счётчики каждой колонки фильтров пересчитываются под текущий выбор:
+    отделение + один из фильтров колонок (Статистика/Очередь/Статусы).
+    Для активной колонки её собственные счётчики считаются БЕЗ её фильтра
+    (чтобы оставались варианты для переключения внутри колонки).
+    """
+    user = await get_current_user(request, db_session)
+
+    # «Статистика» (ПСК/РЛЭ/План/Внеплан/Отозвано): свой фильтр не применяем,
+    # применяем отделение + очередь + статус.
+    stat_clauses, stat_params = _in_work_filter_where(
+        user, executor_org=executor_org, queue=queue, status=status)
+    stat_where = " AND ".join(stat_clauses)
 
     cust_result = await db_session.execute(
-        text(f"SELECT customer, COUNT(*) FROM main_afl WHERE {base_where} GROUP BY customer"), params)
+        text(f"SELECT customer, COUNT(*) FROM main_afl WHERE {stat_where} GROUP BY customer"),
+        stat_params)
     customers = {row[0] or "(пусто)": row[1] for row in cust_result}
 
     plan_result = await db_session.execute(
-        text(f"SELECT task_type, COUNT(*) FROM main_afl WHERE {base_where} AND task_type IN ('Плановый', 'Внеплановый') GROUP BY task_type"), params)
+        text(f"SELECT task_type, COUNT(*) FROM main_afl WHERE {stat_where} AND task_type IN ('Плановый', 'Внеплановый') GROUP BY task_type"),
+        stat_params)
     plan_counts = {row[0]: row[1] for row in plan_result}
 
-    revoked = await db_session.execute(
-        text(f"SELECT COUNT(*) FROM main_afl WHERE {base_where} AND executor = :revoked"),
-        {**params, "revoked": REVOKED_EXECUTOR})
+    revoked_count = (await db_session.execute(
+        text(f"SELECT COUNT(*) FROM main_afl WHERE {stat_where} AND executor = :revoked"),
+        {**stat_params, "revoked": REVOKED_EXECUTOR})).scalar()
 
-    queue_where = f"{base_where} AND (executor IS NULL OR executor != :revoked_excl)"
-    queue_params = {**params, "revoked_excl": REVOKED_EXECUTOR}
+    # «Очередь»: свой фильтр не применяем, применяем отделение + статистику + статус.
+    # Отозванные (executor = REVOKED_EXECUTOR) в очередь не считаются.
+    queue_clauses, queue_params = _in_work_filter_where(
+        user, executor_org=executor_org, customer=customer, task_type=task_type,
+        revoked=revoked, status=status)
+    queue_clauses = queue_clauses + ["(executor IS NULL OR executor != :revoked_excl)"]
+    queue_params["revoked_excl"] = REVOKED_EXECUTOR
+    queue_where = " AND ".join(queue_clauses)
     queue_result = await db_session.execute(text(
         f"SELECT "
         f"SUM(CASE WHEN {AGE_DAYS_EXPR} < 10 THEN 1 ELSE 0 END), "
@@ -707,7 +745,7 @@ async def api_dashboard_in_work_stats(request: Request, db_session: AsyncSession
         f"SUM(CASE WHEN {AGE_DAYS_EXPR} >= 40 THEN 1 ELSE 0 END) "
         f"FROM main_afl WHERE {queue_where}"), queue_params)
     q = queue_result.one()
-    queue = [
+    queue_list = [
         {"label": "до 10 дней", "value": "10", "count": q[0] or 0},
         {"label": "до 20 дней", "value": "20", "count": q[1] or 0},
         {"label": "до 30 дней", "value": "30", "count": q[2] or 0},
@@ -715,10 +753,17 @@ async def api_dashboard_in_work_stats(request: Request, db_session: AsyncSession
         {"label": "более", "value": "more", "count": q[4] or 0},
     ]
 
-    status_where = f"{base_where} AND (executor IS NULL OR executor != :revoked_excl)"
+    # «Статусы»: свой фильтр не применяем, применяем отделение + статистику + очередь.
+    # Отозванные не считаются.
+    status_clauses, status_params = _in_work_filter_where(
+        user, executor_org=executor_org, customer=customer, task_type=task_type,
+        revoked=revoked, queue=queue)
+    status_clauses = status_clauses + ["(executor IS NULL OR executor != :revoked_excl)"]
+    status_params["revoked_excl"] = REVOKED_EXECUTOR
+    status_where = " AND ".join(status_clauses)
     status_result = await db_session.execute(
         text(f"SELECT COALESCE(status, '(пусто)'), COUNT(*) FROM main_afl WHERE {status_where} GROUP BY status"),
-        {**params, "revoked_excl": REVOKED_EXECUTOR})
+        status_params)
     status_counts = {row[0]: row[1] for row in status_result}
     statuses = [
         {"label": label, "count": status_counts[label]}
@@ -731,22 +776,34 @@ async def api_dashboard_in_work_stats(request: Request, db_session: AsyncSession
         if label not in IN_WORK_STATUS_ORDER
     ]
 
+    # «Отделения» (выпадающий список): свой фильтр не применяем, применяем фильтры колонок.
+    # Возвращаем список со счётчиками — «живые» цифры в дропдауне.
+    dept_clauses, dept_params = _in_work_filter_where(
+        user, customer=customer, task_type=task_type, revoked=revoked,
+        queue=queue, status=status)
+    dept_where = " AND ".join(dept_clauses)
     dept_result = await db_session.execute(
-        text(f"SELECT DISTINCT executor_organization FROM main_afl WHERE {base_where} AND executor_organization IS NOT NULL ORDER BY executor_organization"), params)
-    depts = [row[0] for row in dept_result]
+        text(f"SELECT executor_organization, COUNT(*) FROM main_afl WHERE {dept_where} AND executor_organization IS NOT NULL GROUP BY executor_organization ORDER BY executor_organization"),
+        dept_params)
+    depts = [{"label": row[0], "count": row[1]} for row in dept_result]
 
-    unenriched = await db_session.execute(
-        text(f"SELECT COUNT(*) FROM main_afl WHERE {base_where} AND personal_account IS NULL"), params)
+    # «Не обогащено»: статичный счётчик (без учёта фильтров) — кнопка не пересчитывается,
+    # только зона видимости пользователя + «в работе».
+    unenriched_clauses, unenriched_params = _in_work_filter_where(user)
+    unenriched_where = " AND ".join(unenriched_clauses)
+    unenriched = (await db_session.execute(
+        text(f"SELECT COUNT(*) FROM main_afl WHERE {unenriched_where} AND personal_account IS NULL"),
+        unenriched_params)).scalar()
 
     return Response(content=json.dumps({
         "customers": customers,
         "plan": plan_counts.get("Плановый", 0),
         "unplan": plan_counts.get("Внеплановый", 0),
-        "revoked": revoked.scalar(),
-        "queue": queue,
+        "revoked": revoked_count,
+        "queue": queue_list,
         "statuses": statuses,
         "depts": depts,
-        "unenriched": unenriched.scalar(),
+        "unenriched": unenriched,
     }, ensure_ascii=False), media_type="application/json")
 
 

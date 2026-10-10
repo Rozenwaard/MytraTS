@@ -75,28 +75,66 @@
 	const isFieldRole = $derived(auth.user?.role === 'оператор' || auth.user?.role === 'работник');
 	const isAdmin = $derived(auth.user?.role === 'администратор');
 
+	// Ширина дропдауна отделений фиксируется по самой широкой надписи (название + счётчик),
+	// чтобы список не «прыгал» при смене фильтров (счётчики меняют длину).
+	const deptSelectWidth = $derived(() => {
+		const names = ['Все отделения', ...(stats?.depts ?? []).map((d) => d.label)];
+		const maxName = names.reduce((m, n) => (n.length > m ? n.length : m), 0);
+		// « (999 999)» — счётчик с разделителем тысяч + скобки, плюс запас на паддинг/стрелку.
+		return `${maxName + 12}ch`;
+	});
+
+	let statsReq = 0;
 	$effect(() => {
-		fetchInWorkStats()
-			.then((s) => (stats = s))
+		const req = ++statsReq;
+		fetchInWorkStats({
+			customer,
+			task_type: taskType,
+			revoked: revoked || undefined,
+			queue: queue || undefined,
+			status: status || undefined,
+			executor_org: executorOrg || undefined
+		})
+			.then((s) => {
+				if (req === statsReq) stats = s;
+			})
 			.catch(() => {});
 	});
 
+	// Колонки-фильтры (Статистика / Очередь / Статусы) — взаимоисключающие:
+	// активна только одна; отделение суммируется с ней.
 	function toggleStat(label: string) {
-		if (label === 'ПСК') customer = customer === 'ПСК' ? undefined : 'ПСК';
-		else if (label === 'РЛЭ') customer = customer === 'РЛЭ' ? undefined : 'РЛЭ';
-		else if (label === 'План') taskType = taskType === 'Плановый' ? undefined : 'Плановый';
-		else if (label === 'Внеплан') taskType = taskType === 'Внеплановый' ? undefined : 'Внеплановый';
-		else if (label === 'Отозвано') revoked = !revoked;
+		let nextCustomer: string | undefined;
+		let nextTaskType: string | undefined;
+		let nextRevoked = false;
+		if (label === 'ПСК') nextCustomer = customer === 'ПСК' ? undefined : 'ПСК';
+		else if (label === 'РЛЭ') nextCustomer = customer === 'РЛЭ' ? undefined : 'РЛЭ';
+		else if (label === 'План') nextTaskType = taskType === 'Плановый' ? undefined : 'Плановый';
+		else if (label === 'Внеплан') nextTaskType = taskType === 'Внеплановый' ? undefined : 'Внеплановый';
+		else if (label === 'Отозвано') nextRevoked = !revoked;
+		customer = nextCustomer;
+		taskType = nextTaskType;
+		revoked = nextRevoked;
+		queue = undefined;
+		status = undefined;
 		page = 1;
 	}
 
 	function toggleQueue(value: string) {
 		queue = queue === value ? undefined : value;
+		customer = undefined;
+		taskType = undefined;
+		revoked = false;
+		status = undefined;
 		page = 1;
 	}
 
 	function toggleStatus(label: string) {
 		status = status === label ? undefined : label;
+		customer = undefined;
+		taskType = undefined;
+		revoked = false;
+		queue = undefined;
 		page = 1;
 	}
 
@@ -215,11 +253,12 @@
 				{#if !isFieldRole}
 					<select
 						class="h-9 rounded-md border border-input bg-background px-2 text-sm outline-none focus-visible:border-ring"
+						style={`min-width: ${deptSelectWidth}`}
 						bind:value={executorOrg}
 					>
 						<option value="">Все отделения</option>
-						{#each stats?.depts ?? [] as d (d)}
-							<option value={d}>{d}</option>
+						{#each stats?.depts ?? [] as d (d.label)}
+							<option value={d.label}>{d.label} ({d.count.toLocaleString('ru-RU')})</option>
 						{/each}
 					</select>
 				{/if}
@@ -238,15 +277,15 @@
 					<div class="mb-1.5 text-xs font-medium text-muted-foreground">Статистика</div>
 					<div class="flex flex-col gap-y-0.5 text-xs">
 						{#each [
-							{ label: 'ПСК', count: stats?.customers?.['ПСК'] },
-							{ label: 'РЛЭ', count: stats?.customers?.['РЛЭ'] },
-							{ label: 'План', count: stats?.plan },
-							{ label: 'Внеплан', count: stats?.unplan },
-							{ label: 'Отозвано', count: stats?.revoked }
+							{ label: 'ПСК', count: stats?.customers?.['ПСК'], active: customer === 'ПСК' },
+							{ label: 'РЛЭ', count: stats?.customers?.['РЛЭ'], active: customer === 'РЛЭ' },
+							{ label: 'План', count: stats?.plan, active: taskType === 'Плановый' },
+							{ label: 'Внеплан', count: stats?.unplan, active: taskType === 'Внеплановый' },
+							{ label: 'Отозвано', count: stats?.revoked, active: revoked }
 						] as s (s.label)}
-							<button class="flex cursor-pointer gap-1 text-left hover:underline" onclick={() => toggleStat(s.label)}>
-								<span class="text-muted-foreground">{s.label}</span>
-								<span class="ml-auto font-semibold tabular-nums">{s.count != null ? s.count.toLocaleString('ru-RU') : '—'}</span>
+							<button class="flex cursor-pointer gap-1 rounded px-1 -mx-1 text-left hover:underline {s.active ? 'bg-primary/15' : ''}" onclick={() => toggleStat(s.label)}>
+								<span class={s.active ? 'text-primary' : 'text-muted-foreground'}>{s.label}</span>
+								<span class="ml-auto font-semibold tabular-nums {s.active ? 'text-primary' : ''}">{s.count != null ? s.count.toLocaleString('ru-RU') : '—'}</span>
 							</button>
 						{/each}
 					</div>
@@ -255,9 +294,9 @@
 					<div class="mb-1.5 text-xs font-medium text-muted-foreground">Очередь</div>
 					<div class="flex flex-col gap-y-0.5 text-xs">
 						{#each stats?.queue ?? [] as q (q.label)}
-							<button class="flex cursor-pointer gap-1 text-left hover:underline" onclick={() => toggleQueue(q.value)}>
-								<span class="text-muted-foreground">{q.label}</span>
-								<span class="ml-auto font-semibold tabular-nums">{q.count.toLocaleString('ru-RU')}</span>
+							<button class="flex cursor-pointer gap-1 rounded px-1 -mx-1 text-left hover:underline {queue === q.value ? 'bg-primary/15' : ''}" onclick={() => toggleQueue(q.value)}>
+								<span class={queue === q.value ? 'text-primary' : 'text-muted-foreground'}>{q.label}</span>
+								<span class="ml-auto font-semibold tabular-nums {queue === q.value ? 'text-primary' : ''}">{q.count.toLocaleString('ru-RU')}</span>
 							</button>
 						{/each}
 					</div>
@@ -266,9 +305,9 @@
 					<div class="mb-1.5 text-xs font-medium text-muted-foreground">Статусы</div>
 					<div class="flex flex-col gap-y-0.5 text-xs">
 						{#each stats?.statuses ?? [] as st (st.label)}
-							<button class="flex cursor-pointer gap-1 text-left hover:underline" onclick={() => toggleStatus(st.label)}>
-								<span class="text-muted-foreground">{st.label}</span>
-								<span class="ml-auto font-semibold tabular-nums">{st.count.toLocaleString('ru-RU')}</span>
+							<button class="flex cursor-pointer gap-1 rounded px-1 -mx-1 text-left hover:underline {status === st.label ? 'bg-primary/15' : ''}" onclick={() => toggleStatus(st.label)}>
+								<span class={status === st.label ? 'text-primary' : 'text-muted-foreground'}>{st.label}</span>
+								<span class="ml-auto font-semibold tabular-nums {status === st.label ? 'text-primary' : ''}">{st.count.toLocaleString('ru-RU')}</span>
 							</button>
 						{/each}
 					</div>

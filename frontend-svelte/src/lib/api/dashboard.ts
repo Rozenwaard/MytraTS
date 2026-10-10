@@ -162,6 +162,11 @@ export interface InWorkStatusItem {
 	count: number;
 }
 
+export interface InWorkDeptItem {
+	label: string;
+	count: number;
+}
+
 export interface InWorkStats {
 	customers: Record<string, number>;
 	plan: number;
@@ -169,10 +174,10 @@ export interface InWorkStats {
 	revoked: number;
 	queue: InWorkQueueItem[];
 	statuses: InWorkStatusItem[];
-	depts: string[];
+	depts: InWorkDeptItem[];
 	unenriched: number;
 }
 
-export async function fetchInWorkStats(): Promise<InWorkStats> {
-	return api<InWorkStats>('/api/dashboard/in-work/stats');
+export async function fetchInWorkStats(params: InWorkParams = {}): Promise<InWorkStats> {
+	return api<InWorkStats>(`/api/dashboard/in-work/stats?${buildInWorkQuery(params)}`);
 }
