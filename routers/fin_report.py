@@ -415,16 +415,24 @@ async def api_fin_report_supplement(
         return Response(content=json.dumps({"success": False, "error": "Не выбран период"}, ensure_ascii=False), media_type="application/json")
     period_fmt = period.replace("-", " ")
     period_end = _period_end(period)
-    clause = ("UPDATE main_afl SET report = :period WHERE (report IS NULL OR report = '') "
-              "AND done_day IS NOT NULL AND done_day <= :period_end "
-              "AND reestr_number IS NOT NULL AND reestr_number != '' AND reestr_number != 'Отклонён'")
-    params = {"period": period_fmt, "period_end": period_end}
+    where = ("(report IS NULL OR report = '') "
+             "AND done_day IS NOT NULL AND done_day <= :period_end "
+             "AND reestr_number IS NOT NULL AND reestr_number != '' AND reestr_number != 'Отклонён'")
+    params = {"period_end": period_end}
     if customer:
-        clause += " AND customer = :customer"
+        where += " AND customer = :customer"
         params["customer"] = customer
-    result = await db_session.execute(text(clause), params)
+
+    # Номера заданий, которые сейчас будут включены в отчёт (для выгрузки).
+    rows = await db_session.execute(
+        text(f"SELECT task_number FROM main_afl WHERE {where}"), params)
+    task_numbers = [r[0] for r in rows.fetchall() if r[0]]
+
+    result = await db_session.execute(
+        text(f"UPDATE main_afl SET report = :period WHERE {where}"),
+        {**params, "period": period_fmt})
     await db_session.commit()
-    return Response(content=json.dumps({"success": True, "updated": result.rowcount}, ensure_ascii=False), media_type="application/json")
+    return Response(content=json.dumps({"success": True, "updated": result.rowcount, "task_numbers": task_numbers}, ensure_ascii=False), media_type="application/json")
 
 
 @get("/fin-report/supplement-sum", guards=[require_auth])

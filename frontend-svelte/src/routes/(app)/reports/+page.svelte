@@ -154,6 +154,18 @@
 	const fmtMoney = (v: number) =>
 		v.toLocaleString('ru-RU', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) + ' ₽';
 
+	function downloadTextFile(content: string, filename: string) {
+		const blob = new Blob([content], { type: 'text/plain;charset=utf-8' });
+		const url = URL.createObjectURL(blob);
+		const a = document.createElement('a');
+		a.href = url;
+		a.download = filename;
+		document.body.appendChild(a);
+		a.click();
+		a.remove();
+		URL.revokeObjectURL(url);
+	}
+
 	function periodLabel(p: string): string {
 		if (!p) return 'Ещё не в отчёте';
 		const [year, month] = p.split('-');
@@ -401,6 +413,9 @@
 		try {
 			const res = await supplementReport(period, supplementCustomer);
 			toast(`Дополнено: ${res.updated}`);
+			if (res.task_numbers && res.task_numbers.length > 0) {
+				downloadTextFile(res.task_numbers.join('\n'), `Дополнено_${supplementCustomer}_${period}.txt`);
+			}
 			await queryClient.invalidateQueries({ queryKey: ['fin-report'] });
 			await queryClient.invalidateQueries({ queryKey: ['fin-report-depts'] });
 			await queryClient.invalidateQueries({ queryKey: ['fin-report-supplement-sum'] });

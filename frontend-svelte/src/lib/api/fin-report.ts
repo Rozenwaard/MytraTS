@@ -64,8 +64,8 @@ export async function fetchFinReportDepts(period: string): Promise<FinReportDept
 export async function supplementReport(
 	period: string,
 	customer: string
-): Promise<{ success: boolean; updated: number }> {
-	return api<{ success: boolean; updated: number }>('/api/fin-report/supplement', {
+): Promise<{ success: boolean; updated: number; task_numbers: string[] }> {
+	return api<{ success: boolean; updated: number; task_numbers: string[] }>('/api/fin-report/supplement', {
 		method: 'POST',
 		body: JSON.stringify({ period, customer })
 	});
