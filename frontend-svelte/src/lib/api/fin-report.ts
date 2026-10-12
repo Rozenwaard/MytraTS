@@ -102,6 +102,15 @@ export async function addToReport(
 	});
 }
 
+export async function rollbackReport(
+	period: string
+): Promise<{ success: boolean; updated: number }> {
+	return api<{ success: boolean; updated: number }>('/api/fin-report/rollback', {
+		method: 'POST',
+		body: JSON.stringify({ period })
+	});
+}
+
 export async function uploadDiscrepancies(
 	file: File
 ): Promise<{ success: boolean; updated: number; not_found: number; batch_id: string }> {

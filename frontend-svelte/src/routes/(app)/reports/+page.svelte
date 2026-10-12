@@ -2,6 +2,7 @@
 	import { createQuery } from '@tanstack/svelte-query';
 	import { toStore, fromStore } from 'svelte/store';
 	import { tick } from 'svelte';
+	import { flip } from 'svelte/animate';
 	import { fly } from 'svelte/transition';
 	import { queryClient } from '$lib/query';
 	import {
@@ -13,6 +14,7 @@
 		startArchive,
 		fetchArchiveProgress,
 		addToReport,
+		rollbackReport,
 		uploadDiscrepancies,
 		rollbackDiscrepancies,
 		discardDiscrepancies,
@@ -169,7 +171,15 @@
 		expanded = next;
 	}
 
-	async function handleForm() {
+	let confirmForm = $state(false);
+
+	function openForm() {
+		if (!period || !canForm) return;
+		confirmForm = true;
+	}
+
+	async function confirmFormAction() {
+		confirmForm = false;
 		if (forming || !period) return;
 		forming = true;
 		try {
@@ -185,6 +195,32 @@
 			toast('Ошибка формирования отчёта');
 		} finally {
 			forming = false;
+		}
+	}
+
+	let rollingBack = $state(false);
+	let confirmRollback = $state(false);
+
+	function openRollback() {
+		if (!period) return;
+		confirmRollback = true;
+	}
+
+	async function confirmRollbackAction() {
+		confirmRollback = false;
+		if (rollingBack || !period) return;
+		rollingBack = true;
+		try {
+			const res = await rollbackReport(period);
+			toast(`Отчёт откачен: ${res.updated}`);
+			await queryClient.invalidateQueries({ queryKey: ['fin-report'] });
+			await queryClient.invalidateQueries({ queryKey: ['fin-report-depts'] });
+			await queryClient.invalidateQueries({ queryKey: ['fin-report-periods'] });
+			await queryClient.refetchQueries({ queryKey: ['fin-report-periods'] });
+		} catch {
+			toast('Ошибка отката отчёта');
+		} finally {
+			rollingBack = false;
 		}
 	}
 
@@ -395,7 +431,8 @@
 					type="button"
 					class={tileClass(p)}
 					onclick={() => selectPeriod(p.value)}
-					in:fly={{ y: -8, duration: 180 }}
+					in:fly={{ y: -12, duration: 250 }}
+					animate:flip={{ duration: 250 }}
 				>
 					<div class="text-base font-semibold">{MONTHS[Number(p.value.split('-')[1]) - 1]}</div>
 					<div class="text-xs text-muted-foreground">
@@ -446,6 +483,10 @@
 						{downloading ? `Формируем… ${downloadDone}/${downloadTotal}` : 'Скачать отчёт'}
 					</Button>
 
+					<Button size="sm" class="bg-destructive text-destructive-foreground hover:bg-destructive/80" onclick={openRollback} disabled={rollingBack}>
+						{rollingBack ? 'Откатываем…' : 'Откатить отчёт'}
+					</Button>
+
 					<input
 						bind:this={discrepanciesInput}
 						type="file"
@@ -463,7 +504,7 @@
 				</div>
 			{:else}
 				<div class="flex flex-wrap items-center gap-2">
-					<Button size="sm" onclick={handleForm} disabled={forming || !canForm}>
+					<Button size="sm" onclick={openForm} disabled={forming || !canForm}>
 						{forming ? 'Формируем…' : 'Сформировать отчёт'}
 					</Button>
 					{#if !canForm}
@@ -656,6 +697,68 @@
 				</Button>
 				<Button size="sm" onclick={confirmSupplementAction} disabled={supplementing}>
 					{supplementing ? 'Дополняем…' : 'Дополнить'}
+				</Button>
+			</div>
+		</div>
+	</div>
+{/if}
+
+{#if confirmForm}
+	<button
+		type="button"
+		class="fixed inset-0 z-40 bg-black/50"
+		aria-label="Закрыть"
+		onclick={() => (confirmForm = false)}
+	></button>
+
+	<div class="pointer-events-none fixed inset-0 z-50 flex items-center justify-center p-4">
+		<div
+			class="pointer-events-auto w-full max-w-md rounded-lg border bg-card p-6 shadow-lg"
+			role="dialog"
+			aria-modal="true"
+			tabindex="-1"
+		>
+			<h2 class="text-lg font-semibold">Сформировать отчёт</h2>
+			<p class="mt-2 text-sm text-muted-foreground">
+				Сформировать {periodLabel(period)}? Строки с корректными реестрами будут включены в отчёт.
+			</p>
+			<div class="mt-6 flex justify-end gap-4">
+				<Button variant="outline" size="sm" onclick={() => (confirmForm = false)} disabled={forming}>
+					Отмена
+				</Button>
+				<Button size="sm" onclick={confirmFormAction} disabled={forming}>
+					{forming ? 'Формируем…' : 'Сформировать'}
+				</Button>
+			</div>
+		</div>
+	</div>
+{/if}
+
+{#if confirmRollback}
+	<button
+		type="button"
+		class="fixed inset-0 z-40 bg-black/50"
+		aria-label="Закрыть"
+		onclick={() => (confirmRollback = false)}
+	></button>
+
+	<div class="pointer-events-none fixed inset-0 z-50 flex items-center justify-center p-4">
+		<div
+			class="pointer-events-auto w-full max-w-md rounded-lg border bg-card p-6 shadow-lg"
+			role="dialog"
+			aria-modal="true"
+			tabindex="-1"
+		>
+			<h2 class="text-lg font-semibold">Откатить отчёт</h2>
+			<p class="mt-2 text-sm text-muted-foreground">
+				Откатить {periodLabel(period)}? Все строки этого периода вернутся в состояние «не в отчёте».
+			</p>
+			<div class="mt-6 flex justify-end gap-4">
+				<Button variant="outline" size="sm" onclick={() => (confirmRollback = false)} disabled={rollingBack}>
+					Отмена
+				</Button>
+				<Button size="sm" onclick={confirmRollbackAction} disabled={rollingBack}>
+					{rollingBack ? 'Откатываем…' : 'Откатить'}
 				</Button>
 			</div>
 		</div>

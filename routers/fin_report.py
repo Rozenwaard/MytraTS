@@ -531,6 +531,26 @@ async def api_fin_report_add(
     return Response(content=json.dumps({"success": True, "updated": result.rowcount, "period": period_fmt}, ensure_ascii=False), media_type="application/json")
 
 
+@post("/fin-report/rollback", guards=[require_auth])
+async def api_fin_report_rollback(
+    request: Request, db_session: AsyncSession,
+    data: dict = Body(media_type=RequestEncodingType.JSON),
+) -> Response:
+    """«Откатить отчёт»: report = NULL для строк этого периода."""
+    user = await get_current_user(request, db_session)
+    if user.effective_role != "администратор":
+        return Response(content=json.dumps({"success": False, "error": "Нет прав"}, ensure_ascii=False), media_type="application/json", status_code=403)
+    period = (data.get("period") or "").strip()
+    if not period:
+        return Response(content=json.dumps({"success": False, "error": "Не выбран период"}, ensure_ascii=False), media_type="application/json")
+    period_fmt = period.replace("-", " ")
+    result = await db_session.execute(
+        text("UPDATE main_afl SET report = NULL WHERE report = :period"),
+        {"period": period_fmt})
+    await db_session.commit()
+    return Response(content=json.dumps({"success": True, "updated": result.rowcount}, ensure_ascii=False), media_type="application/json")
+
+
 @post("/fin-report/discrepancies", guards=[require_auth])
 async def api_fin_report_discrepancies(
     request: Request, db_session: AsyncSession,
@@ -856,6 +876,6 @@ async def _run_download(download_id: str, period_fmt: str):
 
 
 fin_report_router = Router("/api", route_handlers=[
-    api_fin_report, api_fin_report_periods, api_fin_report_depts, api_fin_report_archive, api_fin_report_archive_progress, api_fin_report_supplement, api_fin_report_supplement_sum, api_fin_report_add, api_fin_report_discrepancies, api_fin_report_discrepancies_rollback, api_fin_report_discrepancies_discard, api_fin_report_recheck,
+    api_fin_report, api_fin_report_periods, api_fin_report_depts, api_fin_report_archive, api_fin_report_archive_progress, api_fin_report_supplement, api_fin_report_supplement_sum, api_fin_report_add, api_fin_report_rollback, api_fin_report_discrepancies, api_fin_report_discrepancies_rollback, api_fin_report_discrepancies_discard, api_fin_report_recheck,
     api_fin_report_download_start, api_fin_report_download_progress, api_fin_report_download_result,
 ])
