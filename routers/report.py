@@ -41,8 +41,6 @@ async def api_report(
         text("UPDATE main_afl SET report = 'Отклонён' WHERE reestr_number = 'Отклонён' AND report IS NULL"))
     rejected = result2.rowcount
 
-    await db_session.execute(text("INSERT INTO story_afl SELECT * FROM main_afl WHERE report IS NOT NULL"))
-    await db_session.execute(text("DELETE FROM main_afl WHERE report IS NOT NULL"))
     await db_session.commit()
 
     return Response(content=json.dumps({

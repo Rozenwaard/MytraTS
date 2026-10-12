@@ -20,9 +20,6 @@
 		TOP_NAV.filter((item) => {
 			if (item.href === '/reports') return user?.role === 'администратор';
 			if (item.href === '/admin') return user?.role === 'администратор';
-			if (item.href === '/upload') {
-				return user?.role === 'администратор' || user?.role === 'специалист';
-			}
 			return true;
 		})
 	);
@@ -36,11 +33,16 @@
 	const subTabs = $derived.by(() => {
 		if (!currentSection) return [];
 		const tabs = SUB_NAV[currentSection] ?? [];
-		if (
-			currentSection === '/main-afl' &&
-			(user?.role === 'администратор' || user?.role === 'специалист')
-		) {
-			return tabs.filter((t) => t.href !== '/main-afl/list');
+		if (currentSection === '/main-afl') {
+			return tabs.filter((t) => {
+				if (t.href === '/main-afl/upload') {
+					return user?.role === 'администратор' || user?.role === 'специалист';
+				}
+				if (t.href === '/main-afl/list') {
+					return !(user?.role === 'администратор' || user?.role === 'специалист');
+				}
+				return true;
+			});
 		}
 		if (currentSection === '/dashboard' && user?.role !== 'администратор') {
 			return tabs.filter((t) => t.href !== '/dashboard/priorities');

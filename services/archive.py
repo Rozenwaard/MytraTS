@@ -1,9 +1,7 @@
-"""Архивация строк: mytra.main_afl → story.story_afl → story.consumers.
+"""Архивация строк периода: mytra.main_afl → story.story_afl → story.consumers.
 
-Запускается по cron 22-го числа в 22:00 (см. archive.py).
+Ручной перенос по кнопке «Отправить в архив» в Финотчёте (для старых периодов).
 """
-
-from datetime import date
 
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -29,67 +27,30 @@ CONSUMER_FIELDS = [
 _CHUNK = 900
 
 
-def last_report_period(today: date) -> tuple[str, str]:
-    """«Последний отчёт» = предыдущий месяц. Возвращает ('YYYY MM', 'YYYY-MM')."""
-    month = today.month - 1
-    year = today.year
-    if month == 0:
-        month = 12
-        year -= 1
-    return f"{year} {month:02d}", f"{year}-{month:02d}"
-
-
-def _where_clause() -> str:
-    """Группа A (report < последний) ИЛИ группа B (пустой report + З% + Отклонён + done_day ≤ последний месяц)."""
-    # TODO: report='Отклонён' (ставит report.py) не попадает ни в A, ни в B — разобраться,
-    # откатывать ли эту пометку в report.py (вдруг она нужна).
-    a = "report IS NOT NULL AND report != '' AND report < :report_str"
-    b = ("(report IS NULL OR report = '') AND status LIKE 'З%' "
-         "AND reestr_number = 'Отклонён' AND SUBSTR(done_day, 1, 7) <= :month_str")
-    return f"({a}) OR ({b})"
-
-
-def _base_params(report_str: str, month_str: str) -> dict:
-    return {"report_str": report_str, "month_str": month_str}
-
-
-async def preview(main_session: AsyncSession, report_str: str, month_str: str) -> tuple[int, int]:
-    """Сколько строк уедет и сколько разных точек учёта затронуто (без изменений)."""
-    where = _where_clause()
-    params = _base_params(report_str, month_str)
-    total = (await main_session.execute(
-        text(f"SELECT COUNT(*) FROM main_afl WHERE {where}"), params)).scalar()
-    mps = (await main_session.execute(
-        text(f"SELECT COUNT(DISTINCT metering_point) FROM main_afl "
-             f"WHERE {where} AND metering_point IS NOT NULL AND metering_point != ''"), params)).scalar()
-    return int(total or 0), int(mps or 0)
-
-
-async def archive_main_to_story(
+async def archive_period_to_story(
     main_session: AsyncSession,
-    report_str: str, month_str: str,
+    period_fmt: str,
     story_db_path: str = STORY_DB_PATH,
 ) -> tuple[int, list[str]]:
-    """Переносит (группа A + B) из mytra.main_afl в story.story_afl и удаляет из main_afl.
+    """Переносит строки периода (report = 'ГГГГ ММ') из main_afl в story_afl и удаляет из main_afl.
 
-    Кросс-БД перенос делаем через ATTACH: main_afl и story_afl оказываются в одном соединении,
-    поэтому `INSERT … SELECT` + `DELETE` выполняются атомарно (быстрее и надёжнее, чем
-    материализация строк в Python). Возвращает (число строк, список metering_point).
+    Кросс-БД перенос через ATTACH: `INSERT … SELECT` + `DELETE` в одной транзакции
+    (атомарно). Возвращает (число перенесённых строк, список metering_point).
     """
-    where = _where_clause()
-    params = _base_params(report_str, month_str)
     cols = ", ".join(STORY_AFL_COLUMNS)
 
     mps = (await main_session.execute(
-        text(f"SELECT DISTINCT metering_point FROM main_afl "
-             f"WHERE {where} AND metering_point IS NOT NULL AND metering_point != ''"), params)).scalars().all()
+        text("SELECT DISTINCT metering_point FROM main_afl "
+             "WHERE report = :p AND metering_point IS NOT NULL AND metering_point != ''"),
+        {"p": period_fmt})).scalars().all()
 
     await main_session.execute(text("ATTACH DATABASE :path AS story_db"), {"path": story_db_path})
     try:
         ins = await main_session.execute(
             text(f"INSERT OR IGNORE INTO story_db.story_afl ({cols}) "
-                 f"SELECT {cols} FROM main_afl WHERE {where}"), params)
-        await main_session.execute(text(f"DELETE FROM main_afl WHERE {where}"), params)
+                 f"SELECT {cols} FROM main_afl WHERE report = :p"),
+            {"p": period_fmt})
+        await main_session.execute(text("DELETE FROM main_afl WHERE report = :p"), {"p": period_fmt})
         await main_session.commit()
     except Exception:
         await main_session.rollback()

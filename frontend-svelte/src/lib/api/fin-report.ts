@@ -23,6 +23,76 @@ export async function fetchFinReport(period: string): Promise<FinReportData> {
 	return api<FinReportData>(`/api/fin-report?period=${encodeURIComponent(period)}`);
 }
 
+export interface FinReportPeriod {
+	value: string;
+	has_rows: boolean;
+	is_current: boolean;
+	is_archived: boolean;
+	category: 'current' | 'previous' | 'old';
+	can_form: boolean;
+}
+
+export interface FinReportPeriods {
+	periods: FinReportPeriod[];
+	default: string;
+}
+
+export async function fetchFinReportPeriods(): Promise<FinReportPeriods> {
+	return api<FinReportPeriods>('/api/fin-report/periods');
+}
+
+export interface DeptRow {
+	org: string;
+	total: number;
+	successful: number;
+	unsuccessful: number;
+	done: number;
+	nedopusk: number;
+	not_closed: number;
+	sum: number;
+}
+
+export interface FinReportDepts {
+	rows: DeptRow[];
+	total: DeptRow;
+}
+
+export async function fetchFinReportDepts(period: string): Promise<FinReportDepts> {
+	return api<FinReportDepts>(`/api/fin-report/depts?period=${encodeURIComponent(period)}`);
+}
+
+export async function supplementReport(
+	period: string,
+	customer: string
+): Promise<{ success: boolean; updated: number }> {
+	return api<{ success: boolean; updated: number }>('/api/fin-report/supplement', {
+		method: 'POST',
+		body: JSON.stringify({ period, customer })
+	});
+}
+
+export async function fetchSupplementSum(period: string): Promise<{ psk: number; rle: number }> {
+	return api<{ psk: number; rle: number }>(`/api/fin-report/supplement-sum?period=${encodeURIComponent(period)}`);
+}
+
+export interface ArchiveProgress {
+	status: string;
+	moved: number;
+	consumers: number;
+	message?: string;
+}
+
+export async function startArchive(period: string): Promise<{ archive_id: string }> {
+	return api<{ archive_id: string }>('/api/fin-report/archive', {
+		method: 'POST',
+		body: JSON.stringify({ period })
+	});
+}
+
+export async function fetchArchiveProgress(archiveId: string): Promise<ArchiveProgress> {
+	return api<ArchiveProgress>(`/api/fin-report/archive/progress/${archiveId}`);
+}
+
 export async function addToReport(
 	period: string
 ): Promise<{ success: boolean; updated: number; period: string }> {

@@ -59,7 +59,6 @@ MytraTS/
 │                          #  CORSConfig только под dev-origin localhost:5174)
 ├── deps.py                # get_current_user, require_auth (общие зависимости)
 ├── sql.py                 # build_in_clause, norm_name (общие SQL-хелперы: IN-клаузы + нормализация ФИО «ё/е»)
-├── archive.py             # CLI архивации (cron 22-го числа): main_afl → story_afl → consumers
 ├── data/
 │   ├── config.py          # engine (mytra.db), story_engine (story.db), tickets_engine (tickets.db), STORY_DB_PATH, SECRET_KEY из .env
 │   ├── models.py          # RawAfl, MainAfl (+errors, +norm, +extra), Tabel, Carte, WorkCatalog (новый справочник видов работ), MeterModelPhase (1ф/3ф), Utalo, Calendar, User (+executor_name), QuarantineStatus, HelpPage, DiscrepanciesLog, Ticket (тикеты «Вопросы») (+ ROLES, FIELD_ROLES, ADMIN_ROLES)
@@ -95,13 +94,13 @@ MytraTS/
 ├── frontend-svelte/
 │   └── src/
 │       ├── lib/
-│       │   ├── api/       # client.ts (api<T>), main-afl.ts, dashboard.ts, fin-report.ts, premium.ts, rle.ts, help.ts, upload.ts, tickets.ts
+│       │   ├── api/       # client.ts (api<T>), main-afl.ts, dashboard.ts, fin-report.ts, premium.ts, rle.ts, help.ts, upload.ts, tickets.ts, story.ts
 │       │   ├── store/     # auth/search/toast (.svelte.ts — Runes-хранилища)
 │       │   ├── components/# ui/* (shadcn-svelte), logo.svelte, stat-card.svelte, help-content.svelte
 │       │   ├── columns.ts # 10 видимых + 17 «на раскрытие» колонок
 │       │   ├── query.ts   # QueryClient
 │       │   └── nav.ts     # TOP_NAV / SUB_NAV
-│       └── routes/        # +layout, login, (app)/{dashboard, main-afl, upload, reports, help, change-password}
+│       └── routes/        # +layout, login, (app)/{dashboard, main-afl (+upload/list), archive, reports, help, change-password}
 ├── docs/
 │   ├── БИЗНЕС-ЛОГИКА.md    # поток данных и бизнес-правила (классификация, ошибки, реестры, роли, дашборд)
 │   └── КЛАССИФИКАЦИЯ-ОБРАБОТКИ.md  # пошаговая логика processor.py (правила, словари, известные пробелы)
@@ -136,6 +135,8 @@ MytraTS/
 - `ROLES = (администратор, специалист, менеджер, оператор, работник)`
 - `FIELD_ROLES = (оператор, работник)` — видимость по locale
 - `ADMIN_ROLES = (администратор, специалист)` — полные права
+
+Топ-меню: Дашборд / Реестры / Отчёты / Архив / Админ / Помощь. «Архив» — виден всем ролям; «Отчёты» и «Админ» — только администратору. «Загрузка» вынесена из топ-меню и стала первой вкладкой «Реестров» (`/main-afl/upload`, админ/специалист).
 
 Матрица (страница «Реестры» `/main-afl`):
 - **администратор**: вкладки Загрузка/Обзор/Настройка (без Список). Кнопка «Поменять работу» + выпадающий список видов работ (меняет task_report у ОДНОЙ выбранной строки, PATCH /api/main-afl/task-report, только админ; сбрасывает reestr_number/reestr_date). Видит колонку «Отделения» и скролл исполнителей.
@@ -235,8 +236,11 @@ MytraTS/
 ### Отчёты (Финотчёт, только администратор)
 | Метод | Путь | Что делает |
 |---|---|---|
-| GET | `/fin-report?period=YYYY-MM` | плашки + раскладка по locale и видам работ + стоимость + ПСК/РЛЭ; пустой period = строки вне отчёта, заданный — строки этого периода; все плашки — только статус Завершено/Закрыто, «с ошибками» — в зоне стоп-фактора (СПб+Гатчина) |
-| POST | `/fin-report/add` | с period: `report = «ГГГГ ММ»` строкам с реестром, пустым report и done_day ≤ конца периода; без period: все строки «Готово к отчёту» → следующий период после последнего в main_afl |
+| GET | `/fin-report?period=YYYY-MM` | плашки + раскладка по locale и видам работ + стоимость + ПСК/РЛЭ; пустой period = строки вне отчёта; заданный период БЕЗ отчёта (нет строк `report = период`) → тоже строки вне отчёта; заданный период с отчётом — строки этого периода; все плашки — только статус Завершено/Закрыто, «с ошибками» — в зоне стоп-фактора (СПб+Гатчина) |
+| GET | `/fin-report/periods` | карусель периодов: месяцы от первого отчёта (в main_afl или story_afl) до фронтира, максимум 6; фронтир = min(следующий после последнего отчёта, текущий месяц, first_unarchived + 5) — третье условие проворота (старейшая неархивированная плашка остаётся в окне); при переполнении сбрасываются архивные месяцы из начала; каждый `{value, has_rows, is_current, is_archived, category}`; `default` = фронтир |
+| GET | `/fin-report/depts?period=YYYY-MM` | статистика по отделениям для периода: строки отделений (по алфавиту) с колонками всего/результативных (хорошие номера реестров)/нерезультативных + строка «Итого»; для архивного периода берётся из story_afl, иначе из main_afl |
+| POST | `/fin-report/archive` + `/fin-report/archive/progress/{id}` | «Отправить в архив» (старые периоды): в фоне переносит строки `report = «ГГГГ ММ»` из `main_afl` в `story.db.story_afl` (`ATTACH` + `INSERT…SELECT` + `DELETE`) и обновляет `consumers`; прогресс (`starting`/`moving`/`consumers`/`complete`) опрашивается фронтом, на фронте — прогресс-бар справа от кнопки |
+| POST | `/fin-report/add` | с period: `report = «ГГГГ ММ»` строкам с непустым номером реестра (реальные и «Отклонён»), пустым report и done_day ≤ конца периода; без period: все строки с непустым номером реестра (реальные и «Отклонён», пустым report) → следующий период после последнего в main_afl |
 | POST | `/fin-report/discrepancies` | multipart `.txt` с task_number → сброс в неисполненные: task_report/reestr_date/report/norm/extra = NULL, task_detail = «Разногласия», reestr_number = «Отклонён»; возвращает `batch_id` снимка «до» |
 | POST | `/fin-report/discrepancies/rollback` | «Откат разногласий»: по последнему (или переданному batch_id) восстанавливает task_report/task_detail/reestr_number/reestr_date/report/norm/extra из снимка в `discrepancies_log`; одноразовый — снимок удаляется |
 | POST | `/fin-report/discrepancies/discard` | «Сохранить» после разногласий: удаляет снимок batch_id из `discrepancies_log` (изменения остаются, откат становится недоступен) |
@@ -298,7 +302,7 @@ MytraTS/
 
 
 ## НЕ ДОДЕЛАНО (заглушки / TODO)
-1. **Архив (Story)** — страница `/story` в навбаре ведёт на `/main-afl` (заглушка). Бэкенд-эндпоинты готовы: `/api/story-afl` (GET с фильтрами), `/api/story-afl/reject` (POST). Нужно: страница архива + таблица с фильтрами. **План:** горячая зона `main_afl` ≤200K строк, остальное уходит в архив; в будущем архив вынесем в отдельный SQLite `archive.db` (`ATTACH DATABASE ... AS archive`) — отдельный файл не конкурирует за лок с `mytra.db` и не раздувает основную БД. `main_afl` на две таблицы не делим (решили — выигрыша по производительности нет).
+1. **Архив (Story)** — готово: страница `/archive` (топ-меню «Архив», видна всем ролям), таблица `story_afl` (поиск + фильтры + пагинация) + отклонение строк (админ/специалист). Бэкенд `/api/story-afl` (GET) и `/api/story-afl/reject` (POST) переведены на `story.db` (`story_session_factory`). **План:** горячая зона `main_afl` ≤200K строк, остальное уходит в архив; в будущем архив вынесем в отдельный SQLite `archive.db` (`ATTACH DATABASE ... AS archive`) — отдельный файл не конкурирует за лок с `mytra.db` и не раздувает основную БД. `main_afl` на две таблицы не делим (решили — выигрыша по производительности нет).
 2. **Нормализация ФИО + админ-панель** — готово: колонка `users.executor_name` (backfill + индекс, удалён `ix_users_full_name_norm`); админ-панель (вкладки «Пользователи»/«Карантин», users CRUD + сброс пароля + очередь + сопоставление/блок, таблица `quarantine_status`); отсев чужих в `raw_afl` удаляет только заблокированных; `norm_name()`-JOIN'ы заменены на равенство `users.executor_name = main_afl.executor` (dashboard, lookups, main_afl, reestr, fin_report, services/dashboard, services/premium).
 3. **Новые виды работ (переход на `work_catalog`, с 2026-10-01)** — готово: таблица `work_catalog` (31 новый base из «Лимиты.xlsx» РЛЭ+ПСК + base 13/14/26 «Выявление безучётного потребления …» + non-base 27–42 из carte как есть; миграция `_migrate_work_catalog.py`) и справочник `meter_model_phase` 1ф/3ф (миграция `_migrate_meter_phase.py`: собирает модели из всех трёх слотов ПУ — `meter_model`/`meter_model_1`/`meter_model_2`, каждый со своими `rated_current`/`rated_voltage`; `rated_current`/`rated_voltage` начинается с `3*`/`3х`/`3x`/`3Х`/`3X` ИЛИ `rated_voltage` — одинокое чистое число ≥380 либо `380/400`/`380(400)` → 3ф, иначе 1ф; модели без сигнала/с разнобоем не попадают). Для Допуск/ИП РЛЭ фаза определяется из модели по приоритету `meter_model_2` → `meter_model_1` → `meter_model`. Сделано: `processor27` = ветвление Шага 5 в `services/processor.py` по `_DONE_DAY` (`CUTOVER_DAY='2026-10-01'`) + `NEW_TASK_REPORT_RULES` (17 новых base по `work_catalog`; ИП/ДПУ — по `meter_model_phase`). НЕ сделано: новые коды + недопуски-как-виды-работ (14 отложенных: восстановление опроса, привязка КЛ/ВЛ, идентификация, недопуск по/без уведомления, жалобы на качество, чтение архива ПСК, недопуск чтение архива, нагрев, недопуск план лестница/квартира, недопуск штучный план/КСП ФЛ — потом бэкфил из NULL), вкладка «ПСК ЮЛ», правило `address` (ПСК «Штучный план»: если МКД — анализ соседних заданий, отличающихся только номером квартиры). Старая `carte` — read-only до конца сентября (исторические строки main_afl уже корректны).
    **Нужно от пользователя (по приоритету, чтобы закрыть переход):**
@@ -323,13 +327,10 @@ MytraTS/
 ## Архив и потребители (сторидб)
 Вторая база `story.db` («сторидб») — архив + справочник потребителей, не нагружает операционную `mytra.db`.
 - Таблицы (`data/story_models.py`): `story_afl` (архив = `main_afl` минус 18 «лишних» колонок: долги, расчётные показания и их даты, организации задания, `task_link`, `has_current_transformer`/`has_voltage_transformer`) и `consumers` (один ряд на `metering_point`, `manufacture_year` — INTEGER).
-- Перенос (`archive.py` → `services/archive.py`, cron 22-го числа в 22:00): из `mytra.main_afl` выбираются и удаляются две группы:
-  - **A** — `report` заполнен и `report < 'YYYY MM'` (предыдущий месяц от текущей даты);
-  - **B** — `report` пустой И `status LIKE 'З%'` И `reestr_number='Отклонён'` И `SUBSTR(done_day,1,7) ≤ 'YYYY-MM'`.
-  Кросс-БД перенос через `ATTACH DATABASE` — атомарно (`INSERT…SELECT` + `DELETE` в одной транзакции), быстрее и надёжнее материализации строк в Python.
+- Перенос (`services/archive.py` → `archive_period_to_story`, кнопка «Отправить в архив» в Финотчёте для старых периодов): строки `report = «ГГГГ ММ»` переносятся из `main_afl` в `story_afl` и удаляются из `main_afl`. Кросс-БД через `ATTACH DATABASE` — атомарно (`INSERT…SELECT` + `DELETE` в одной транзакции).
 - Затем `story_afl → consumers`: для каждого `metering_point` берётся самая свежая строка (`done_day → created_at → work_end_date`) и апсёртится (уникальный `metering_point`).
-- Cron: `0 22 22 * * cd /path/to/MytraTS && uv run python archive.py >> /var/log/mytra-archive.log 2>&1`.
-- `mytra.db.story_afl` удалена (модель `StoryAfl` убрана из `data/models.py`). TODO: перевести `routers/story.py`, `routers/report.py`, `services/reestr.py` со старой `story_afl` на `story.db.story_afl`.
+- Старый cron-архив (`archive.py`, группы A/B в `services/archive.py`) удалён — заменён ручным переносом по кнопке «Отправить в архив».
+- `mytra.db.story_afl` удалена (модель `StoryAfl` убрана из `data/models.py`). `routers/story.py` переведён на `story.db.story_afl` (`story_session_factory`). TODO: перевести `routers/report.py`, `services/reestr.py` со старой `story_afl` на `story.db.story_afl`.
 - TODO: разобраться, нужна ли пометка `report='Отклонён'` в `routers/report.py` (такие строки сейчас не попадают в архивацию).
 
 ## Конвенции

@@ -11,8 +11,8 @@ export interface SubTab {
 export const TOP_NAV: NavItem[] = [
 	{ href: '/dashboard', label: 'Дашборд' },
 	{ href: '/main-afl', label: 'Реестры' },
-	{ href: '/upload', label: 'Загрузка' },
 	{ href: '/reports', label: 'Отчёты' },
+	{ href: '/archive', label: 'Архив' },
 	{ href: '/admin', label: 'Админ' },
 	{ href: '/help', label: 'Помощь' }
 ];
@@ -24,6 +24,7 @@ export const SUB_NAV: Record<string, SubTab[]> = {
 		{ href: '/dashboard/priorities', label: 'Приоритеты' }
 	],
 	'/main-afl': [
+		{ href: '/main-afl/upload', label: 'Загрузка' },
 		{ href: '/main-afl', label: 'Обзор' },
 		{ href: '/main-afl/list', label: 'Список' }
 	],
