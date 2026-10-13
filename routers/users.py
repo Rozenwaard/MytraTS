@@ -90,7 +90,7 @@ async def api_admin_users(request: Request, db_session: AsyncSession, q: str = "
 
 @get("/admin/missing", guards=[require_auth])
 async def api_admin_missing(request: Request, db_session: AsyncSession) -> Response:
-    """Очередь на добавление: работники из tabel (инженер/контролёр — как в Премии), которых нет в users."""
+    """Очередь на добавление: работники из tabel (инженер/контролёр/оператор — как в Премии), которых нет в users."""
     user = await _admin_or_403(request, db_session)
     if not user:
         return _json({"error": "Нет прав"}, 403)
@@ -99,17 +99,40 @@ async def api_admin_missing(request: Request, db_session: AsyncSession) -> Respo
         "SELECT DISTINCT t.staff_id, t.name, t.position FROM tabel t "
         "WHERE t.staff_id IS NOT NULL AND t.staff_id != '' "
         "AND t.staff_id NOT IN (SELECT staff_id FROM users WHERE staff_id IS NOT NULL) "
+        "AND t.staff_id NOT IN (SELECT staff_id FROM missing_dismissed) "
         "ORDER BY t.position, t.staff_id"
     ))).fetchall()
 
-    # Синхронизировано с Премией (routers/premium.py _should_warn_missing): инженер/контролёр.
+    # Синхронизировано с Премией (routers/premium.py _should_warn_missing): инженер/контролёр/оператор.
     missing = [{
         "staff_id": r[0],
         "name": r[1] or "",
         "position": r[2] or "",
     } for r in rows
-        if any(k in (r[2] or "").lower() for k in ("инженер", "контрол"))]
+        if any(k in (r[2] or "").lower() for k in ("инженер", "контрол", "оператор"))]
     return _json({"missing": missing})
+
+
+@post("/admin/missing/dismiss", guards=[require_auth])
+async def api_admin_missing_dismiss(
+    request: Request, db_session: AsyncSession,
+    data: dict = Body(media_type=RequestEncodingType.JSON),
+) -> Response:
+    """Убрать работника из очереди на добавление (скрыть плашку)."""
+    admin = await _admin_or_403(request, db_session)
+    if not admin:
+        return _json({"error": "Нет прав"}, 403)
+
+    staff_id = _clean(data.get("staff_id"))
+    if not staff_id:
+        return _json({"error": "Некорректный табельный номер"}, 400)
+
+    await db_session.execute(
+        text("INSERT INTO missing_dismissed (staff_id) VALUES (:s) "
+             "ON CONFLICT(staff_id) DO NOTHING"),
+        {"s": staff_id})
+    await db_session.commit()
+    return _json({"ok": True})
 
 
 @get("/admin/quarantine", guards=[require_auth])
@@ -308,7 +331,7 @@ async def api_admin_user_reset_password(request: Request, db_session: AsyncSessi
 
 
 users_router = Router("/api", route_handlers=[
-    api_admin_users, api_admin_missing, api_admin_user_create,
+    api_admin_users, api_admin_missing, api_admin_missing_dismiss, api_admin_user_create,
     api_admin_user_executor_name, api_admin_user_delete, api_admin_user_reset_password,
     api_admin_quarantine, api_admin_quarantine_toggle,
 ])

@@ -89,15 +89,17 @@ def _categorize(position) -> str | None:
         return "controllers"
     if "водител" in p:
         return "drivers"
+    if "оператор" in p:
+        return "operators"
     if "инженер" in p and "ведущ" not in p:
         return "engineers"
     return None
 
 
 def _should_warn_missing(position) -> bool:
-    """Предупреждаем об отсутствии в users только по инженерам и контролёрам."""
+    """Предупреждаем об отсутствии в users по инженерам, контролёрам и операторам."""
     p = (position or "").lower()
-    return "инженер" in p or "контрол" in p
+    return "инженер" in p or "контрол" in p or "оператор" in p
 
 
 def _is_line_position(position) -> bool:
@@ -214,12 +216,14 @@ async def api_premium_tabel(
     if not by_staff:
         return Response(content=json.dumps({"error": "Файл не соответствует формату табеля (нет строк с часами)"}, ensure_ascii=False), media_type="application/json", status_code=400)
 
-    # Храним только нужные должности (инженеры без ведущих, контролёры, водители).
+    # Храним только нужные должности (инженеры без ведущих, контролёры, операторы, водители).
     await db_session.execute(text("DELETE FROM tabel WHERE period = :p"), {"p": period})
     for staff_id, info in by_staff.items():
         await db_session.execute(
             text("INSERT INTO tabel (staff_id, period, minutes, position, name) VALUES (:s, :p, :m, :pos, :name)"),
             {"s": staff_id, "p": period, "m": info["minutes"], "pos": info["position"], "name": info["name"]})
+    # Скрытые из очереди работники «возвращаются» при следующей загрузке табеля.
+    await db_session.execute(text("DELETE FROM missing_dismissed"))
     await db_session.commit()
 
     return Response(content=json.dumps({

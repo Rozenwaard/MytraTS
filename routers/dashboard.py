@@ -788,11 +788,14 @@ async def api_dashboard_in_work_stats(
     depts = [{"label": row[0], "count": row[1]} for row in dept_result]
 
     # «Не обогащено»: статичный счётчик (без учёта фильтров) — кнопка не пересчитывается,
-    # только зона видимости пользователя + «в работе».
+    # только зона видимости пользователя + «в работе». Строки исполнителя-«отозванного»
+    # (Филиппов Павел Леонидович) в кнопку не попадают.
     unenriched_clauses, unenriched_params = _in_work_filter_where(user)
+    unenriched_params["revoked_excl"] = REVOKED_EXECUTOR
     unenriched_where = " AND ".join(unenriched_clauses)
     unenriched = (await db_session.execute(
-        text(f"SELECT COUNT(*) FROM main_afl WHERE {unenriched_where} AND personal_account IS NULL"),
+        text(f"SELECT COUNT(*) FROM main_afl WHERE {unenriched_where} AND personal_account IS NULL "
+             f"AND (executor IS NULL OR executor != :revoked_excl)"),
         unenriched_params)).scalar()
 
     return Response(content=json.dumps({
@@ -809,14 +812,16 @@ async def api_dashboard_in_work_stats(
 
 @get("/dashboard/in-work/unenriched-report", guards=[require_auth])
 async def api_dashboard_in_work_unenriched_report(request: Request, db_session: AsyncSession) -> Response:
-    """Выгрузка номеров заданий «Не обогащено» (personal_account IS NULL) — только администратор."""
+    """Выгрузка номеров заданий «Не обогащено» (personal_account IS NULL; без исполнителя «Филиппов П.Л.», только администратор)."""
     user = await get_current_user(request, db_session)
     if user.effective_role != "администратор":
         return Response(content=json.dumps({"error": "Нет прав"}, ensure_ascii=False), media_type="application/json", status_code=403)
 
-    where = "(status IS NULL OR status NOT LIKE 'З%') AND personal_account IS NULL"
+    where = ("(status IS NULL OR status NOT LIKE 'З%') AND personal_account IS NULL "
+             "AND (executor IS NULL OR executor != :revoked_excl)")
     result = await db_session.execute(
-        text(f"SELECT task_number FROM main_afl WHERE {where} ORDER BY task_number"))
+        text(f"SELECT task_number FROM main_afl WHERE {where} ORDER BY task_number"),
+        {"revoked_excl": REVOKED_EXECUTOR})
     rows = [r[0] for r in result]
 
     output = generate_task_numbers_plain_xlsx(rows)

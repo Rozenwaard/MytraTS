@@ -258,10 +258,31 @@ TASK_REPORT_RULES = [
 
 # Модель ПУ для 1ф/3ф: новое ПУ (meter_model_2) приоритетнее старого — для «Допуск»/«ИП»
 # счётчик лежит в meter_model_2, а meter_model/meter_model_1 при этом пусты.
-PHASE_1 = ("COALESCE(NULLIF(meter_model_2, ''), NULLIF(meter_model_1, ''), NULLIF(meter_model, '')) "
-           "IN (SELECT meter_model FROM meter_model_phase WHERE phase = '1ф')")
-PHASE_3 = ("COALESCE(NULLIF(meter_model_2, ''), NULLIF(meter_model_1, ''), NULLIF(meter_model, '')) "
-           "IN (SELECT meter_model FROM meter_model_phase WHERE phase = '3ф')")
+# Фоллбэк по слотам: берём ПЕРВЫЙ слот, чья модель реально есть в справочнике (пустые и
+# незнакомые модели пропускаем), а не просто первую непустую — иначе «голое» имя в
+# meter_model_2 заслоняет разрешимую полную модель в meter_model.
+
+_REF_1F = "(SELECT meter_model FROM meter_model_phase WHERE phase = '1ф')"
+_REF_3F = "(SELECT meter_model FROM meter_model_phase WHERE phase = '3ф')"
+_REF_ANY = "(SELECT meter_model FROM meter_model_phase)"
+
+
+def _slot_unresolved(col: str) -> str:
+    """Слот не определяет фазу: пустой или его модели нет в справочнике вовсе."""
+    return f"({col} IS NULL OR {col} = '' OR {col} NOT IN {_REF_ANY})"
+
+
+def _phase_cond(ref: str) -> str:
+    m2, m1, m0 = "meter_model_2", "meter_model_1", "meter_model"
+    return (
+        f"({m2} IN {ref} "
+        f"OR ({_slot_unresolved(m2)} AND {m1} IN {ref}) "
+        f"OR ({_slot_unresolved(m2)} AND {_slot_unresolved(m1)} AND {m0} IN {ref}))"
+    )
+
+
+PHASE_1 = _phase_cond(_REF_1F)
+PHASE_3 = _phase_cond(_REF_3F)
 
 NEW_TASK_REPORT_RULES = [
     # ── Допуск ПУ (task_output='Допуск') ──

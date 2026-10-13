@@ -382,6 +382,12 @@ class QuarantineStatus(Base):
     executor_organization: Mapped[Optional[str]] = mapped_column(Text)
 
 
+class MissingDismissed(Base):
+    __tablename__ = 'missing_dismissed'
+
+    staff_id: Mapped[str] = mapped_column(Text, primary_key=True)
+
+
 class HelpPage(Base):
     __tablename__ = 'help_pages'
 

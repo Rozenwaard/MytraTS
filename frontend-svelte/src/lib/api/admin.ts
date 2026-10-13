@@ -48,6 +48,13 @@ export async function fetchMissing(): Promise<MissingPerson[]> {
 	return data.missing;
 }
 
+export async function dismissMissing(staff_id: string): Promise<void> {
+	await api('/api/admin/missing/dismiss', {
+		method: 'POST',
+		body: JSON.stringify({ staff_id })
+	});
+}
+
 export async function createUser(payload: UserPayload): Promise<void> {
 	await api('/api/admin/users', { method: 'POST', body: JSON.stringify(payload) });
 }

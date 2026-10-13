@@ -6,6 +6,7 @@
 		fetchUsers,
 		fetchMissing,
 		createUser,
+		dismissMissing,
 		fetchQuarantine,
 		toggleQuarantineBlock,
 		updateExecutorName,
@@ -205,6 +206,16 @@
 			toast(e instanceof Error ? e.message : 'Ошибка');
 		}
 	}
+
+	async function dismissFromQueue(m: MissingPerson) {
+		if (!confirm(`Убрать «${m.name || m.staff_id}» из очереди на добавление?`)) return;
+		try {
+			await dismissMissing(m.staff_id);
+			await load();
+		} catch (e) {
+			toast(e instanceof Error ? e.message : 'Ошибка');
+		}
+	}
 </script>
 
 <div class="flex h-full w-full flex-col gap-4 overflow-auto p-4">
@@ -225,16 +236,26 @@
 				<CardContent>
 					<div class="flex flex-wrap gap-2">
 						{#each missing as m (m.staff_id)}
-							<button
-								type="button"
-								onclick={() => openFromMissing(m)}
-								class="flex items-center gap-2 rounded-md border bg-card px-3 py-2 text-left text-sm transition-colors hover:bg-accent"
-							>
-								<span class="font-medium">{m.name || m.staff_id}</span>
-								<span class="text-muted-foreground">{m.position}</span>
-								<span class="text-xs tabular-nums text-muted-foreground">№ {m.staff_id}</span>
-								<Plus class="size-4" />
-							</button>
+							<div class="flex items-center overflow-hidden rounded-md border bg-card text-sm">
+								<button
+									type="button"
+									onclick={() => openFromMissing(m)}
+									class="flex items-center gap-2 px-3 py-2 text-left transition-colors hover:bg-accent"
+								>
+									<span class="font-medium">{m.name || m.staff_id}</span>
+									<span class="text-muted-foreground">{m.position}</span>
+									<span class="text-xs tabular-nums text-muted-foreground">№ {m.staff_id}</span>
+									<Plus class="size-4" />
+								</button>
+								<button
+									type="button"
+									onclick={() => dismissFromQueue(m)}
+									class="px-2 py-2 text-muted-foreground transition-colors hover:bg-destructive/10 hover:text-destructive"
+									aria-label="Убрать из очереди"
+								>
+									<X class="size-4" />
+								</button>
+							</div>
 						{/each}
 					</div>
 				</CardContent>
