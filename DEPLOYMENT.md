@@ -265,6 +265,34 @@ sudo -u mytra cp /opt/mytra/mytra.db /backup/mytra-$(date +%F).db
 sudo systemctl start mytra
 ```
 
+## VACUUM после архивации (авто, cron)
+
+После «Отправить в архив» бэкенд ставит флаг `.vacuum_needed` (в `main_afl` остались
+свободные страницы после `DELETE`). Cron в 23:59, если флаг есть, останавливает бэкенд,
+гоняет VACUUM и поднимает обратно. Фронт не трогаем — БД держит только бэкенд.
+
+`/opt/mytra/vacuum_if_needed.sh`:
+```bash
+#!/bin/bash
+set -e
+DIR=/opt/mytra
+FLAG="$DIR/.vacuum_needed"
+DB="$DIR/mytra.db"
+[ -f "$FLAG" ] || exit 0
+systemctl stop mytra
+trap 'systemctl start mytra' EXIT
+sudo -u mytra sqlite3 "$DB" "VACUUM"
+rm -f "$FLAG"
+```
+
+Cron (root), 23:59 серверного времени:
+```
+59 23 * * * /opt/mytra/vacuum_if_needed.sh >> /var/log/mytra-vacuum.log 2>&1
+```
+`chmod +x /opt/mytra/vacuum_if_needed.sh`. При нужде в UTC добавь `CRON_TZ=UTC` в crontab.
+Для локальной проверки на Windows есть `_vacuum.py` (`uv run python _vacuum.py`; gitignored,
+на сервер не нужен — там `sqlite3` CLI).
+
 ## Частые проблемы
 - **404 на `/dashboard`, `/main-afl`** — не запущен Node-сервер SvelteKit или не настроен прокси `/` → `127.0.0.1:3000`.
 - **`/api` 404 / Connection refused** — не запущен uvicorn, не включены модули `proxy proxy_http`,

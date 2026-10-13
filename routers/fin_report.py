@@ -17,7 +17,7 @@ from litestar.response import Response
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from data.config import async_session_factory, story_session_factory, STORY_DB_PATH
+from data.config import async_session_factory, story_session_factory, STORY_DB_PATH, VACUUM_FLAG_PATH
 from deps import get_current_user, require_auth
 from services.archive import archive_period_to_story, fill_consumers
 from services.dashboard import generate_recheck_xlsx, pick_pu_type
@@ -500,6 +500,11 @@ async def _run_archive(archive_id: str, period_fmt: str):
             import traceback
             traceback.print_exc()
         archive_progress[archive_id] = {"status": "complete", "moved": moved, "consumers": filled}
+        if moved > 0:
+            # После DELETE из main_afl остались свободные страницы — помечаем, что нужен VACUUM.
+            # Снимается cron-скриптом _vacuum.py (см. DEPLOYMENT.md «VACUUM после архивации»).
+            with open(VACUUM_FLAG_PATH, "w", encoding="utf-8") as f:
+                f.write(period_fmt)
     except Exception as e:
         import traceback
         traceback.print_exc()

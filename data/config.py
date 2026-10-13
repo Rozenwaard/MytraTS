@@ -18,6 +18,9 @@ story_session_factory = async_sessionmaker(story_engine, expire_on_commit=False)
 # Абсолютный путь к story.db — для ATTACH при кросс-БД переносе main_afl → story_afl.
 STORY_DB_PATH = str(Path(__file__).resolve().parent.parent / "story.db")
 
+# Флаг «нужен VACUUM» после архивации (ставит routers/fin_report.py, снимает _vacuum.py по cron).
+VACUUM_FLAG_PATH = str(Path(__file__).resolve().parent.parent / ".vacuum_needed")
+
 # Отдельная база для вложений тикетов (ticket_attachments) — blob-файлы не раздувают mytra.db.
 tickets_engine = create_async_engine("sqlite+aiosqlite:///tickets.db", echo=False, connect_args={"timeout": 30})
 tickets_session_factory = async_sessionmaker(tickets_engine, expire_on_commit=False)
