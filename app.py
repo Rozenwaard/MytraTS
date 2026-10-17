@@ -25,6 +25,7 @@ from routers.report import report_router
 from routers.rle import rle_router
 from routers.story import story_router
 from routers.tickets import tickets_router
+from routers.ulr import ulr_router
 from routers.upload import upload_router
 from routers.users import users_router
 
@@ -49,6 +50,7 @@ app = Litestar(
         lookups_router,
         fin_report_router,
         help_router,
+        ulr_router,
     ],
     plugins=[sqlalchemy_plugin],
     middleware=[session_config.middleware],

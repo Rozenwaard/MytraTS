@@ -14,7 +14,8 @@ export const TOP_NAV: NavItem[] = [
 	{ href: '/reports', label: 'Отчёты' },
 	{ href: '/archive', label: 'Архив' },
 	{ href: '/admin', label: 'Админ' },
-	{ href: '/help', label: 'Помощь' }
+	{ href: '/help', label: 'Помощь' },
+	{ href: '/ulr', label: 'УЛР' }
 ];
 
 export const SUB_NAV: Record<string, SubTab[]> = {
@@ -27,6 +28,9 @@ export const SUB_NAV: Record<string, SubTab[]> = {
 		{ href: '/main-afl/upload', label: 'Загрузка' },
 		{ href: '/main-afl', label: 'Обзор' },
 		{ href: '/main-afl/list', label: 'Список' }
+	],
+	'/ulr': [
+		{ href: '/ulr', label: 'Регистрация' }
 	],
 	'/reports': [
 		{ href: '/reports', label: 'Финотчёт' },

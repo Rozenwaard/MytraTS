@@ -27,6 +27,10 @@ tickets_session_factory = async_sessionmaker(tickets_engine, expire_on_commit=Fa
 
 TICKETS_DB_PATH = str(Path(__file__).resolve().parent.parent / "tickets.db")
 
+# Песочница для разработки УЛР (libra + копия main_afl + work_catalog).
+sand_engine = create_async_engine("sqlite+aiosqlite:///sand.db", echo=False, connect_args={"timeout": 30})
+sand_session_factory = async_sessionmaker(sand_engine, expire_on_commit=False)
+
 db_config = SQLAlchemyAsyncConfig(
     engine_instance=engine,
     session_maker=async_session_factory,
