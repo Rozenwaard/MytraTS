@@ -10,7 +10,7 @@ from sqlalchemy import text
 LIBRA_SELECT = (
     "object_code, contract_number, meter_serial_number, tu_number, tu_id, metering_point, "
     "meter_type, tu_name, object_name, subscriber_category, subscriber_name, "
-    "address, municipal_district, region"
+    "address, municipal_district, region, is_mkd, contract_division, depts"
 )
 
 INSERT_SQL = """
@@ -19,13 +19,15 @@ INSERT INTO main_afl (
     customer, visit_reason, subscriber_type, grid,
     metering_point, personal_account, meter_model, meter_serial_number,
     house_type, meter_installation_place, contract_status,
-    subscriber_name, address, municipal_district, region
+    subscriber_name, address, municipal_district, region,
+    service_object_type, third_party_organization, task_organization, assignee, executor_organization
 ) VALUES (
     :task_number, :task_source, :work_type_in_task, :created_at, :due_date,
     :customer, :visit_reason, :subscriber_type, :grid,
     :metering_point, :personal_account, :meter_model, :meter_serial_number,
     :house_type, :meter_installation_place, :contract_status,
-    :subscriber_name, :address, :municipal_district, :region
+    :subscriber_name, :address, :municipal_district, :region,
+    :service_object_type, :third_party_organization, :task_organization, :assignee, :executor_organization
 )
 """
 
@@ -130,7 +132,8 @@ async def find_points(session, row):
         return None, "только ТУ без объекта — недостаточно"
 
 
-def build_main_afl_row(p: dict, form: dict, now) -> dict:
+def build_main_afl_row(p: dict, form: dict, now, head_map: dict) -> dict:
+    dept = p.get("depts")
     return {
         "task_number": f"{now.strftime('%Y%m%d')}_{p['tu_id'] or ''}",
         "task_source": "mytra",
@@ -152,6 +155,11 @@ def build_main_afl_row(p: dict, form: dict, now) -> dict:
         "address": p["address"],
         "municipal_district": p["municipal_district"],
         "region": p["region"],
+        "service_object_type": p["is_mkd"],
+        "third_party_organization": p["contract_division"],
+        "task_organization": dept,
+        "assignee": head_map.get(dept) if dept else None,
+        "executor_organization": dept,
     }
 
 

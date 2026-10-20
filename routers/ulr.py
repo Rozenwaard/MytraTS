@@ -81,6 +81,11 @@ async def api_ulr_upload(request: Request, db_session: AsyncSession) -> Response
                 "work_type_in_task": work_type_in_task, "grid": grid, "due_date": due_date}
     now = datetime.now()
 
+    # Начальники отделений (dept -> ФИО) из mytra.db
+    head_rows = await db_session.execute(text(
+        "SELECT dept, full_name FROM users WHERE position LIKE '%Начальник%'"))
+    head_map = {r[0]: r[1] for r in head_rows}
+
     inserted = 0
     feedback = []
     async with sand_session_factory() as session:
@@ -92,7 +97,19 @@ async def api_ulr_upload(request: Request, db_session: AsyncSession) -> Response
                                  "tu_number": row["tu_number"], "reason": err})
                 continue
             for p in points:
-                rec = build_main_afl_row(p, form_ctx, now)
+                if not (p.get("municipal_district") or "").strip():
+                    feedback.append({"row": i, "object_code": row["object_code"],
+                                     "meter_serial_number": row["meter_serial_number"],
+                                     "tu_number": row["tu_number"],
+                                     "reason": "нет района у объекта"})
+                    continue
+                if not (p.get("depts") or "").strip():
+                    feedback.append({"row": i, "object_code": row["object_code"],
+                                     "meter_serial_number": row["meter_serial_number"],
+                                     "tu_number": row["tu_number"],
+                                     "reason": "нет отделения"})
+                    continue
+                rec = build_main_afl_row(p, form_ctx, now, head_map)
                 exists = await session.execute(
                     text("SELECT 1 FROM main_afl WHERE task_number = :tn"), {"tn": rec["task_number"]})
                 if exists.first() is not None:
@@ -112,4 +129,36 @@ async def api_ulr_upload(request: Request, db_session: AsyncSession) -> Response
     return Response(content=json.dumps(resp, ensure_ascii=False), media_type="application/json")
 
 
-ulr_router = Router("/api", route_handlers=[api_ulr_options, api_ulr_upload])
+@get("/ulr/execution", guards=[require_auth])
+async def api_ulr_execution(request: Request, db_session: AsyncSession) -> Response:
+    user = await get_current_user(request, db_session)
+    if not user:
+        raise NotAuthorizedException()
+
+    where = "1=1"
+    params: dict = {}
+    if user.effective_role in ("оператор", "работник"):
+        names = [r[0] for r in (await db_session.execute(text(
+            "SELECT executor_name FROM users WHERE locale = :locale AND executor_name IS NOT NULL"),
+            {"locale": user.locale}))]
+        if names:
+            ph = ", ".join(f":e{i}" for i in range(len(names)))
+            where += f" AND executor IN ({ph})"
+            for i, n in enumerate(names):
+                params[f"e{i}"] = n
+        else:
+            where += " AND 1=0"
+    elif user.effective_role == "менеджер":
+        where += " AND executor_organization = :dept"
+        params["dept"] = user.dept
+
+    async with sand_session_factory() as session:
+        result = await session.execute(text(
+            f"SELECT task_number, customer, work_type_in_task, personal_account, address, executor, "
+            f"task_report, done_day, reestr_number, errors, norm, co_executor, acts "
+            f"FROM main_afl WHERE {where} ORDER BY task_number"), params)
+        rows = [dict(r._mapping) for r in result]
+    return Response(content=json.dumps({"rows": rows}, ensure_ascii=False), media_type="application/json")
+
+
+ulr_router = Router("/api", route_handlers=[api_ulr_options, api_ulr_upload, api_ulr_execution])

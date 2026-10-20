@@ -30,7 +30,8 @@ export const SUB_NAV: Record<string, SubTab[]> = {
 		{ href: '/main-afl/list', label: 'Список' }
 	],
 	'/ulr': [
-		{ href: '/ulr', label: 'Регистрация' }
+		{ href: '/ulr', label: 'Регистрация' },
+		{ href: '/ulr/execution', label: 'Выполнение' }
 	],
 	'/reports': [
 		{ href: '/reports', label: 'Финотчёт' },

@@ -41,3 +41,25 @@ export async function uploadUlr(
 	}
 	return res.json();
 }
+
+export type UlrExecutionRow = {
+	task_number: string | null;
+	customer: string | null;
+	work_type_in_task: string | null;
+	personal_account: string | null;
+	address: string | null;
+	executor: string | null;
+	task_report: string | null;
+	done_day: string | null;
+	reestr_number: string | null;
+	errors: string | null;
+	norm: number | null;
+	co_executor: string | null;
+	acts: string | null;
+};
+
+export async function fetchUlrExecution(): Promise<{ rows: UlrExecutionRow[] }> {
+	const res = await fetch('/api/ulr/execution', { credentials: 'include' });
+	if (!res.ok) throw new Error('Не удалось получить список');
+	return res.json();
+}
