@@ -18,8 +18,8 @@ def _sortable_date(value) -> str:
 
 
 def _dup_key(c) -> tuple:
-    """Ключ победителя дедупликации: новее work_start_date → существующая → больший seq."""
-    return (_sortable_date(c.get("work_start_date")), 0 if c["is_incoming"] else 1, c.get("seq", 0))
+    """Ключ победителя дедупликации: больше norm+extra → новее work_start_date → больший id."""
+    return (c.get("norm_plus_extra", 0), _sortable_date(c.get("work_start_date")), c.get("id", 0))
 
 
 MAIN_AFL_COLUMNS = [
@@ -73,19 +73,13 @@ STATUS_ONLY_COLUMNS = [
 
 async def merge_to_main(db_session, upload_progress, upload_id, total_rows):
     # Существующие строки: task_number → (текущий reestr_number, task_detail).
-    # Плюс активные строки по task_report_id — кандидаты дедупликации (учитывает серию загрузок).
     result = await db_session.execute(text(
-        "SELECT task_number, reestr_number, task_detail, task_report_id, work_start_date, task_report FROM main_afl"
+        "SELECT task_number, reestr_number, task_detail FROM main_afl"
     ))
     existing = {}
-    active_by_report = {}
     for row in result:
-        tn, rn, td, tri, wsd, tr = row
+        tn, rn, td = row
         existing[tn] = (rn, td)
-        if tri and tr != "Дубли" and td != "Разногласия":
-            active_by_report.setdefault(tri, []).append(
-                {"task_number": tn, "reestr_number": rn, "work_start_date": wsd}
-            )
 
     columns_str = ', '.join(f'"{c}"' for c in MAIN_AFL_COLUMNS)
     result = await db_session.execute(text(
@@ -119,51 +113,7 @@ async def merge_to_main(db_session, upload_progress, upload_id, total_rows):
         if rn == 'Отклонён':
             reset_reestr_tasks.append(tn)
 
-    # ── Дедупликация по task_report_id ──
-    # Кандидаты: входящие (new + update) и существующие активные, которые не перезаписываются.
-    updated_task_numbers = {row['task_number'] for row in update_rows}
-
-    candidates_by_report = {}
-    for tri, group in active_by_report.items():
-        for a in group:
-            if a['task_number'] in updated_task_numbers:
-                continue  # перезапишется входящей — кандидатом станет она
-            candidates_by_report.setdefault(tri, []).append({
-                'task_report_id': tri,
-                'task_number': a['task_number'],
-                'reestr_number': a['reestr_number'],
-                'work_start_date': a['work_start_date'],
-                'is_incoming': False,
-            })
-
-    for seq, row in enumerate(new_rows + update_rows):
-        tri = row.get('task_report_id')
-        if not tri:
-            continue
-        candidates_by_report.setdefault(tri, []).append({
-            'task_report_id': tri,
-            'task_number': row['task_number'],
-            'reestr_number': None,
-            'work_start_date': row.get('work_start_date'),
-            'is_incoming': True,
-            'seq': seq,
-            'row': row,
-        })
-
-    loser_tasks = set()
-    for cands in candidates_by_report.values():
-        if len(cands) < 2:
-            continue
-        real_reestr = [c for c in cands if c['reestr_number'] and c['reestr_number'] != 'Отклонён']
-        winner = real_reestr[0] if real_reestr else max(cands, key=_dup_key)
-        for c in cands:
-            if c is winner:
-                continue
-            loser_tasks.add(c['task_number'])
-            if c['is_incoming']:
-                c['row']['task_report'] = 'Дубли'
-                c['row']['task_detail'] = 'Дубли'
-
+    # ── Вставка/обновление (до дедупликации — нужны нормативы для выбора победителя) ──
     inserted = 0
     updated = 0
 
@@ -212,6 +162,40 @@ async def merge_to_main(db_session, upload_progress, upload_id, total_rows):
     if affected:
         # Норматив ставим по факту загрузки строки; номер реестра лишь защищает её от перезаписи.
         await apply_norms(db_session, affected)
+
+    # ── Дедупликация по task_report_id ──
+    # Победитель — с реальным номером реестра; иначе — с бóльшим нормативом (norm+extra),
+    # при равенстве — более свежая по work_start_date. Проигравшие → «Дубли»/«Отклонён».
+    touched_report_ids = {row.get('task_report_id') for row in new_rows + update_rows if row.get('task_report_id')}
+    loser_tasks = set()
+    if touched_report_ids:
+        names, params = build_in_clause("tri", list(touched_report_ids))
+        result = await db_session.execute(text(
+            "SELECT task_report_id, task_number, reestr_number, work_start_date, "
+            "COALESCE(norm, 0) + COALESCE(extra, 0), id, task_report "
+            f"FROM main_afl WHERE task_report_id IN ({names}) AND COALESCE(task_detail, '') != 'Разногласия'"
+        ), params)
+        candidates_by_report = {}
+        for tri, tn, rn, wsd, npe, rid, tr in result:
+            if tr == 'Дубли':
+                continue
+            candidates_by_report.setdefault(tri, []).append({
+                'task_number': tn,
+                'reestr_number': rn,
+                'work_start_date': wsd,
+                'norm_plus_extra': npe or 0,
+                'id': rid,
+            })
+
+        for cands in candidates_by_report.values():
+            if len(cands) < 2:
+                continue
+            real_reestr = [c for c in cands if c['reestr_number'] and c['reestr_number'] != 'Отклонён']
+            winner = real_reestr[0] if real_reestr else max(cands, key=_dup_key)
+            for c in cands:
+                if c is winner:
+                    continue
+                loser_tasks.add(c['task_number'])
 
     if loser_tasks:
         # Проигравшие дедупликации → «Дубли»/«Отклонён» с нулевым нормативом (reestr_date не трогаем).
