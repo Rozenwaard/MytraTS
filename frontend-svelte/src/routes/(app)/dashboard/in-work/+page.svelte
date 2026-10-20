@@ -58,9 +58,10 @@
 	let debounceTimer: ReturnType<typeof setTimeout> | undefined;
 
 	$effect(() => {
+		const value = searchInput;
 		if (debounceTimer) clearTimeout(debounceTimer);
 		debounceTimer = setTimeout(() => {
-			searchValue = searchInput;
+			searchValue = value;
 		}, 300);
 	});
 
