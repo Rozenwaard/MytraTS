@@ -23,6 +23,7 @@ from routers.premium import premium_router
 from routers.reestr import reestr_router
 from routers.report import report_router
 from routers.rle import rle_router
+from routers.sla import sla_router
 from routers.story import story_router
 from routers.tickets import tickets_router
 from routers.ulr import ulr_router
@@ -44,6 +45,7 @@ app = Litestar(
         reestr_router,
         report_router,
         rle_router,
+        sla_router,
         story_router,
         tickets_router,
         dashboard_router,

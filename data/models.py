@@ -267,6 +267,7 @@ class MainAfl(Base):
     errors: Mapped[Optional[str]] = mapped_column(Text)
     norm: Mapped[Optional[int]] = mapped_column(Integer)  # база (основной вид работ)
     extra: Mapped[Optional[int]] = mapped_column(Integer)  # доп. («Код …», «+5 Алькор»)
+    house_id: Mapped[Optional[int]] = mapped_column(Integer)  # ссылка на houses.id
 
 
 class Tabel(Base):
@@ -311,6 +312,18 @@ class MeterModelPhase(Base):
 
     meter_model: Mapped[str] = mapped_column(Text, primary_key=True)
     phase: Mapped[str] = mapped_column(Text)                  # '1ф' | '3ф'
+
+
+class House(Base):
+    __tablename__ = 'houses'
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    region: Mapped[Optional[str]] = mapped_column(Text)       # 'ЛО' | 'СПб'
+    city: Mapped[Optional[str]] = mapped_column(Text)         # населённый пункт (нормализованный)
+    street: Mapped[Optional[str]] = mapped_column(Text)
+    house: Mapped[Optional[str]] = mapped_column(Text)
+    corpus: Mapped[Optional[str]] = mapped_column(Text)
+    key: Mapped[str] = mapped_column(Text, unique=True)       # регион|город|улица|дом|корпус
 
 
 class Utalo(Base):

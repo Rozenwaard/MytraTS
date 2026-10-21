@@ -36,7 +36,8 @@ export const SUB_NAV: Record<string, SubTab[]> = {
 	'/reports': [
 		{ href: '/reports', label: 'Финотчёт' },
 		{ href: '/reports/premium', label: 'Премия' },
-		{ href: '/reports/rle', label: 'РЛЭ' }
+		{ href: '/reports/rle', label: 'РЛЭ' },
+		{ href: '/reports/sla', label: 'СЛА' }
 	],
 	'/admin': [
 		{ href: '/admin', label: 'Пользователи' },
