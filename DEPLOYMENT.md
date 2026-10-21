@@ -258,11 +258,27 @@ sudo systemctl start mytra mytra-frontend
 - `uv sync --python-preference only-system` — бэкенд на системном Python 3.11.
 - `bun install && bun run build` — собирает `frontend-svelte/build/index.js` (Node-сервер SvelteKit).
 
-## Бэкап БД
+## Бэкап БД (все 4 базы)
 ```bash
 sudo systemctl stop mytra
-sudo -u mytra cp /opt/mytra/mytra.db /backup/mytra-$(date +%F).db
+D=$(date +%F)
+# mytra.db   — операционная (задания);
+# story.db   — архив story_afl + справочник потребителей;
+# tickets.db — вложения тикетов;
+# sand.db    — песочница УЛР (libra + копия main_afl + work_catalog).
+for db in mytra.db story.db tickets.db sand.db; do
+  [ -f "/opt/mytra/$db" ] && sudo -u mytra cp "/opt/mytra/$db" "/backup/${db%.db}-$D.db"
+done
 sudo systemctl start mytra
+```
+
+Проверить содержимое любого бэкапа (например `story.db`):
+```bash
+sqlite3 /opt/mytra/story.db \
+  "SELECT name FROM sqlite_master WHERE type='table';
+   SELECT 'story_afl', COUNT(*) FROM story_afl;
+   SELECT 'consumers', COUNT(*) FROM consumers;
+   SELECT 'report', MIN(report), MAX(report) FROM story_afl WHERE report IS NOT NULL;"
 ```
 
 ## VACUUM после архивации (авто, cron)
