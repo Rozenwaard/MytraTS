@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { fetchSla, slaDownloadUrl, type SlaResult } from '$lib/api/sla';
+	import { fetchSla, slaDownloadUrl, type SlaResult, type SlaRow } from '$lib/api/sla';
 	import { auth } from '$lib/store/auth.svelte';
 	import { toast } from '$lib/store/toast.svelte';
 	import { Button } from '$lib/components/ui/button';
@@ -68,7 +68,7 @@
 {:else}
 	<div class="flex h-full flex-col gap-3 overflow-auto p-3">
 		<div class="flex items-center gap-3">
-			<h2 class="text-lg font-semibold">СЛА — полнота (ПСК)</h2>
+			<h2 class="text-lg font-semibold">СЛА (ПСК)</h2>
 			<input
 				type="month"
 				value={month}
@@ -93,6 +93,23 @@
 				{/each}
 			</div>
 		{:else if data}
+			{#snippet cells(row: SlaRow)}
+				<TableCell class="whitespace-nowrap text-center">{row.code}</TableCell>
+				<TableCell class="whitespace-nowrap text-left">{row.task_report}</TableCell>
+				<TableCell class="whitespace-nowrap text-right tabular-nums">{num(row.quantity)}</TableCell>
+				<TableCell class="whitespace-nowrap text-right tabular-nums">{num(row.resultative)}</TableCell>
+				<TableCell class="whitespace-nowrap text-right tabular-nums">
+					{row.houses == null ? '—' : num(row.houses)}
+				</TableCell>
+				<TableCell class="whitespace-nowrap text-right tabular-nums">{pct(row.non_resultative_pct)}</TableCell>
+				<TableCell class="whitespace-nowrap text-right tabular-nums">{coef(row.smooth_coef)}</TableCell>
+				<TableCell class="whitespace-nowrap text-right tabular-nums">{row.sla_coef}</TableCell>
+				<TableCell class="whitespace-nowrap text-right tabular-nums">{money(row.rate)}</TableCell>
+				<TableCell class="whitespace-nowrap text-right tabular-nums">{money(row.rate_sla)}</TableCell>
+				<TableCell class="whitespace-nowrap text-right tabular-nums">{money(row.sum_sla)}</TableCell>
+				<TableCell class="whitespace-nowrap text-right tabular-nums">{money(row.reduction)}</TableCell>
+			{/snippet}
+
 			<div class="overflow-x-auto rounded-md border">
 				<Table>
 					<TableHeader>
@@ -112,28 +129,24 @@
 						</TableRow>
 					</TableHeader>
 					<TableBody>
-						{#each data.rows as row (row.code)}
-							<TableRow class="hover:bg-transparent">
-								<TableCell class="whitespace-nowrap text-center">{row.code}</TableCell>
-								<TableCell class="whitespace-nowrap text-left">{row.task_report}</TableCell>
-								<TableCell class="whitespace-nowrap text-right tabular-nums">{num(row.quantity)}</TableCell>
-								<TableCell class="whitespace-nowrap text-right tabular-nums">{num(row.resultative)}</TableCell>
-								<TableCell class="whitespace-nowrap text-right tabular-nums">{num(row.houses)}</TableCell>
-								<TableCell class="whitespace-nowrap text-right tabular-nums">{pct(row.non_resultative_pct)}</TableCell>
-								<TableCell class="whitespace-nowrap text-right tabular-nums">{coef(row.smooth_coef)}</TableCell>
-								<TableCell class="whitespace-nowrap text-right tabular-nums">{row.sla_coef}</TableCell>
-								<TableCell class="whitespace-nowrap text-right tabular-nums">{money(row.rate)}</TableCell>
-								<TableCell class="whitespace-nowrap text-right tabular-nums">{money(row.rate_sla)}</TableCell>
-								<TableCell class="whitespace-nowrap text-right tabular-nums">{money(row.sum_sla)}</TableCell>
-								<TableCell class="whitespace-nowrap text-right tabular-nums">{money(row.reduction)}</TableCell>
-							</TableRow>
+						<TableRow class="bg-muted/50 hover:bg-muted/50">
+							<TableCell colspan={12} class="py-2 text-sm font-medium">
+								Полнота (результативность), п. 1.1–1.4
+							</TableCell>
+						</TableRow>
+						{#each data.resultativity as row (row.task_report)}
+							<TableRow class="hover:bg-transparent">{@render cells(row)}</TableRow>
+						{/each}
+						<TableRow class="bg-muted/50 hover:bg-muted/50">
+							<TableCell colspan={12} class="py-2 text-sm font-medium">
+								Сроки (п. 2.1)
+							</TableCell>
+						</TableRow>
+						{#each data.deadlines as row (row.task_report)}
+							<TableRow class="hover:bg-transparent">{@render cells(row)}</TableRow>
 						{/each}
 						<TableRow class="bg-muted/40 hover:bg-muted/40">
-							<TableCell class="whitespace-nowrap font-medium" colspan={6}>Итого</TableCell>
-							<TableCell class="whitespace-nowrap text-right font-medium tabular-nums" colspan={2}>—</TableCell>
-							<TableCell class="whitespace-nowrap text-right font-medium tabular-nums" colspan={2}>
-								{money(data.totals.base)}
-							</TableCell>
+							<TableCell class="whitespace-nowrap font-medium" colspan={10}>Итого</TableCell>
 							<TableCell class="whitespace-nowrap text-right font-medium tabular-nums">
 								{money(data.totals.sum_sla)}
 							</TableCell>

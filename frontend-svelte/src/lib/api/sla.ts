@@ -5,7 +5,7 @@ export interface SlaRow {
 	task_report: string;
 	quantity: number;
 	resultative: number;
-	houses: number;
+	houses: number | null;
 	non_resultative_pct: number;
 	smooth_coef: number;
 	sla_coef: number;
@@ -17,7 +17,8 @@ export interface SlaRow {
 
 export interface SlaResult {
 	month: string;
-	rows: SlaRow[];
+	resultativity: SlaRow[];
+	deadlines: SlaRow[];
 	totals: {
 		base: number;
 		sum_sla: number;

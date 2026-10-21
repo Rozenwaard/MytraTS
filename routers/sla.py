@@ -11,7 +11,7 @@ from litestar.response import Response
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from deps import get_current_user, require_auth
-from services.sla import compute_resultativity, generate_sla_xlsx
+from services.sla import compute_sla, generate_sla_xlsx
 
 
 async def _month(request: Request, db_session: AsyncSession, month: str) -> tuple[str | None, str]:
@@ -31,7 +31,7 @@ async def api_reports_sla(
     if user is None:
         return Response(content=json.dumps({"error": "Нет прав"}, ensure_ascii=False),
                         media_type="application/json", status_code=403)
-    data = await compute_resultativity(db_session, month)
+    data = await compute_sla(db_session, month)
     return Response(content=json.dumps(data, ensure_ascii=False), media_type="application/json")
 
 
@@ -43,7 +43,7 @@ async def api_reports_sla_download(
     if user is None:
         return Response(content=json.dumps({"error": "Нет прав"}, ensure_ascii=False),
                         media_type="application/json", status_code=403)
-    data = await compute_resultativity(db_session, month)
+    data = await compute_sla(db_session, month)
     output = generate_sla_xlsx(data)
     filename = f"СЛА_{month}.xlsx"
     return Response(
