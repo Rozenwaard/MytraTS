@@ -54,10 +54,14 @@
 	function coef(v: number): string {
 		return v.toLocaleString('ru-RU', { minimumFractionDigits: 2, maximumFractionDigits: 4 });
 	}
-	function pct(v: number): string {
-		return (
-			v.toLocaleString('ru-RU', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) + '%'
-		);
+	const MONTHS_RU = [
+		'январь', 'февраль', 'март', 'апрель', 'май', 'июнь',
+		'июль', 'август', 'сентябрь', 'октябрь', 'ноябрь', 'декабрь'
+	];
+	function monthLabel(m: string): string {
+		const [, mo] = m.split('-');
+		const i = Number(mo) - 1;
+		return `${MONTHS_RU[i] ?? mo}`;
 	}
 </script>
 
@@ -85,7 +89,7 @@
 			</Button>
 			{#if data}
 				<span class="text-sm font-medium">
-					Общее снижение вознаграждения {money(data.totals.total)}
+					Общее снижение вознаграждения за {monthLabel(month)} {money(data.totals.total)}
 				</span>
 			{/if}
 		</div>

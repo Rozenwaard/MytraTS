@@ -1,8 +1,9 @@
-"""Расчёт SLA (Договор 226-2026) — парные работы (успех / недопуск).
+"""Расчёт SLA (Договор 226-2026) — работы ФЛ/ПСК.
 
-По каждой парной работе: заказ = выполнение + недопуск (по due_date).
-Полнота = ступенчатый к-т от доли недопусков (недопуск / заказ).
-Сроки = к-т 2.1 (по done_day, только для работ с регламентным сроком).
+Парные (успех ↔ недопуск): заказ = выполнение + недопуск (по due_date, task_report).
+Непарные: заказ от объёма поручения (work_type_in_task по мапе),
+нерезультативные = task_output «Невозможно»/«Не исполнено».
+Полнота = ступенчатый к-т от доли нерезультативных; Сроки = 2.1 (по done_day).
 Коэффициент = min(полнота, сроки); потери = заказ × базовая расценка × (1 − коэф);
 оверкэп = max(0, недопуск − лимит) × расценка недопуска.
 """
@@ -13,8 +14,12 @@ from datetime import date, timedelta
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 
-# Парные работы (ФЛ, ПСК): база ↔ недопуск + лимит недопусков (вкладка «Недопуски»).
-PAIRED_WORKS = [
+from sql import build_in_clause
+
+# Работы SLA (ФЛ, ПСК).
+# Парные (успех ↔ недопуск): счёт по task_report + лимит недопусков (вкладка «Недопуски»).
+# Непарные: счёт от объёма поручения (work_type_in_task по мапе «мапа.xlsx»).
+WORKS = [
     {
         "task_report": "Плановое КСП лестница",
         "nedopusk": "Недопуск план лестница",
@@ -43,6 +48,27 @@ PAIRED_WORKS = [
         "task_report": "Чтение архива ПСК",
         "nedopusk": "Недопуск чтение архива",
         "limit_pct": 30.0,
+        "thresholds": [(10.0, 1.0), (15.0, 0.95), (float("inf"), 0.9)],
+    },
+    # непарные (объём поручения)
+    {
+        "task_report": "Допуск ПУ ФЛ",
+        "work_types": ["Установка / замена ПУ", "Допуск ПУ"],
+        "thresholds": [(10.0, 1.0), (15.0, 0.95), (float("inf"), 0.9)],
+    },
+    {
+        "task_report": "ИП ФЛ",
+        "work_types": ["Инструментальная проверка"],
+        "thresholds": [(10.0, 1.0), (15.0, 0.95), (float("inf"), 0.9)],
+    },
+    {
+        "task_report": "Перепрограммирование ПУ",
+        "work_types": ["Перепрограммирование ПУ"],
+        "thresholds": [(10.0, 1.0), (15.0, 0.95), (float("inf"), 0.9)],
+    },
+    {
+        "task_report": "Проверка РО ФЛ",
+        "work_types": ["Контроль СП", "Контроль СП (старый)"],
         "thresholds": [(10.0, 1.0), (15.0, 0.95), (float("inf"), 0.9)],
     },
 ]
@@ -124,32 +150,58 @@ async def compute_sla(db_session: AsyncSession, month: str) -> dict:
     total_loss = 0.0
     total_overcap = 0.0
 
-    for cfg in PAIRED_WORKS:
+    for cfg in WORKS:
         base = cfg["task_report"]
-        nedopusk = cfg["nedopusk"]
-        n, r = (await db_session.execute(text("""
-            SELECT COUNT(*),
-                   COALESCE(SUM(CASE WHEN task_report = :base THEN 1 ELSE 0 END), 0)
-            FROM main_afl
-            WHERE customer = 'ПСК'
-              AND due_date LIKE :like
-              AND task_report IN (:base, :nedopusk)
-        """), {
-            "base": base,
-            "nedopusk": nedopusk,
-            "like": like,
-        })).one()
-        n = n or 0
-        r = r or 0
-        ned = n - r  # недопуск
+        if "nedopusk" in cfg:
+            # парная: счёт по task_report (база + недопуск)
+            nedopusk = cfg["nedopusk"]
+            n, r = (await db_session.execute(text("""
+                SELECT COUNT(*),
+                       COALESCE(SUM(CASE WHEN task_report = :base THEN 1 ELSE 0 END), 0)
+                FROM main_afl
+                WHERE customer = 'ПСК'
+                  AND due_date LIKE :like
+                  AND task_report IN (:base, :nedopusk)
+            """), {
+                "base": base,
+                "nedopusk": nedopusk,
+                "like": like,
+            })).one()
+            n = n or 0
+            r = r or 0
+            ned = n - r  # недопуск
 
-        prices = {row[0]: row[1] for row in (await db_session.execute(text(
-            "SELECT short, price FROM work_catalog WHERE short IN (:b, :n)"
-        ), {"b": base, "n": nedopusk})).fetchall()}
-        base_price = prices.get(base) or 0.0
-        ned_price = prices.get(nedopusk) or 0.0
+            prices = {row[0]: row[1] for row in (await db_session.execute(text(
+                "SELECT short, price FROM work_catalog WHERE short IN (:b, :n)"
+            ), {"b": base, "n": nedopusk})).fetchall()}
+            base_price = prices.get(base) or 0.0
+            ned_price = prices.get(nedopusk) or 0.0
 
-        limit = int(cfg["limit_pct"] / 100.0 * r)  # лимит = доля × выполнение, вниз до целого
+            limit = int(cfg["limit_pct"] / 100.0 * r)  # лимит = доля × выполнение, вниз до целого
+        else:
+            # непарная: объём поручения по work_type_in_task; нерезультативные = Невозможно/Не исполнено
+            names, params = build_in_clause("wt", cfg["work_types"])
+            params.update({"base": base, "like": like})
+            r, ned = (await db_session.execute(text(f"""
+                SELECT COALESCE(SUM(CASE WHEN task_report = :base THEN 1 ELSE 0 END), 0),
+                       COALESCE(SUM(CASE WHEN task_report IS NULL
+                                        AND task_output IN ('Невозможно', 'Не исполнено')
+                                        THEN 1 ELSE 0 END), 0)
+                FROM main_afl
+                WHERE customer = 'ПСК'
+                  AND task_type = 'Внеплановый'
+                  AND due_date LIKE :like
+                  AND work_type_in_task IN ({names})
+            """), params)).one()
+            r = r or 0
+            ned = ned or 0
+            n = r + ned
+            base_price = (await db_session.execute(text(
+                "SELECT price FROM work_catalog WHERE short = :s AND kind = 'base' LIMIT 1"
+            ), {"s": base})).scalar() or 0.0
+            ned_price = 0.0
+            limit = 0
+
         non_resultative_pct = (ned / n * 100) if n else 0.0
         fullness = step_coef(non_resultative_pct, cfg["thresholds"])
         sroki = sroki_coefs.get(base, 1.0)
