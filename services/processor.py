@@ -192,11 +192,24 @@ COMMENT_RULES = [
 ]
 
 # Коды 11–99 (все, кроме 00) для «Проверка, осмотр ПУ».
+# Коды 11–99 (все, кроме 00) для «Проверка, осмотр ПУ».
+# «Вернуть выполнение»: результативная «Проверка» независимо от показаний/нарушения.
+_ALWAYS_CHECK_CODES = {'11', '33', '88', '99'}
+# «Вернуть выполнение» только для заказчика ПСК:
+_PSK_ONLY_CHECK_CODES = {'22', '44'}
+
 for _code, _desc in VISIT_REASON_CODES[1:]:
-    COMMENT_RULES.append(
-        (f"task_output = 'Проверка', task_detail = '{_desc}'",
-         f"work_type_in_task = 'Проверка, осмотр ПУ' AND task_output != 'Невозможно' AND comment REGEXP '(^|[^0-9]){_code}([^0-9]|$)'", None)
-    )
+    where = (f"work_type_in_task = 'Проверка, осмотр ПУ' AND task_output != 'Невозможно' "
+             f"AND comment REGEXP '(^|[^0-9]){_code}([^0-9]|$)'")
+    if _code in _ALWAYS_CHECK_CODES:
+        set_clause = f"task_output = 'Проверка', task_detail = '{_desc}'"
+    elif _code in _PSK_ONLY_CHECK_CODES:
+        set_clause = (f"task_output = CASE WHEN (customer = 'ПСК' OR t1 <> '-' OR violations = 'Да') "
+                      f"THEN 'Проверка' ELSE 'Не исполнено' END, task_detail = '{_desc}'")
+    else:
+        set_clause = (f"task_output = CASE WHEN (t1 <> '-' OR violations = 'Да') "
+                      f"THEN 'Проверка' ELSE 'Не исполнено' END, task_detail = '{_desc}'")
+    COMMENT_RULES.append((set_clause, where, None))
 
 COMMENT_RULES += [
     ("task_output = 'Проверка', task_detail = 'Несоответствие разрядности'",
