@@ -200,6 +200,10 @@ async def _apply_norms_scoped(db_session: AsyncSession, task_numbers: list[str] 
         f"COALESCE(task_report, '') <> 'Дубли' AND COALESCE(task_detail, '') NOT IN ('Дубли', 'Ручная проверка') AND (norm IS NOT NULL OR extra IS NOT NULL) AND {new}",
     )
 
+    # 6. Без вида работ и без замещающего/дополнительного тарифа → norm=0, extra=0
+    # (иначе остаётся NULL — как у «невозможно без причины», task_detail='0').
+    await run("norm = 0, extra = 0", "norm IS NULL AND extra IS NULL")
+
 
 async def apply_manual_norm(db_session: AsyncSession, task_numbers: list[str]) -> None:
     """Норматив после ручной смены вида работ: norm = базовый тариф, extra = «+5 Алькор».
