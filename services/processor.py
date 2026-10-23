@@ -183,9 +183,9 @@ TASK_OUTPUT_RULES = [
 # ─── Проверки по comment (REGEXP) ───
 
 COMMENT_RULES = [
-    ("task_output = 'Проверка', task_detail = 'Объект не эксплуатируется'",
+    ("task_detail = 'Объект не эксплуатируется'",
      "work_type_in_task = 'Проверка, осмотр ПУ' AND task_output = 'Невозможно' AND unsuccessful_inspection_reason = 'Расселенная квартира'", None),
-    ("task_output = 'Проверка', task_detail = 'Объект отсутствует'",
+    ("task_detail = 'Объект отсутствует'",
      "work_type_in_task = 'Проверка, осмотр ПУ' AND task_output = 'Невозможно' AND unsuccessful_inspection_reason = 'Здание снесено'", None),
     ("task_output = 'Проверка', task_detail = 'Несоответствие тарифных зон'",
      f"{_in('work_type_in_task', CHECK_WORK_TYPES)} AND comment REGEXP '(^|[^0-9])00([^0-9]|$)'", None),
@@ -195,7 +195,7 @@ COMMENT_RULES = [
 for _code, _desc in VISIT_REASON_CODES[1:]:
     COMMENT_RULES.append(
         (f"task_output = 'Проверка', task_detail = '{_desc}'",
-         f"work_type_in_task = 'Проверка, осмотр ПУ' AND comment REGEXP '(^|[^0-9]){_code}([^0-9]|$)'", None)
+         f"work_type_in_task = 'Проверка, осмотр ПУ' AND task_output != 'Невозможно' AND comment REGEXP '(^|[^0-9]){_code}([^0-9]|$)'", None)
     )
 
 COMMENT_RULES += [
