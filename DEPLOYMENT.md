@@ -46,10 +46,10 @@ echo "SECRET_KEY=$(openssl rand -hex 32)" > .env
 ```
 База: положите полученный от разработчика файл `mytra.db` в `/opt/mytra/mytra.db`.
 Миграции схемы запускаются вручную (автозапуска при старте нет). Если база старой версии:
-- без колонки `errors` — `uv run python _migrate_errors.py`;
-- без таблицы `app_settings` (виджет «Приоритеты») — `uv run python _migrate_app_settings.py`.
+- без колонки `errors` — `uv run python _scratch/_migrate_errors.py`;
+- без таблицы `app_settings` (виджет «Приоритеты») — `uv run python _scratch/_migrate_app_settings.py`.
 - без таблицы `help_files` (исходник .docx для «Скачать .docx») — `uv run python migrate_help_files.py`.
-- без таблицы `tickets` (mytra.db) и `ticket_attachments` (tickets.db, вложения тикетов) — `uv run python _migrate_tickets.py`.
+- без таблицы `tickets` (mytra.db) и `ticket_attachments` (tickets.db, вложения тикетов) — `uv run python _scratch/_migrate_tickets.py`.
 
 Первый вход: логин = табельный номер, пароль = табельный номер (система попросит сменить).
 
@@ -306,7 +306,7 @@ Cron (root), 23:59 серверного времени:
 59 23 * * * /opt/mytra/vacuum_if_needed.sh >> /var/log/mytra-vacuum.log 2>&1
 ```
 `chmod +x /opt/mytra/vacuum_if_needed.sh`. При нужде в UTC добавь `CRON_TZ=UTC` в crontab.
-Для локальной проверки на Windows есть `_vacuum.py` (`uv run python _vacuum.py`; gitignored,
+Для локальной проверки на Windows есть `_vacuum.py` (`uv run python _scratch/_vacuum.py`; gitignored,
 на сервер не нужен — там `sqlite3` CLI).
 
 ## Частые проблемы

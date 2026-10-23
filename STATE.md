@@ -104,20 +104,8 @@ MytraTS/
 ├── docs/
 │   ├── БИЗНЕС-ЛОГИКА.md    # поток данных и бизнес-правила (классификация, ошибки, реестры, роли, дашборд)
 │   └── КЛАССИФИКАЦИЯ-ОБРАБОТКИ.md  # пошаговая логика processor.py (правила, словари, известные пробелы)
-├── _migrate_errors.py     # миграция: ALTER main_afl ADD errors + бэкфилл
-├── _migrate_index.py      # миграция: индекс main_afl.task_number (ускоряет UPDATE при переносе/проверке)
-├── _migrate_tabel.py      # миграция: создание таблицы tabel (Base.metadata.create_all)
-├── _migrate_premium.py    # миграция: carte (заполнение справочника), utalo, main_afl.norm
-├── _migrate_norm.py       # миграция: carte.kind/planned/detail + «Выполнение задания в Алькоре»
-├── _migrate_extra.py      # миграция: main_afl.norm/extra INTEGER, utalo.norm_sum INTEGER
+├── _scratch/               # разовые/служебные скрипты _*.py (миграции, бэкфилы, диагностика) — запуск из корня: PYTHONPATH=. uv run python _scratch/имя.py
 ├── migrate_help_files.py   # миграция: таблица help_files (исходник .docx для «Скачать .docx»)
-├── _backfill_norms.py     # бэкфилл: main_afl.norm/extra по текущим правилам (apply_norms)
-├── _backfill_errors.py    # бэкфилл: main_afl.errors по текущим правилам (recompute_errors)
-├── _backfill_processor27.py # бэкфилл: task_report октябрь+ (done_day >= CUTOVER_DAY) по NEW_TASK_REPORT_RULES (work_catalog) + флаг неопределяемой модели ПУ
-├── _backfill_executor_nbsp.py # бэкфилл: нормализация executor/executor_organization (strip + убрать NBSP) в main_afl/quarantine_status + повторный backfill users.executor_name
-├── _backfill_task_detail_null_meter.py # бэкфилл: переклассификация «Проверка, осмотр ПУ» с meter_status IS NULL и снятыми показаниями (правило №20) → «Проверка 6» + вид работ/нормы/ошибки
-├── _migrate_executor_name.py # миграция: users.executor_name (ALTER + backfill по norm_name, индекс, удаление ix_users_full_name_norm)
-├── _migrate_quarantine.py  # миграция: таблица quarantine_status (статусы карантина)
 └── DEPLOYMENT.md          # развёртывание в локалке (Apache2 + uv + systemd), особенности прод-окружения
 ```
 
@@ -318,12 +306,12 @@ MytraTS/
    - **Инструментальные проверки (виджет)** и **отчёт РЛЭ (1С)** — пока на старом `carte`: виджет «выполнено» фильтрует по `carte.kind='base'` (`routers/dashboard.py`), отчёт РЛЭ — минуты из `carte.absolute` + `WORK_MAP` по `carte.title` (`services/rle.py`). Перевести на `work_catalog`, когда понадобится.
 
    **Бэкфил рабочей базы (сессия доработок, порядок):**
-   1) `uv run python _migrate_work_catalog_norms.py` — work_catalog (нормативы, переименования, ЮЛ + строки 51–54) + rename `main_afl.task_report`;
-   2) `uv run python _backfill_work_catalog_marks.py` — норматив 60 «Чтение архива», метки `detail`, «Недопуск по уведомлению» на удаление, «Выявление безучетного потребления» → `replacement`;
-   3) `uv run python _backfill_bp_izhs_rename.py` — «Выявление безучетного потребления БП» → «…БП ИЖС» (carte.title + work_catalog.short + main_afl.task_report);
-   4) `uv run python _backfill_processor27.py` — пересчёт `task_report` октябрь+ по `NEW_TASK_REPORT_RULES` (включая «недопуски»);
-   5) `uv run python _backfill_help_tariffs.py` — пересборка страницы «Помощь – Тарифы» из `work_catalog` (без заказчика → РЛЭ → ПСК);
-   6) `uv run python _backfill_norms.py` — пересчёт `main_afl.norm`/`extra` по `apply_norms` (ветвление carte / work_catalog).
+   1) `uv run python _scratch/_migrate_work_catalog_norms.py` — work_catalog (нормативы, переименования, ЮЛ + строки 51–54) + rename `main_afl.task_report`;
+   2) `uv run python _scratch/_backfill_work_catalog_marks.py` — норматив 60 «Чтение архива», метки `detail`, «Недопуск по уведомлению» на удаление, «Выявление безучетного потребления» → `replacement`;
+   3) `uv run python _scratch/_backfill_bp_izhs_rename.py` — «Выявление безучетного потребления БП» → «…БП ИЖС» (carte.title + work_catalog.short + main_afl.task_report);
+   4) `uv run python _scratch/_backfill_processor27.py` — пересчёт `task_report` октябрь+ по `NEW_TASK_REPORT_RULES` (включая «недопуски»);
+   5) `uv run python _scratch/_backfill_help_tariffs.py` — пересборка страницы «Помощь – Тарифы» из `work_catalog` (без заказчика → РЛЭ → ПСК);
+   6) `uv run python _scratch/_backfill_norms.py` — пересчёт `main_afl.norm`/`extra` по `apply_norms` (ветвление carte / work_catalog).
 4. **Бэкфилы «Недопуск ПУ» → «Допуск ПУ» (ПРОГНАТЬ НА РАБОЧЕЙ БАЗЕ)** — на тестовой применены и проверены: `_backfill_nedopusk.py` (переклассификация 17 строк `task_output='Недопуск'`/`task_detail='Недопуск ПУ'` с пустым `task_report` → `task_output='Допуск'`, вид работ «Допуск ПУ в МКД/ИЖС», сброс `reestr_number='Отклонён'`, пересчёт norm/errors) и `_cleanup_nedopusk_task_output.py` (12 легаси-строк `task_output='Недопуск'` → `'Допуск'`). Причина — правка правила №5 в `services/processor.py` (было `task_output='Недопуск'`, стало `'Допуск'`).
 5. **Норматив «Перепрограммирование ПУ» = 50 (ПРОГНАТЬ НА РАБОЧЕЙ БАЗЕ)** — вид работ остаётся «Бытовые заявки», но норматив 50 (а не 30). Правка — правило 1a в `services/premium.py` (`apply_norms`): `work_type_in_task='Перепрограммирование ПУ' AND task_report='Бытовые заявки'` → `norm=50`. Бэкфил `_backfill_reprog.py` пересчитывает `norm` для строк `work_type_in_task='Перепрограммирование ПУ'`.
 
