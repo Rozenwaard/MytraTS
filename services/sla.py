@@ -1,9 +1,10 @@
-"""Расчёт SLA (Приложение № 8 к Договору 226-2026) — полнота + сроки.
+"""Расчёт SLA (Договор 226-2026) — парные работы (успех / недопуск).
 
-Полнота (п. 1.1–1.4) считается по домам (справочник houses).
-Сроки (п. 2.1) — по строкам: дедлайн = created_at + 10 кал. дней (перенос на рабочий);
-день дедлайна — первый день просрочки (просрочка = done_day − created_at − 9);
-строки с просрочкой > 7 дней исключаются.
+По каждой парной работе: заказ = выполнение + недопуск (по due_date).
+Полнота = ступенчатый к-т от доли недопусков (недопуск / заказ).
+Сроки = к-т 2.1 (по done_day, только для работ с регламентным сроком).
+Коэффициент = min(полнота, сроки); потери = заказ × базовая расценка × (1 − коэф);
+оверкэп = max(0, недопуск − лимит) × расценка недопуска.
 """
 
 import io
@@ -12,18 +13,37 @@ from datetime import date, timedelta
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 
-RESULTATIVITY = [
+# Парные работы (ФЛ, ПСК): база ↔ недопуск + лимит недопусков (вкладка «Недопуски»).
+PAIRED_WORKS = [
     {
-        "code": "1.1",
         "task_report": "Плановое КСП лестница",
         "nedopusk": "Недопуск план лестница",
+        "limit_pct": 10.0,
         "thresholds": [(10.0, 1.0), (15.0, 0.97), (float("inf"), 0.95)],
     },
     {
-        "code": "1.2",
         "task_report": "Плановое КСП квартира",
         "nedopusk": "Недопуск план квартира",
+        "limit_pct": 46.0,
         "thresholds": [(25.0, 1.0), (35.0, 0.95), (float("inf"), 0.9)],
+    },
+    {
+        "task_report": "Штучный план",
+        "nedopusk": "Недопуск штучный план",
+        "limit_pct": 70.0,
+        "thresholds": [(40.0, 1.0), (70.0, 0.95), (float("inf"), 0.9)],
+    },
+    {
+        "task_report": "Штучное КСП ФЛ",
+        "nedopusk": "Недопуск штучное КСП ФЛ",
+        "limit_pct": 10.0,
+        "thresholds": [(10.0, 1.0), (15.0, 0.95), (float("inf"), 0.9)],
+    },
+    {
+        "task_report": "Чтение архива ПСК",
+        "nedopusk": "Недопуск чтение архива",
+        "limit_pct": 30.0,
+        "thresholds": [(10.0, 1.0), (15.0, 0.95), (float("inf"), 0.9)],
     },
 ]
 
@@ -66,145 +86,107 @@ async def _load_calendar(db_session: AsyncSession) -> dict:
         text("SELECT d, type FROM calendar"))).fetchall()}
 
 
-async def _compute_resultativity(db_session: AsyncSession, month: str) -> tuple[list, float, float]:
-    like = period_like(month)
-    rows = []
-    total_base = 0.0
-    total_sla = 0.0
-
-    for cfg in RESULTATIVITY:
-        n, r, houses = (await db_session.execute(text("""
-            SELECT COUNT(*),
-                   COALESCE(SUM(CASE WHEN m.task_report = :base THEN 1 ELSE 0 END), 0),
-                   COUNT(DISTINCT m.house_id)
-            FROM main_afl m
-            WHERE m.customer = 'ПСК'
-              AND m.task_type = 'Плановый'
-              AND m.due_date LIKE :like
-              AND m.house_id IS NOT NULL
-              AND m.task_report IN (:base, :nedopusk)
-        """), {
-            "base": cfg["task_report"],
-            "nedopusk": cfg["nedopusk"],
-            "like": like,
-        })).one()
-        n = n or 0
-        r = r or 0
-
-        price = (await db_session.execute(text(
-            "SELECT price FROM work_catalog WHERE short = :s AND kind = 'base' LIMIT 1"
-        ), {"s": cfg["task_report"]})).scalar() or 0.0
-
-        smooth = (r / n) if n else 1.0
-        non_resultative_pct = (1 - smooth) * 100 if n else 0.0
-        sla = step_coef(non_resultative_pct, cfg["thresholds"])
-        base = n * price
-        sum_sla = base * sla
-
-        total_base += base
-        total_sla += sum_sla
-
-        rate_sla = price * sla
-        rows.append({
-            "code": cfg["code"],
-            "task_report": cfg["task_report"],
-            "quantity": n,
-            "resultative": r,
-            "houses": houses or 0,
-            "non_resultative_pct": round(non_resultative_pct, 2),
-            "smooth_coef": round(smooth, 4),
-            "sla_coef": sla,
-            "rate": price,
-            "rate_sla": round(rate_sla, 2),
-            "sum_sla": round(sum_sla, 2),
-            "reduction": round(base - sum_sla, 2),
-        })
-
-    return rows, total_base, total_sla
-
-
-async def _compute_deadlines(db_session: AsyncSession, month: str) -> tuple[list, float, float]:
+async def _compute_sroki_coefs(db_session: AsyncSession, month: str) -> dict:
+    """Коэффициенты 2.1 по работам с регламентным сроком: {работа: к-т}."""
     cal = await _load_calendar(db_session)
     dl = done_like(month)
-    rows = []
-    total_base = 0.0
-    total_sla = 0.0
-
+    result = {}
     for work in SROKI:
         n = 0  # всего (просрочка <= 7 дней)
         r = 0  # в срок (просрочка <= 0)
-        result = await db_session.execute(text(
+        rows = (await db_session.execute(text(
             "SELECT created_at, done_day FROM main_afl "
             "WHERE customer = 'ПСК' AND task_report = :w AND done_day LIKE :d"
-        ), {"w": work, "d": dl})
-        for created, done_day in result.fetchall():
+        ), {"w": work, "d": dl})).fetchall()
+        for created, done_day in rows:
             if not created or not done_day:
                 continue
             c = date.fromisoformat(created)
             deadline = _shift_to_workday(c + timedelta(days=DEADLINE_DAYS), cal)
             dd = date.fromisoformat(done_day)
-            # день дедлайна — уже первый день просрочки:
-            # просрочка = done_day − created_at − 9 (0 — в срок, 1 — день дедлайна).
+            # день дедлайна — уже первый день просрочки (просрочка = done_day − created_at − 9).
             overdue = 0 if dd < deadline else (dd - deadline).days + 1
             if overdue > 7:
                 continue
             n += 1
             if overdue == 0:
                 r += 1
-
-        price = (await db_session.execute(text(
-            "SELECT price FROM work_catalog WHERE short = :s AND kind = 'base' LIMIT 1"
-        ), {"s": work})).scalar() or 0.0
-
         smooth = (r / n) if n else 1.0
         non_resultative_pct = (1 - smooth) * 100 if n else 0.0
-        sla = step_coef(non_resultative_pct, SROKI_THRESHOLDS)
-        base = n * price
-        sum_sla = base * sla
-
-        total_base += base
-        total_sla += sum_sla
-
-        rate_sla = price * sla
-        rows.append({
-            "code": "2.1",
-            "task_report": work,
-            "quantity": n,
-            "resultative": r,
-            "houses": None,
-            "non_resultative_pct": round(non_resultative_pct, 2),
-            "smooth_coef": round(smooth, 4),
-            "sla_coef": sla,
-            "rate": price,
-            "rate_sla": round(rate_sla, 2),
-            "sum_sla": round(sum_sla, 2),
-            "reduction": round(base - sum_sla, 2),
-        })
-
-    return rows, total_base, total_sla
+        result[work] = step_coef(non_resultative_pct, SROKI_THRESHOLDS)
+    return result
 
 
 async def compute_sla(db_session: AsyncSession, month: str) -> dict:
-    res_rows, res_base, res_sla = await _compute_resultativity(db_session, month)
-    dl_rows, dl_base, dl_sla = await _compute_deadlines(db_session, month)
+    sroki_coefs = await _compute_sroki_coefs(db_session, month)
+    like = period_like(month)
+    rows = []
+    total_loss = 0.0
+    total_overcap = 0.0
 
-    total_base = res_base + dl_base
-    total_sla = res_sla + dl_sla
+    for cfg in PAIRED_WORKS:
+        base = cfg["task_report"]
+        nedopusk = cfg["nedopusk"]
+        n, r = (await db_session.execute(text("""
+            SELECT COUNT(*),
+                   COALESCE(SUM(CASE WHEN task_report = :base THEN 1 ELSE 0 END), 0)
+            FROM main_afl
+            WHERE customer = 'ПСК'
+              AND due_date LIKE :like
+              AND task_report IN (:base, :nedopusk)
+        """), {
+            "base": base,
+            "nedopusk": nedopusk,
+            "like": like,
+        })).one()
+        n = n or 0
+        r = r or 0
+        ned = n - r  # недопуск
+
+        prices = {row[0]: row[1] for row in (await db_session.execute(text(
+            "SELECT short, price FROM work_catalog WHERE short IN (:b, :n)"
+        ), {"b": base, "n": nedopusk})).fetchall()}
+        base_price = prices.get(base) or 0.0
+        ned_price = prices.get(nedopusk) or 0.0
+
+        limit = int(cfg["limit_pct"] / 100.0 * r)  # лимит = доля × выполнение, вниз до целого
+        non_resultative_pct = (ned / n * 100) if n else 0.0
+        fullness = step_coef(non_resultative_pct, cfg["thresholds"])
+        sroki = sroki_coefs.get(base, 1.0)
+        coef = min(fullness, sroki)
+
+        loss = n * base_price * (1 - coef)
+        overcap = max(0.0, ned - limit) * ned_price
+
+        total_loss += loss
+        total_overcap += overcap
+
+        rows.append({
+            "task_report": base,
+            "quantity": n,               # заказ
+            "resultative": r,            # выполнение
+            "nedopusk": ned,             # недопуск
+            "limit": limit,              # лимит = доля × выполнение (целое)
+            "fullness": fullness,        # полнота
+            "sroki": sroki,              # сроки
+            "coef": coef,                # min(полнота, сроки)
+            "loss": round(loss, 2),      # потери
+            "overcap": round(overcap, 2),  # оверкэп
+        })
 
     return {
         "month": month,
-        "resultativity": res_rows,
-        "deadlines": dl_rows,
+        "rows": rows,
         "totals": {
-            "base": round(total_base, 2),
-            "sum_sla": round(total_sla, 2),
-            "reduction": round(total_base - total_sla, 2),
+            "loss": round(total_loss, 2),
+            "overcap": round(total_overcap, 2),
+            "total": round(total_loss + total_overcap, 2),
         },
     }
 
 
 def generate_sla_xlsx(data: dict) -> bytes:
-    """Xlsx: одна вкладка «СЛА» с тремя таблицами (полнота / сроки / недопуски)."""
+    """Xlsx: вкладка «СЛА» — таблица парных работ + итог по потерям/оверкэпу."""
     from openpyxl import Workbook
     from openpyxl.styles import Font
 
@@ -213,33 +195,21 @@ def generate_sla_xlsx(data: dict) -> bytes:
     ws.title = "СЛА"
     bold = Font(bold=True)
 
-    headers = ["Код", "Работа", "Заказ", "Выполнение", "Домов", "Нерез. %",
-               "Общий к-т", "Ступень", "Расценка (база)", "Расценка (СЛА)",
-               "Сумма СЛА", "Потери, руб"]
+    headers = ["Работа", "Заказ", "Выполнение", "Недопуск", "Лимит",
+               "Полнота", "Сроки", "Коэффициент", "Потери", "Оверкэп"]
+    ws.append(headers)
+    for c in range(1, len(headers) + 1):
+        ws.cell(1, c).font = bold
 
-    def _write_table(title: str, rows: list) -> None:
-        ws.append([title])
-        ws.cell(ws.max_row, 1).font = bold
-        ws.append(headers)
-        for c in range(1, len(headers) + 1):
-            ws.cell(ws.max_row, c).font = bold
-        for row in rows:
-            ws.append([
-                row["code"], row["task_report"], row["quantity"], row["resultative"],
-                "" if row.get("houses") is None else row["houses"],
-                row["non_resultative_pct"], row["smooth_coef"],
-                row["sla_coef"], row["rate"], row["rate_sla"], row["sum_sla"], row["reduction"],
-            ])
+    for row in data["rows"]:
+        ws.append([
+            row["task_report"], row["quantity"], row["resultative"], row["nedopusk"],
+            row["limit"], row["fullness"], row["sroki"], row["coef"],
+            row["loss"], row["overcap"],
+        ])
 
-    _write_table("Полнота (результативность), п. 1.1–1.4", data["resultativity"])
-    ws.append([])
-    _write_table("Сроки (п. 2.1)", data["deadlines"])
-    ws.append([])
-
-    ws.append(["", "Итого", "", "", "", "", "", "", "", "",
-               data["totals"]["sum_sla"], data["totals"]["reduction"]])
-    ws.append([])
-    ws.append(["Недопуски — пока не реализовано"])
+    ws.append(["Итого", "", "", "", "", "", "", "",
+               data["totals"]["loss"], data["totals"]["overcap"]])
 
     out = io.BytesIO()
     wb.save(out)

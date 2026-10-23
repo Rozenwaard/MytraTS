@@ -3,7 +3,6 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from sql import build_in_clause
 from services.premium import apply_norms
-from services.address import house, region_from
 
 
 def _sortable_date(value) -> str:
@@ -163,30 +162,6 @@ async def merge_to_main(db_session, upload_progress, upload_id, total_rows):
     if affected:
         # Норматив ставим по факту загрузки строки; номер реестра лишь защищает её от перезаписи.
         await apply_norms(db_session, affected)
-
-    # house_id — по адресу (справочник домов); новые дома апсёртим на лету.
-    affected_rows = new_rows + update_rows
-    if affected_rows:
-        house_ids = {r[0]: r[1] for r in (await db_session.execute(
-            text("SELECT key, id FROM houses"))).fetchall()}
-        upds = []
-        for row in affected_rows:
-            region = row.get("region") or region_from(row.get("municipal_district"), row.get("address"))
-            h = house(region, row.get("address"))
-            if not h:
-                continue
-            hid = house_ids.get(h["key"])
-            if hid is None:
-                await db_session.execute(text(
-                    "INSERT OR IGNORE INTO houses (region, city, street, house, corpus, key) "
-                    "VALUES (:region, :city, :street, :house, :corpus, :key)"), h)
-                hid = (await db_session.execute(text(
-                    "SELECT id FROM houses WHERE key = :key"), {"key": h["key"]})).scalar()
-                house_ids[h["key"]] = hid
-            upds.append({"tn": row["task_number"], "hid": hid})
-        if upds:
-            await db_session.execute(
-                text("UPDATE main_afl SET house_id = :hid WHERE task_number = :tn"), upds)
 
     # ── Дедупликация по task_report_id ──
     # Победитель — с реальным номером реестра; иначе — с бóльшим нормативом (norm+extra),

@@ -68,7 +68,6 @@
 {:else}
 	<div class="flex h-full flex-col gap-3 overflow-auto p-3">
 		<div class="flex items-center gap-3">
-			<h2 class="text-lg font-semibold">СЛА (ПСК)</h2>
 			<input
 				type="month"
 				value={month}
@@ -84,6 +83,11 @@
 			>
 				Скачать
 			</Button>
+			{#if data}
+				<span class="text-sm font-medium">
+					Общее снижение вознаграждения {money(data.totals.total)}
+				</span>
+			{/if}
 		</div>
 
 		{#if loading && !data}
@@ -94,64 +98,45 @@
 			</div>
 		{:else if data}
 			{#snippet cells(row: SlaRow)}
-				<TableCell class="whitespace-nowrap text-center">{row.code}</TableCell>
 				<TableCell class="whitespace-nowrap text-left">{row.task_report}</TableCell>
 				<TableCell class="whitespace-nowrap text-right tabular-nums">{num(row.quantity)}</TableCell>
 				<TableCell class="whitespace-nowrap text-right tabular-nums">{num(row.resultative)}</TableCell>
-				<TableCell class="whitespace-nowrap text-right tabular-nums">
-					{row.houses == null ? '—' : num(row.houses)}
-				</TableCell>
-				<TableCell class="whitespace-nowrap text-right tabular-nums">{pct(row.non_resultative_pct)}</TableCell>
-				<TableCell class="whitespace-nowrap text-right tabular-nums">{coef(row.smooth_coef)}</TableCell>
-				<TableCell class="whitespace-nowrap text-right tabular-nums">{row.sla_coef}</TableCell>
-				<TableCell class="whitespace-nowrap text-right tabular-nums">{money(row.rate)}</TableCell>
-				<TableCell class="whitespace-nowrap text-right tabular-nums">{money(row.rate_sla)}</TableCell>
-				<TableCell class="whitespace-nowrap text-right tabular-nums">{money(row.sum_sla)}</TableCell>
-				<TableCell class="whitespace-nowrap text-right tabular-nums">{money(row.reduction)}</TableCell>
+				<TableCell class="whitespace-nowrap text-right tabular-nums">{num(row.nedopusk)}</TableCell>
+				<TableCell class="whitespace-nowrap text-right tabular-nums">{num(row.limit)}</TableCell>
+				<TableCell class="whitespace-nowrap text-right tabular-nums">{coef(row.fullness)}</TableCell>
+				<TableCell class="whitespace-nowrap text-right tabular-nums">{coef(row.sroki)}</TableCell>
+				<TableCell class="whitespace-nowrap text-right tabular-nums">{coef(row.coef)}</TableCell>
+				<TableCell class="whitespace-nowrap text-right tabular-nums">{money(row.loss)}</TableCell>
+				<TableCell class="whitespace-nowrap text-right tabular-nums">{money(row.overcap)}</TableCell>
 			{/snippet}
 
 			<div class="overflow-x-auto rounded-md border">
 				<Table>
 					<TableHeader>
 						<TableRow class="hover:bg-transparent">
-							<TableHead class="whitespace-nowrap text-center">Код</TableHead>
 							<TableHead class="whitespace-nowrap text-left">Работа</TableHead>
 							<TableHead class="whitespace-nowrap text-right">Заказ</TableHead>
 							<TableHead class="whitespace-nowrap text-right">Выполнение</TableHead>
-							<TableHead class="whitespace-nowrap text-right">Домов</TableHead>
-							<TableHead class="whitespace-nowrap text-right">Нерез. %</TableHead>
-							<TableHead class="whitespace-nowrap text-right">Общий к-т</TableHead>
-							<TableHead class="whitespace-nowrap text-right">Ступень</TableHead>
-							<TableHead class="whitespace-nowrap text-right">Расценка (база)</TableHead>
-							<TableHead class="whitespace-nowrap text-right">Расценка (СЛА)</TableHead>
-							<TableHead class="whitespace-nowrap text-right">Сумма СЛА</TableHead>
-							<TableHead class="whitespace-nowrap text-right">Потери, руб</TableHead>
+							<TableHead class="whitespace-nowrap text-right">Недопуск</TableHead>
+							<TableHead class="whitespace-nowrap text-right">Лимит</TableHead>
+							<TableHead class="whitespace-nowrap text-right">Полнота</TableHead>
+							<TableHead class="whitespace-nowrap text-right">Сроки</TableHead>
+							<TableHead class="whitespace-nowrap text-right">Коэффициент</TableHead>
+							<TableHead class="whitespace-nowrap text-right">Потери</TableHead>
+							<TableHead class="whitespace-nowrap text-right">Оверкэп</TableHead>
 						</TableRow>
 					</TableHeader>
 					<TableBody>
-						<TableRow class="bg-muted/50 hover:bg-muted/50">
-							<TableCell colspan={12} class="py-2 text-sm font-medium">
-								Полнота (результативность), п. 1.1–1.4
-							</TableCell>
-						</TableRow>
-						{#each data.resultativity as row (row.task_report)}
-							<TableRow class="hover:bg-transparent">{@render cells(row)}</TableRow>
-						{/each}
-						<TableRow class="bg-muted/50 hover:bg-muted/50">
-							<TableCell colspan={12} class="py-2 text-sm font-medium">
-								Сроки (п. 2.1)
-							</TableCell>
-						</TableRow>
-						{#each data.deadlines as row (row.task_report)}
+						{#each data.rows as row (row.task_report)}
 							<TableRow class="hover:bg-transparent">{@render cells(row)}</TableRow>
 						{/each}
 						<TableRow class="bg-muted/40 hover:bg-muted/40">
-							<TableCell class="whitespace-nowrap font-medium" colspan={10}>Итого</TableCell>
+							<TableCell class="whitespace-nowrap font-medium" colspan={8}>Итого</TableCell>
 							<TableCell class="whitespace-nowrap text-right font-medium tabular-nums">
-								{money(data.totals.sum_sla)}
+								{money(data.totals.loss)}
 							</TableCell>
 							<TableCell class="whitespace-nowrap text-right font-medium tabular-nums">
-								{money(data.totals.reduction)}
+								{money(data.totals.overcap)}
 							</TableCell>
 						</TableRow>
 					</TableBody>

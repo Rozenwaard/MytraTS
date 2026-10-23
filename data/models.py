@@ -267,7 +267,6 @@ class MainAfl(Base):
     errors: Mapped[Optional[str]] = mapped_column(Text)
     norm: Mapped[Optional[int]] = mapped_column(Integer)  # база (основной вид работ)
     extra: Mapped[Optional[int]] = mapped_column(Integer)  # доп. («Код …», «+5 Алькор»)
-    house_id: Mapped[Optional[int]] = mapped_column(Integer)  # ссылка на houses.id
 
 
 class Tabel(Base):
