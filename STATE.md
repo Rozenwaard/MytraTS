@@ -51,6 +51,10 @@ Invoke-WebRequest http://localhost:8000/api/user/settings -UseBasicParsing
 
 Остановка фонового процесса: `taskkill /PID <pid> /T /F` (pid смотри через `netstat -ano | findstr :8000` / `:5174`).
 
+## Смок-тест
+`_scratch/_smoke_test.py` — прогон всех GET-эндпоинтов после коммитов/замены базы (логин админом + проверка 200/JSON). Запуск из корня: `uv run python _scratch/_smoke_test.py`.
+**Новые `/api/*` эндпоинты обязательно добавлять сюда**: JSON-руты — в список `JSON_GETS`, бинарные/файловые выгрузки — в `BINARY_GETS`.
+
 ## Структура
 ```
 MytraTS/
