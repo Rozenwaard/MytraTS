@@ -248,7 +248,7 @@ async def api_premium_upload_1c(
 
     content = await data.read()
     try:
-        s1c_rows = await build_1c_rows(db_session, content)
+        s1c_rows = await build_1c_rows(db_session, content, period)
     except Exception:
         return Response(content=json.dumps({"error": "Файл не соответствует формату 1С"}, ensure_ascii=False), media_type="application/json", status_code=400)
 

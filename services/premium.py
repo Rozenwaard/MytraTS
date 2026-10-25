@@ -1,4 +1,5 @@
 import io as io_module
+import re
 from collections import defaultdict
 
 from openpyxl import Workbook, load_workbook
@@ -27,29 +28,82 @@ _IN_CHUNK = 32500
 
 
 # ─── 1С-файл (вкладка «1С» отчёта по нормативам) ───
-# TDSheet: «Поручение контрагента» (8), «Непосредственный исполнитель1» (18),
-# «Непосредственный исполнитель2» (19). Нормативы — временный словарь (из «Лист2» файла).
-WORK_NORM_1C = {
-    "Бытовая заявка": 30,
-    "Допуск ПУ": 80,
-    "Допуск ПУ ИЖС": 40,
-    "Доставка уведомлений": 5,
-    "Жалоба на некач. эл.": 65,
-    "Замеры": 80,
-    "Инструментальная проверка": 105,
-    "Неучтенное потребление ЮЛ": 120,
-    "Осмотр": 90,
-    "Периодический контроль ЮЛ": 30,
-    "Снятие показаний": 35,
+# TDSheet («Полная выгрузка из 1С УЛР»): «Дата работ» (13/N) — период строки,
+# «Поручение контрагента» (10/K), «Непосредственный исполнитель1/2» (22/23 W/X),
+# «Заказчик.Входит в группу» (7/H, ЛЭ ≡ РЛЭ / ПСК), «Проект строка» (5/F).
+COL_1C_DATE = 13
+COL_1C_WORK = 10
+COL_1C_EXECUTOR1 = 22
+COL_1C_EXECUTOR2 = 23
+COL_1C_PROJECT = 5
+COL_1C_CUSTOMER = 7
+
+# «Дата работ» > 30.09.2026 → норматив из work_catalog, иначе из carte.
+CUTOVER_1C = (2026, 9, 30)
+
+# Маппинг «Поручение контрагента» (для «Снятие показаний» ещё и «Проект строка») →
+# work_catalog.short по заказчику. Файловая «ЛЭ» = «РЛЭ» (алиасы).
+# Пустая ячейка (None) → нет маппинга: выводим строку с названием 1С и нормативом 0.
+WORK_MAP_1C_WC = {
+    ("Снятие показаний", "Текущие"): {"РЛЭ": "Штучное КСП", "ПСК": "Штучное КСП ЮЛ"},
+    ("Снятие показаний", "Плановые"): {"РЛЭ": "Массовое КСП", "ПСК": "Плановое КСП ЮЛ"},
+    ("Снятие показаний", 'Зона ООО "РКС-энерго"'): {"РЛЭ": "Штучное КСП", "ПСК": None},
+    ("Инструментальная проверка", None): {"РЛЭ": "Трёхфазная ИП", "ПСК": "ИП ЮЛ"},
+    ("Периодический контроль ЮЛ", None): {"РЛЭ": "Проверка РО РЛЭ", "ПСК": "Проверка РО ЮЛ"},
+    ("Осмотр", None): {"РЛЭ": None, "ПСК": "Осмотры ЮЛ"},
+    ("Инструментальная проверка 3ф", None): {"РЛЭ": "Трёхфазная ИП", "ПСК": "ИП ЮЛ"},
+    ("Допуск ПУ БП", None): {"РЛЭ": "Однофазный ДПУ", "ПСК": "Допуск ПУ ФЛ"},
+    ("Допуск ПУ", None): {"РЛЭ": "Трёхфазный ДПУ", "ПСК": "Допуск ПУ ЮЛ"},
+    ("Замеры", None): {"РЛЭ": "Чтение архива РЛЭ", "ПСК": "Замеры"},
+    ("Инструментальная проверка 1ф", None): {"РЛЭ": "Однофазная ИП", "ПСК": "ИП ФЛ"},
+    ("Акт о недопуске", None): {"РЛЭ": "Недопуск без уведомления", "ПСК": "Недопуск штучное КСП ЮЛ"},
+    ("Архив", None): {"РЛЭ": "Чтение архива РЛЭ", "ПСК": "Чтение архива ПСК"},
+    ("Допуск ПУ 1ф", None): {"РЛЭ": "Однофазный ДПУ", "ПСК": None},
+    ("Допуск ПУ ИЖС", None): {"РЛЭ": "Трёхфазный ДПУ", "ПСК": None},
+    ("Допуск ПУ 3ф", None): {"РЛЭ": "Трёхфазный ДПУ", "ПСК": "Допуск ПУ ЮЛ"},
+    ("Бытовая заявка", None): {"РЛЭ": "Штучное КСП", "ПСК": "Штучное КСП ФЛ"},
+    ("Доставка уведомлений", None): {"РЛЭ": None, "ПСК": "Уведомление без подписи"},
+    ("Уведомление под подпись", None): {"РЛЭ": None, "ПСК": "Уведомление под подпись"},
+    ("Уведомление без подписи", None): {"РЛЭ": None, "ПСК": "Уведомление без подписи"},
+    ("Неучтенное потребление ЮЛ", None): {"РЛЭ": "Выявление безучетного потребления ЮЛ", "ПСК": "Выявление безучетного потребления ЮЛ"},
+    ("Жалоба на некач. эл.", None): {"РЛЭ": None, "ПСК": "Жалобы на качество"},
 }
-COL_1C_WORK = 8
-COL_1C_EXECUTOR1 = 18
-COL_1C_EXECUTOR2 = 19
+
+SKIP_1C_WORKS = {"Возврат на доработку"}
 
 
 def _norm_name(name):
     """Нормализация ФИО «ё/е» для сравнения (как в rle._norm)."""
     return (name or "").strip().replace("ё", "е").replace("Ё", "Е")
+
+
+def _cell(row, idx) -> str:
+    """Значение ячейки как строка (пустая, если нет/пусто)."""
+    if idx < len(row) and row[idx] is not None and row[idx] != "":
+        return str(row[idx]).strip()
+    return ""
+
+
+def _parse_date(value):
+    """«Дата работ» → (год, месяц, день) или None. Понимает dd.mm.yyyy и datetime."""
+    if value is None or value == "":
+        return None
+    if hasattr(value, "year") and hasattr(value, "month") and hasattr(value, "day"):
+        return (value.year, value.month, value.day)
+    s = str(value).strip()
+    m = re.match(r"^(\d{1,2})\.(\d{1,2})\.(\d{4})$", s)
+    if m:
+        return (int(m.group(3)), int(m.group(2)), int(m.group(1)))
+    m = re.match(r"^(\d{4})-(\d{1,2})-(\d{1,2})", s)
+    if m:
+        return (int(m.group(1)), int(m.group(2)), int(m.group(3)))
+    return None
+
+
+def _as_int(value):
+    if isinstance(value, float) and value.is_integer():
+        return int(value)
+    return value
 
 
 def _read_1c_sheet(content: bytes) -> list[list]:
@@ -62,38 +116,85 @@ def _read_1c_sheet(content: bytes) -> list[list]:
         return [list(row) for row in wb["TDSheet"].iter_rows(values_only=True)]
 
 
-async def build_1c_rows(db_session: AsyncSession, content: bytes) -> list[list]:
+async def build_1c_rows(db_session: AsyncSession, content: bytes, period: str = "") -> list[list]:
     """Строки вкладки «1С»: [ФИО, Должность, Отделение, Работа, Количество, Норматив].
 
-    «Непосредственный исполнитель2» (если заполнен) — самостоятельная строка.
-    Должность/отделение — из users по full_name (сравнение «ё/е»).
+    Берём строки, у которых месяц «Дата работ» совпадает с выбранным периодом.
+    Норматив: «Дата работ» <= 30.09.2026 → carte (detail → title/absolute),
+    иначе → work_catalog (WORK_MAP_1C_WC по заказчику/проекту, norm из work_catalog).
+    «Возврат на доработку» пропускаем. Исполнитель — «Непосредственный исполнитель1/2».
+    ФИО/должность/отделение — из users по executor_name (как во вкладках «Алькор»/«Проект»).
     """
     sheet = _read_1c_sheet(content)
+
+    carte_map: dict[str, tuple[str, int]] = {}
+    carte_rows = (await db_session.execute(text(
+        "SELECT title, absolute, detail FROM carte WHERE detail IS NOT NULL AND detail != ''"
+    ))).fetchall()
+    for title, absolute, detail in carte_rows:
+        for part in str(detail).split("ИЛИ"):
+            part = part.strip()
+            if part:
+                carte_map[part] = (title or "", _as_int(absolute) or 0)
+
+    wc_norm = {}
+    wc_rows = (await db_session.execute(text(
+        "SELECT short, norm FROM work_catalog WHERE norm IS NOT NULL"
+    ))).fetchall()
+    for short, norm in wc_rows:
+        wc_norm[short] = _as_int(norm)
+
+    users = (await db_session.execute(text(
+        "SELECT full_name, executor_name, position, dept FROM users"
+    ))).fetchall()
+    user_by_exec = {}
+    for full_name, executor_name, position, dept in users:
+        if executor_name:
+            user_by_exec[_norm_name(executor_name)] = (full_name or "", position or "", dept or "")
+
     counts: dict[tuple[str, str], int] = defaultdict(int)
+    norm_by_work: dict[str, int] = {}
     for row in sheet[1:]:
         if not row:
             continue
-        work = str(row[COL_1C_WORK]).strip() if len(row) > COL_1C_WORK and row[COL_1C_WORK] else ""
-        if not work:
+        parsed = _parse_date(row[COL_1C_DATE] if len(row) > COL_1C_DATE else None)
+        if parsed is None:
             continue
+        y, m, d = parsed
+        if f"{y} {m:02d}" != period:
+            continue
+
+        work = _cell(row, COL_1C_WORK)
+        if not work or work in SKIP_1C_WORKS:
+            continue
+
+        if (y, m, d) > CUTOVER_1C:
+            customer = _cell(row, COL_1C_CUSTOMER)
+            customer = "РЛЭ" if customer == "ЛЭ" else customer  # «ЛЭ» ≡ «РЛЭ»
+            project = _cell(row, COL_1C_PROJECT) if work == "Снятие показаний" else None
+            entry = WORK_MAP_1C_WC.get((work, project))
+            short = entry.get(customer) if entry else None
+            if short and short in wc_norm:
+                title, norm = short, wc_norm[short]
+            else:
+                title, norm = work, 0  # нет маппинга → норматив 0
+        else:
+            title, norm = carte_map.get(work, (work, 0))
+
+        norm_by_work[title] = norm
         for idx in (COL_1C_EXECUTOR1, COL_1C_EXECUTOR2):
-            if len(row) > idx and row[idx]:
-                executor = str(row[idx]).strip()
-                if executor:
-                    counts[(executor, work)] += 1
+            executor = _cell(row, idx)
+            if executor:
+                counts[(executor, title)] += 1
 
     if not counts:
         return []
 
-    users = (await db_session.execute(text("SELECT full_name, position, dept FROM users"))).fetchall()
-    user_by_name = {}
-    for full_name, position, dept in users:
-        user_by_name[_norm_name(full_name)] = (position or "", dept or "")
-
     rows = []
-    for (executor, work), count in sorted(counts.items(), key=lambda kv: (_norm_name(kv[0][0]), kv[0][1])):
-        position, dept = user_by_name.get(_norm_name(executor), ("", ""))
-        rows.append([executor, position, dept, work, count, count * WORK_NORM_1C.get(work, 0)])
+    for (executor, title), count in counts.items():
+        full_name, position, dept = user_by_exec.get(_norm_name(executor), (executor, "", ""))
+        rows.append([full_name, position, dept, title, count, count * norm_by_work[title]])
+    rows.sort(key=lambda r: (_norm_name(r[0]), r[3]))
     return rows
 
 
