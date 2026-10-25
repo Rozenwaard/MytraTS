@@ -299,17 +299,17 @@ PHASE_3 = _phase_cond(_REF_3F)
 
 NEW_TASK_REPORT_RULES = [
     # ── Допуск ПУ (task_output='Допуск') ──
-    ("task_report = 'Трёхфазный ДПУ'",
+    ("task_report = 'Допуск ПУ 3ф'",
      f"task_output = 'Допуск' AND customer = 'РЛЭ' AND {PHASE_3} AND task_report IS NULL", None),
-    ("task_report = 'Однофазный ДПУ'",
+    ("task_report = 'Допуск ПУ 1ф'",
      f"task_output = 'Допуск' AND customer = 'РЛЭ' AND {PHASE_1} AND task_report IS NULL", None),
     ("task_report = 'Допуск ПУ ФЛ'",
      "task_output = 'Допуск' AND customer = 'ПСК' AND task_report IS NULL", None),
 
     # ── Инструментальная проверка ──
-    ("task_report = 'Трёхфазная ИП'",
+    ("task_report = 'Инструментальная проверка 3ф'",
      f"work_type_in_task = 'Инструментальная проверка' AND customer = 'РЛЭ' AND {_in('task_output', RESULT_OUTPUTS)} AND {PHASE_3} AND task_report IS NULL", None),
-    ("task_report = 'Однофазная ИП'",
+    ("task_report = 'Инструментальная проверка 1ф'",
      f"work_type_in_task = 'Инструментальная проверка' AND customer = 'РЛЭ' AND {_in('task_output', RESULT_OUTPUTS)} AND {PHASE_1} AND task_report IS NULL", None),
     ("task_report = 'ИП ФЛ'",
      f"work_type_in_task = 'Инструментальная проверка' AND customer = 'ПСК' AND {_in('task_output', RESULT_OUTPUTS)} AND task_report IS NULL", None),
