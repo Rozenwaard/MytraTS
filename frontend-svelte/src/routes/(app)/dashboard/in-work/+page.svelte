@@ -46,7 +46,7 @@
 				c.key !== 'task_output' &&
 				c.key !== 'task_detail'
 		);
-		if (g.title === 'Задание') {
+		if (g.title === 'Остальное') {
 			columns.push({ key: 'status', header: 'Статус задания' });
 			columns.push({ key: 'due_date', header: 'Выполнить до' });
 		}
