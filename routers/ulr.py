@@ -30,17 +30,16 @@ async def _require_role(request: Request, db_session: AsyncSession) -> None:
 @get("/ulr/options", guards=[require_auth])
 async def api_ulr_options(request: Request, db_session: AsyncSession) -> Response:
     await _require_role(request, db_session)
-    async with sand_session_factory() as session:
-        result = await session.execute(text(
-            "SELECT short, title, customer FROM work_catalog WHERE kind = 'base' ORDER BY id"))
-        work_types = sorted(
-            (
-                {"short": r[0], "title": r[1], "customer": r[2]}
-                for r in result
-                if not any(term in (r[0] or "").lower() for term in EXCLUDED_WORK_TYPES)
-            ),
-            key=lambda w: (w["short"] or "").lower(),
-        )
+    result = await db_session.execute(text(
+        "SELECT short, title, customer FROM work_catalog WHERE kind = 'base'"))
+    work_types = sorted(
+        (
+            {"short": r[0], "title": r[1], "customer": r[2]}
+            for r in result
+            if not any(term in (r[0] or "").lower() for term in EXCLUDED_WORK_TYPES)
+        ),
+        key=lambda w: (w["short"] or "").lower(),
+    )
     return Response(content=json.dumps(
         {"customers": CUSTOMERS, "grids": GRIDS, "work_types": work_types},
         ensure_ascii=False), media_type="application/json")
