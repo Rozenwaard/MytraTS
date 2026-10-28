@@ -5,14 +5,18 @@ from datetime import datetime
 from litestar import Router
 from litestar.connection import Request
 from litestar.exceptions import NotAuthorizedException
-from litestar.handlers import get, post
+from litestar.enums import RequestEncodingType
+from litestar.handlers import get, patch, post
+from litestar.params import Body
 from litestar.response import Response
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from data.config import sand_session_factory
 from deps import get_current_user, require_auth
-from services.ulr import INSERT_SQL, build_main_afl_row, feedback_xlsx_b64, find_points, read_register
+from services.ulr import (CO_EXECUTOR_WORK_IDS, EXECUTOR_POSITIONS, INSERT_SQL, NO_EXECUTION,
+                          build_main_afl_row, compute_status, feedback_xlsx_b64, find_points,
+                          read_register, resolve_work_ids)
 
 CUSTOMERS = ["ПСК", "РЛЭ"]
 GRIDS = ["-", "ГтЭС", "КнЭС", "НлЭС", "СЭС", "ТхЭС", "ЮЭС", "ВЭС", "ЛОЭСК", "Оборонэнерго"]
@@ -20,8 +24,8 @@ GRIDS = ["-", "ГтЭС", "КнЭС", "НлЭС", "СЭС", "ТхЭС", "ЮЭС"
 EXCLUDED_WORK_TYPES = ("недопуск", "бездог")
 # Виды поручений (категории) по заказчику — из Книга123.xlsx (лист 2).
 ASSIGNMENT_TYPES = {
-    "РЛЭ": ["КСП", "Архив", "ИП", "Опрос", "Привязка", "Допуск", "КРОЭ"],
-    "ПСК": ["КСП", "Осмотр", "Допуск", "ИП", "КРОЭ", "Доставка", "Архив"],
+    "РЛЭ": ["Архив", "Допуск", "ИП", "КРО", "КСП", "Опрос", "Привязка"],
+    "ПСК": ["Архив", "Допуск", "Доставка", "ИП", "КРО", "КСП", "Осмотр"],
 }
 ADMIN_ROLES = ("администратор", "специалист")
 
@@ -169,13 +173,106 @@ async def api_ulr_execution(request: Request, db_session: AsyncSession) -> Respo
         where += " AND executor_organization = :dept"
         params["dept"] = user.dept
 
+    # Справочники для дропдаунов (из mytra.db).
+    wc_rows = await db_session.execute(text(
+        "SELECT id, short FROM work_catalog WHERE kind = 'base'"))
+    wc_short = {r[0]: r[1] for r in wc_rows}
+    short_to_id = {r[1]: r[0] for r in wc_rows if r[1]}
+
+    pos_ph = ", ".join(f":p{i}" for i in range(len(EXECUTOR_POSITIONS)))
+    pos_params = {f"p{i}": p for i, p in enumerate(EXECUTOR_POSITIONS)}
+    user_rows = await db_session.execute(text(
+        f"SELECT dept, executor_name FROM users "
+        f"WHERE executor_name IS NOT NULL AND executor_name != '' AND position IN ({pos_ph}) "
+        f"ORDER BY executor_name"), pos_params)
+    users_by_dept: dict = {}
+    for dept, name in user_rows:
+        users_by_dept.setdefault(dept or "", []).append(name)
+
     async with sand_session_factory() as session:
         result = await session.execute(text(
-            f"SELECT task_number, customer, work_type_in_task, personal_account, address, executor, "
-            f"task_report, done_day, reestr_number, errors, norm, co_executor, acts "
+            f"SELECT task_number, task_source, task_type, work_type_in_task, created_at, "
+            f"due_date, customer, visit_reason, subscriber_type, grid, "
+            f"personal_account, service_object_type, subscriber_name, address, "
+            f"meter_model, meter_installation_place, violations, meter_type, "
+            f"executor, executor_organization, co_executor, task_report, done_day, "
+            f"reestr_number, status, contract_status, "
+            f"COALESCE(norm, 0) + COALESCE(extra, 0) AS norm "
             f"FROM main_afl WHERE {where} ORDER BY task_number"), params)
         rows = [dict(r._mapping) for r in result]
+
+    for row in rows:
+        work_ids = resolve_work_ids(
+            row.get("customer"), row.get("work_type_in_task"), row.get("task_type"),
+            row.get("meter_type"), row.get("contract_status"))
+        row["work_type_options"] = [
+            {"id": wid, "short": wc_short.get(wid), "needs_co": wid in CO_EXECUTOR_WORK_IDS}
+            for wid in work_ids if wid in wc_short
+        ]
+        row["work_type_options"].append({"id": None, "short": NO_EXECUTION, "needs_co": False})
+        row["executor_options"] = users_by_dept.get(row.get("executor_organization") or "", [])
+        cur_id = short_to_id.get(row.get("task_report"))
+        row["co_executor_required"] = row.get("meter_type") == "3ф" and cur_id in CO_EXECUTOR_WORK_IDS
+
     return Response(content=json.dumps({"rows": rows}, ensure_ascii=False), media_type="application/json")
 
 
-ulr_router = Router("/api", route_handlers=[api_ulr_options, api_ulr_upload, api_ulr_execution])
+@patch("/ulr/execution", guards=[require_auth])
+async def api_ulr_update_execution(
+    request: Request, db_session: AsyncSession,
+    data: dict = Body(media_type=RequestEncodingType.JSON),
+) -> Response:
+    await _require_role(request, db_session)
+
+    def _v(key):
+        v = data.get(key)
+        return (str(v).strip() if v is not None else "") or None
+
+    task_number = _v("task_number")
+    executor = _v("executor")
+    co_executor = _v("co_executor")
+    task_report = _v("task_report")
+    done_day = _v("done_day")
+    violations = _v("violations")
+
+    if not task_number:
+        return Response(content=json.dumps({"error": "Не указан номер задания"}, ensure_ascii=False),
+                        media_type="application/json", status_code=400)
+
+    # «Без исполнения» → дата = сегодня.
+    if task_report == NO_EXECUTION:
+        done_day = datetime.now().strftime("%Y-%m-%d")
+
+    wc_rows = await db_session.execute(text(
+        "SELECT id, short FROM work_catalog WHERE kind = 'base'"))
+    short_to_id = {r[1]: r[0] for r in wc_rows if r[1]}
+
+    async with sand_session_factory() as session:
+        cur = (await session.execute(text(
+            "SELECT reestr_number, meter_type FROM main_afl WHERE task_number = :tn"),
+            {"tn": task_number})).fetchone()
+        if cur is None:
+            return Response(content=json.dumps({"error": "Строка не найдена"}, ensure_ascii=False),
+                            media_type="application/json", status_code=404)
+        reestr_number, meter_type = cur[0], cur[1]
+        if reestr_number:
+            return Response(content=json.dumps(
+                {"error": "Реестр уже присвоен — редактирование закрыто"}, ensure_ascii=False),
+                media_type="application/json", status_code=400)
+
+        co_required = meter_type == "3ф" and short_to_id.get(task_report) in CO_EXECUTOR_WORK_IDS
+        status = compute_status(executor, done_day, task_report, co_executor, co_required, reestr_number)
+
+        await session.execute(text(
+            "UPDATE main_afl SET executor = :executor, co_executor = :co_executor, "
+            "task_report = :task_report, done_day = :done_day, violations = :violations, "
+            "status = :status WHERE task_number = :tn"),
+            {"executor": executor, "co_executor": co_executor, "task_report": task_report,
+             "done_day": done_day, "violations": violations, "status": status, "tn": task_number})
+        await session.commit()
+
+    return Response(content=json.dumps({"success": True, "status": status}, ensure_ascii=False),
+                    media_type="application/json")
+
+
+ulr_router = Router("/api", route_handlers=[api_ulr_options, api_ulr_upload, api_ulr_execution, api_ulr_update_execution])

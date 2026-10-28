@@ -10,7 +10,7 @@ from sqlalchemy import text
 LIBRA_SELECT = (
     "object_code, contract_number, meter_serial_number, tu_number, tu_id, metering_point, "
     "meter_type, phase_count, tu_name, object_name, subscriber_category, subscriber_name, "
-    "address, municipal_district, region, is_mkd, contract_division, depts"
+    "subscriber_short_name, address, municipal_district, region, is_mkd, contract_division, depts"
 )
 
 INSERT_SQL = """
@@ -20,16 +20,84 @@ INSERT INTO main_afl (
     metering_point, personal_account, meter_model, meter_type, meter_serial_number,
     house_type, meter_installation_place, contract_status,
     subscriber_name, address, municipal_district, region,
-    service_object_type, third_party_organization, assignee, executor_organization
+    service_object_type, third_party_organization, assignee, executor_organization, status
 ) VALUES (
     :task_number, :task_source, :task_type, :work_type_in_task, :created_at, :due_date,
     :customer, :visit_reason, :subscriber_type, :grid,
     :metering_point, :personal_account, :meter_model, :meter_type, :meter_serial_number,
     :house_type, :meter_installation_place, :contract_status,
     :subscriber_name, :address, :municipal_district, :region,
-    :service_object_type, :third_party_organization, :assignee, :executor_organization
+    :service_object_type, :third_party_organization, :assignee, :executor_organization, :status
 )
 """
+
+
+# === Справочник «Выполнение» (из Книга123.xlsx, лист 2) ===
+
+WORK_TYPE_OPTIONS = {
+    "РЛЭ": {
+        "КСП": {"Плановый": [1, 14], "Внеплановый": [2, 14]},
+        "Архив": [3, 14],
+        "ИП": {"1ф": [5, 14], "3ф": [4, 14]},
+        "Опрос": [6, 14],
+        "Привязка": [7, 8, 9, 14],
+        "Допуск": {"1ф": [10, 14], "3ф": [11, 14]},
+        "КРО": [12, 14],
+    },
+    "ПСК": {
+        "КСП": {"Плановый": {"ИКУ": [55, 56], "ЮЛ": [57, 58]}, "Внеплановый": [59, 60]},
+        "Осмотр": [61, 62],
+        "Допуск": [63],
+        "ИП": [64],
+        "КРО": [65],
+        "Доставка": [66, 67],
+        "Архив": [68],
+    },
+}
+
+# Виды работ, при которых 3ф-ПУ требует соисполнителя (work_catalog.id).
+CO_EXECUTOR_WORK_IDS = {4, 11, 23, 24, 63, 64}
+
+# Должности, доступные для выбора Исполнителя/Соисполнителя.
+EXECUTOR_POSITIONS = ("Инженер 1 категории", "Инженер 2 категории", "Контролёр")
+
+NO_EXECUTION = "Без исполнения"
+IKU_CATEGORY = "02 Исполнители КУ"
+
+STATUS_CREATED = "Создано"
+STATUS_ASSIGNED = "Назначено"
+STATUS_DONE = "Выполнено"
+STATUS_SENT = "Отправлено"
+
+
+def resolve_work_ids(customer, category, task_type, meter_type, subscriber_category) -> list:
+    """Варианты «Вид работ» (work_catalog.id) для строки по её критериям."""
+    cfg = (WORK_TYPE_OPTIONS.get(customer) or {}).get(category)
+    if cfg is None:
+        return []
+    if isinstance(cfg, list):
+        return cfg
+    if customer == "РЛЭ":
+        if category in ("ИП", "Допуск"):
+            return cfg.get(meter_type, [])
+        return cfg.get(task_type, [])
+    if customer == "ПСК" and category == "КСП":
+        if task_type == "Плановый":
+            inner = cfg.get("Плановый") or {}
+            branch = "ИКУ" if subscriber_category == IKU_CATEGORY else "ЮЛ"
+            return inner.get(branch, [])
+        return cfg.get(task_type, [])
+    return []
+
+
+def compute_status(executor, done_day, task_report, co_executor, co_executor_required, reestr_number) -> str:
+    if reestr_number:
+        return STATUS_SENT
+    if executor and done_day and task_report and (not co_executor_required or co_executor):
+        return STATUS_DONE
+    if executor:
+        return STATUS_ASSIGNED
+    return STATUS_CREATED
 
 
 def _cell_to_str(value):
@@ -155,7 +223,7 @@ def build_main_afl_row(p: dict, form: dict, now, head_map: dict) -> dict:
         "house_type": p["is_mkd"],
         "meter_installation_place": p["tu_name"],
         "contract_status": p["subscriber_category"],
-        "subscriber_name": p["subscriber_name"],
+        "subscriber_name": p.get("subscriber_short_name") or p.get("subscriber_name"),
         "address": p["address"],
         "municipal_district": p["municipal_district"],
         "region": p["region"],
@@ -163,6 +231,7 @@ def build_main_afl_row(p: dict, form: dict, now, head_map: dict) -> dict:
         "third_party_organization": p["contract_division"],
         "assignee": head_map.get(dept) if dept else None,
         "executor_organization": dept,
+        "status": STATUS_CREATED,
     }
 
 

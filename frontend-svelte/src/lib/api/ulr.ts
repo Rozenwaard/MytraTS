@@ -43,24 +43,64 @@ export async function uploadUlr(
 	return res.json();
 }
 
+export type WorkReportOption = { id: number | null; short: string | null; needs_co: boolean };
+
 export type UlrExecutionRow = {
 	task_number: string | null;
-	customer: string | null;
+	task_source: string | null;
+	task_type: string | null;
 	work_type_in_task: string | null;
+	created_at: string | null;
+	due_date: string | null;
+	customer: string | null;
+	visit_reason: string | null;
+	subscriber_type: string | null;
+	grid: string | null;
 	personal_account: string | null;
+	service_object_type: string | null;
+	subscriber_name: string | null;
 	address: string | null;
+	meter_model: string | null;
+	meter_installation_place: string | null;
+	violations: string | null;
+	meter_type: string | null;
 	executor: string | null;
+	executor_organization: string | null;
+	co_executor: string | null;
 	task_report: string | null;
 	done_day: string | null;
 	reestr_number: string | null;
-	errors: string | null;
+	status: string | null;
+	contract_status: string | null;
 	norm: number | null;
-	co_executor: string | null;
-	acts: string | null;
+	work_type_options: WorkReportOption[];
+	executor_options: string[];
+	co_executor_required: boolean;
 };
 
 export async function fetchUlrExecution(): Promise<{ rows: UlrExecutionRow[] }> {
 	const res = await fetch('/api/ulr/execution', { credentials: 'include' });
 	if (!res.ok) throw new Error('Не удалось получить список');
+	return res.json();
+}
+
+export async function updateUlrExecution(fields: {
+	task_number: string;
+	executor: string | null;
+	co_executor: string | null;
+	task_report: string | null;
+	done_day: string | null;
+	violations: string | null;
+}): Promise<{ success: boolean; status: string }> {
+	const res = await fetch('/api/ulr/execution', {
+		method: 'PATCH',
+		credentials: 'include',
+		headers: { 'Content-Type': 'application/json' },
+		body: JSON.stringify(fields)
+	});
+	if (!res.ok) {
+		const body = (await res.json().catch(() => ({}))) as { error?: string };
+		throw new Error(body.error ?? 'Ошибка сохранения');
+	}
 	return res.json();
 }
