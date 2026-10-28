@@ -15,6 +15,7 @@ from services.premium import apply_manual_norm
 
 MAIN_AFL_DISPLAY_COLUMNS = [
     "task_number", "task_source", "task_type", "work_type_in_task", "created_at",
+    "status", "due_date",
     "address", "municipal_district", "house_type", "personal_account",
     "service_object_type", "subscriber_name", "subscriber_type",
     "meter_installation_place", "meter_model", "meter_status",

@@ -38,10 +38,20 @@
 		{ key: 'executor_organization', header: 'Отделение' },
 		{ key: 'executor', header: 'Исполнитель' }
 	];
-	const IN_WORK_EXPAND_GROUPS = EXPAND_GROUPS.map((g) => ({
-		...g,
-		columns: g.columns.filter((c) => c.key !== 'reestr_number' && c.key !== 'errors')
-	}));
+	const IN_WORK_EXPAND_GROUPS = EXPAND_GROUPS.map((g) => {
+		const columns = g.columns.filter(
+			(c) =>
+				c.key !== 'reestr_number' &&
+				c.key !== 'errors' &&
+				c.key !== 'task_output' &&
+				c.key !== 'task_detail'
+		);
+		if (g.title === 'Задание') {
+			columns.push({ key: 'status', header: 'Статус задания' });
+			columns.push({ key: 'due_date', header: 'Выполнить до' });
+		}
+		return { ...g, columns };
+	});
 
 	const columns: ColumnDef<MainAflRow>[] = IN_WORK_COLUMNS.map((c) => ({
 		accessorKey: c.key,

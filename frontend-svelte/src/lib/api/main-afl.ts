@@ -6,6 +6,8 @@ export interface MainAflRow {
 	task_type: string | null;
 	work_type_in_task: string | null;
 	created_at: string | null;
+	status: string | null;
+	due_date: string | null;
 	address: string | null;
 	municipal_district: string | null;
 	house_type: string | null;
