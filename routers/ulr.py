@@ -16,6 +16,8 @@ from services.ulr import INSERT_SQL, build_main_afl_row, feedback_xlsx_b64, find
 
 CUSTOMERS = ["ПСК", "РЛЭ"]
 GRIDS = ["-", "ГтЭС", "КнЭС", "НлЭС", "СЭС", "ТхЭС", "ЮЭС", "ВЭС", "ЛОЭСК", "Оборонэнерго"]
+# Виды работ, которые не показываем в выпадающем списке «Поручение» формы УЛР.
+EXCLUDED_WORK_TYPES = ("недопуск", "бездог")
 ADMIN_ROLES = ("администратор", "специалист")
 
 
@@ -31,7 +33,14 @@ async def api_ulr_options(request: Request, db_session: AsyncSession) -> Respons
     async with sand_session_factory() as session:
         result = await session.execute(text(
             "SELECT short, title, customer FROM work_catalog WHERE kind = 'base' ORDER BY id"))
-        work_types = [{"short": r[0], "title": r[1], "customer": r[2]} for r in result]
+        work_types = sorted(
+            (
+                {"short": r[0], "title": r[1], "customer": r[2]}
+                for r in result
+                if not any(term in (r[0] or "").lower() for term in EXCLUDED_WORK_TYPES)
+            ),
+            key=lambda w: (w["short"] or "").lower(),
+        )
     return Response(content=json.dumps(
         {"customers": CUSTOMERS, "grids": GRIDS, "work_types": work_types},
         ensure_ascii=False), media_type="application/json")
@@ -56,7 +65,7 @@ async def api_ulr_upload(request: Request, db_session: AsyncSession) -> Response
 
     missing = []
     for label, val in [("заказчик", customer), ("основание", visit_reason),
-                       ("поручение", work_type_in_task)]:
+                       ("поручение", work_type_in_task), ("плановая дата выполнения", due_date)]:
         if not val:
             missing.append(label)
     if customer == "РЛЭ" and not grid:

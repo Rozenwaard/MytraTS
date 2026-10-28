@@ -26,7 +26,7 @@
 	);
 
 	const canSubmit = $derived(
-		!!file && !!customer && !!visitReason && !!workType && (customer !== 'РЛЭ' || !!grid)
+		!!file && !!customer && !!visitReason && !!workType && !!dueDate && (customer !== 'РЛЭ' || !!grid)
 	);
 
 	$effect(() => {
@@ -77,6 +77,7 @@
 			);
 			toast(`Загружено: ${result.inserted} строк, неидентифицировано: ${result.feedback.length}`);
 			downloadFeedback(result);
+			customer = '';
 		} catch (e) {
 			toast(e instanceof Error ? e.message : 'Ошибка загрузки');
 		} finally {
@@ -96,17 +97,20 @@
 			<CardContent class="space-y-4">
 				<div class="grid grid-cols-2 gap-4">
 					<div class="space-y-1.5">
-						<label class="text-sm font-medium" for="ulr-customer">Заказчик *</label>
-						<select
-							id="ulr-customer"
-							class="h-9 w-full rounded-md border border-input bg-background px-2 text-sm outline-none focus-visible:border-ring"
-							bind:value={customer}
-						>
-							<option value="">—</option>
+						<span class="text-sm font-medium">Заказчик</span>
+						<div class="flex items-center gap-4 pt-1">
 							{#each options?.customers ?? [] as c (c)}
-								<option value={c}>{c}</option>
+								<label class="flex items-center gap-1.5 text-sm">
+									<input
+										type="checkbox"
+										class="size-4 cursor-pointer accent-primary"
+										checked={customer === c}
+										onchange={() => (customer = customer === c ? '' : c)}
+									/>
+									{c}
+								</label>
 							{/each}
-						</select>
+						</div>
 					</div>
 					<div class="space-y-1.5">
 						<label class="text-sm font-medium" for="ulr-grid">Сети (филиал) *</label>
@@ -125,7 +129,7 @@
 
 				<div class="grid grid-cols-2 gap-4">
 					<div class="space-y-1.5">
-						<label class="text-sm font-medium" for="ulr-reason">Основание *</label>
+						<label class="text-sm font-medium" for="ulr-reason">Основание</label>
 						<Input id="ulr-reason" bind:value={visitReason} placeholder="Исходящий номер письма" />
 					</div>
 					<div class="space-y-1.5">
@@ -135,7 +139,7 @@
 				</div>
 
 				<div class="space-y-1.5">
-					<label class="text-sm font-medium" for="ulr-work">Поручение *</label>
+					<label class="text-sm font-medium" for="ulr-work">Поручение</label>
 					<select
 						id="ulr-work"
 						class="h-9 w-full rounded-md border border-input bg-background px-2 text-sm outline-none focus-visible:border-ring"
@@ -158,7 +162,7 @@
 				</Button>
 
 				<p class="text-xs text-muted-foreground">
-					* — обязательные поля. «Сети (филиал)» обязателен только для заказчика РЛЭ.
+					«Сети (филиал)» обязателен только для заказчика РЛЭ.
 				</p>
 			</CardContent>
 		</Card>
