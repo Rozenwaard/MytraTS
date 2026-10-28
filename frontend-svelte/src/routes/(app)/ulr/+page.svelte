@@ -17,20 +17,21 @@
 	let workType = $state('');
 	let grid = $state('');
 	let dueDate = $state('');
+	let taskType = $state('');
 	let file = $state<File | null>(null);
 	let uploading = $state(false);
 	let result = $state<UlrUploadResult | null>(null);
 
-	const workTypeOptions = $derived(
-		options ? options.work_types.filter((w) => !customer || !w.customer || w.customer === customer) : []
+	const assignmentOptions = $derived(
+		customer ? (options?.assignment_types?.[customer] ?? []) : []
 	);
 
 	const canSubmit = $derived(
-		!!file && !!customer && !!visitReason && !!workType && !!dueDate && (customer !== 'РЛЭ' || !!grid)
+		!!file && !!customer && !!visitReason && !!workType && !!dueDate && !!taskType && (customer !== 'РЛЭ' || !!grid)
 	);
 
 	$effect(() => {
-		if (workType && !workTypeOptions.some((w) => w.short === workType)) {
+		if (workType && !assignmentOptions.includes(workType)) {
 			workType = '';
 		}
 	});
@@ -72,7 +73,7 @@
 		result = null;
 		try {
 			result = await uploadUlr(
-				{ customer, visit_reason: visitReason, work_type_in_task: workType, grid, due_date: dueDate },
+				{ customer, visit_reason: visitReason, work_type_in_task: workType, grid, due_date: dueDate, task_type: taskType },
 				file
 			);
 			toast(`Загружено: ${result.inserted} строк, неидентифицировано: ${result.feedback.length}`);
@@ -138,18 +139,32 @@
 					</div>
 				</div>
 
-				<div class="space-y-1.5">
-					<label class="text-sm font-medium" for="ulr-work">Поручение</label>
-					<select
-						id="ulr-work"
-						class="h-9 w-full rounded-md border border-input bg-background px-2 text-sm outline-none focus-visible:border-ring"
-						bind:value={workType}
-					>
-						<option value="">—</option>
-						{#each workTypeOptions as w (w.short)}
-							<option value={w.short}>{w.short}</option>
-						{/each}
-					</select>
+				<div class="grid grid-cols-2 gap-4">
+					<div class="space-y-1.5">
+						<label class="text-sm font-medium" for="ulr-task-type">Тип поручения</label>
+						<select
+							id="ulr-task-type"
+							class="h-9 w-full rounded-md border border-input bg-background px-2 text-sm outline-none focus-visible:border-ring"
+							bind:value={taskType}
+						>
+							<option value="">—</option>
+							<option value="Плановый">Плановый</option>
+							<option value="Внеплановый">Внеплановый</option>
+						</select>
+					</div>
+					<div class="space-y-1.5">
+						<label class="text-sm font-medium" for="ulr-work">Поручение</label>
+						<select
+							id="ulr-work"
+							class="h-9 w-full rounded-md border border-input bg-background px-2 text-sm outline-none focus-visible:border-ring"
+							bind:value={workType}
+						>
+							<option value="">—</option>
+							{#each assignmentOptions as a (a)}
+								<option value={a}>{a}</option>
+							{/each}
+						</select>
+					</div>
 				</div>
 
 				<div class="space-y-1.5">

@@ -1,5 +1,5 @@
 export type WorkTypeOption = { short: string; title: string; customer: string | null };
-export type UlrOptions = { customers: string[]; grids: string[]; work_types: WorkTypeOption[] };
+export type UlrOptions = { customers: string[]; grids: string[]; work_types: WorkTypeOption[]; assignment_types: Record<string, string[]> };
 
 export type UlrFeedbackItem = {
 	row: number;
@@ -23,7 +23,7 @@ export async function fetchUlrOptions(): Promise<UlrOptions> {
 }
 
 export async function uploadUlr(
-	fields: { customer: string; visit_reason: string; work_type_in_task: string; grid: string; due_date: string },
+	fields: { customer: string; visit_reason: string; work_type_in_task: string; grid: string; due_date: string; task_type: string },
 	file: File
 ): Promise<UlrUploadResult> {
 	const form = new FormData();
@@ -32,6 +32,7 @@ export async function uploadUlr(
 	form.append('work_type_in_task', fields.work_type_in_task);
 	form.append('grid', fields.grid);
 	form.append('due_date', fields.due_date);
+	form.append('task_type', fields.task_type);
 	form.append('file', file);
 
 	const res = await fetch('/api/ulr/upload', { method: 'POST', credentials: 'include', body: form });

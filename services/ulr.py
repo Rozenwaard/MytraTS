@@ -9,25 +9,25 @@ from sqlalchemy import text
 # Колонки libra, которые нужны для матчинга и обогащения.
 LIBRA_SELECT = (
     "object_code, contract_number, meter_serial_number, tu_number, tu_id, metering_point, "
-    "meter_type, tu_name, object_name, subscriber_category, subscriber_name, "
+    "meter_type, phase_count, tu_name, object_name, subscriber_category, subscriber_name, "
     "address, municipal_district, region, is_mkd, contract_division, depts"
 )
 
 INSERT_SQL = """
 INSERT INTO main_afl (
-    task_number, task_source, work_type_in_task, created_at, due_date,
+    task_number, task_source, task_type, work_type_in_task, created_at, due_date,
     customer, visit_reason, subscriber_type, grid,
-    metering_point, personal_account, meter_model, meter_serial_number,
+    metering_point, personal_account, meter_model, meter_type, meter_serial_number,
     house_type, meter_installation_place, contract_status,
     subscriber_name, address, municipal_district, region,
-    service_object_type, third_party_organization, task_organization, assignee, executor_organization
+    service_object_type, third_party_organization, assignee, executor_organization
 ) VALUES (
-    :task_number, :task_source, :work_type_in_task, :created_at, :due_date,
+    :task_number, :task_source, :task_type, :work_type_in_task, :created_at, :due_date,
     :customer, :visit_reason, :subscriber_type, :grid,
-    :metering_point, :personal_account, :meter_model, :meter_serial_number,
+    :metering_point, :personal_account, :meter_model, :meter_type, :meter_serial_number,
     :house_type, :meter_installation_place, :contract_status,
     :subscriber_name, :address, :municipal_district, :region,
-    :service_object_type, :third_party_organization, :task_organization, :assignee, :executor_organization
+    :service_object_type, :third_party_organization, :assignee, :executor_organization
 )
 """
 
@@ -134,9 +134,12 @@ async def find_points(session, row):
 
 def build_main_afl_row(p: dict, form: dict, now, head_map: dict) -> dict:
     dept = p.get("depts")
+    model = p.get("meter_type")
+    phase = p.get("phase_count")
     return {
         "task_number": f"{now.strftime('%Y%m%d')}_{p['tu_id'] or ''}",
         "task_source": "mytra",
+        "task_type": form["task_type"],
         "work_type_in_task": form["work_type_in_task"],
         "created_at": now.strftime("%Y-%m-%d"),
         "due_date": form["due_date"],
@@ -146,18 +149,18 @@ def build_main_afl_row(p: dict, form: dict, now, head_map: dict) -> dict:
         "grid": form["grid"],
         "metering_point": p["tu_id"],
         "personal_account": p["metering_point"],
-        "meter_model": p["meter_type"],
+        "meter_model": model,
+        "meter_type": {"1": "1ф", "3": "3ф"}.get(phase),
         "meter_serial_number": p["meter_serial_number"],
-        "house_type": p["object_name"],
+        "house_type": p["is_mkd"],
         "meter_installation_place": p["tu_name"],
         "contract_status": p["subscriber_category"],
         "subscriber_name": p["subscriber_name"],
         "address": p["address"],
         "municipal_district": p["municipal_district"],
         "region": p["region"],
-        "service_object_type": p["is_mkd"],
+        "service_object_type": p["object_name"],
         "third_party_organization": p["contract_division"],
-        "task_organization": dept,
         "assignee": head_map.get(dept) if dept else None,
         "executor_organization": dept,
     }

@@ -18,6 +18,11 @@ CUSTOMERS = ["ПСК", "РЛЭ"]
 GRIDS = ["-", "ГтЭС", "КнЭС", "НлЭС", "СЭС", "ТхЭС", "ЮЭС", "ВЭС", "ЛОЭСК", "Оборонэнерго"]
 # Виды работ, которые не показываем в выпадающем списке «Поручение» формы УЛР.
 EXCLUDED_WORK_TYPES = ("недопуск", "бездог")
+# Виды поручений (категории) по заказчику — из Книга123.xlsx (лист 2).
+ASSIGNMENT_TYPES = {
+    "РЛЭ": ["КСП", "Архив", "ИП", "Опрос", "Привязка", "Допуск", "КРОЭ"],
+    "ПСК": ["КСП", "Осмотр", "Допуск", "ИП", "КРОЭ", "Доставка", "Архив"],
+}
 ADMIN_ROLES = ("администратор", "специалист")
 
 
@@ -41,7 +46,8 @@ async def api_ulr_options(request: Request, db_session: AsyncSession) -> Respons
         key=lambda w: (w["short"] or "").lower(),
     )
     return Response(content=json.dumps(
-        {"customers": CUSTOMERS, "grids": GRIDS, "work_types": work_types},
+        {"customers": CUSTOMERS, "grids": GRIDS, "work_types": work_types,
+         "assignment_types": ASSIGNMENT_TYPES},
         ensure_ascii=False), media_type="application/json")
 
 
@@ -60,11 +66,13 @@ async def api_ulr_upload(request: Request, db_session: AsyncSession) -> Response
     work_type_in_task = _f("work_type_in_task")
     grid = _f("grid")
     due_date = _f("due_date")
+    task_type = _f("task_type")
     file = form.get("file")
 
     missing = []
     for label, val in [("заказчик", customer), ("основание", visit_reason),
-                       ("поручение", work_type_in_task), ("плановая дата выполнения", due_date)]:
+                       ("поручение", work_type_in_task), ("плановая дата выполнения", due_date),
+                       ("тип поручения", task_type)]:
         if not val:
             missing.append(label)
     if customer == "РЛЭ" and not grid:
@@ -86,7 +94,8 @@ async def api_ulr_upload(request: Request, db_session: AsyncSession) -> Response
                         media_type="application/json", status_code=400)
 
     form_ctx = {"customer": customer, "visit_reason": visit_reason,
-                "work_type_in_task": work_type_in_task, "grid": grid, "due_date": due_date}
+                "work_type_in_task": work_type_in_task, "grid": grid, "due_date": due_date,
+                "task_type": task_type}
     now = datetime.now()
 
     # Начальники отделений (dept -> ФИО) из mytra.db
