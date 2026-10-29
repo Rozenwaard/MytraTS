@@ -14,9 +14,10 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from data.config import sand_session_factory
 from deps import get_current_user, require_auth
+from services.reestr import DEPT_PREFIXES, LOCALE_SUFFIXES
 from services.ulr import (CO_EXECUTOR_WORK_IDS, EXECUTOR_POSITIONS, INSERT_SQL, NO_EXECUTION,
-                          build_main_afl_row, compute_status, feedback_xlsx_b64, find_points,
-                          read_register, resolve_work_ids)
+                          STATUS_DONE, STATUS_SENT, build_main_afl_row, compute_status,
+                          feedback_xlsx_b64, find_points, read_register, resolve_work_ids)
 
 CUSTOMERS = ["ПСК", "РЛЭ"]
 # Подразделения заказчика: ПСК — из Книга123.xlsx (лист 3), РЛЭ — филиалы.
@@ -224,7 +225,9 @@ async def api_ulr_update_execution(
     request: Request, db_session: AsyncSession,
     data: dict = Body(media_type=RequestEncodingType.JSON),
 ) -> Response:
-    await _require_role(request, db_session)
+    user = await get_current_user(request, db_session)
+    if not user or user.effective_role not in ADMIN_ROLES:
+        raise NotAuthorizedException()
 
     def _v(key):
         v = data.get(key)
@@ -251,12 +254,12 @@ async def api_ulr_update_execution(
 
     async with sand_session_factory() as session:
         cur = (await session.execute(text(
-            "SELECT reestr_number, meter_type FROM main_afl WHERE task_number = :tn"),
+            "SELECT reestr_number, meter_type, verified, status_changed_at FROM main_afl WHERE task_number = :tn"),
             {"tn": task_number})).fetchone()
         if cur is None:
             return Response(content=json.dumps({"error": "Строка не найдена"}, ensure_ascii=False),
                             media_type="application/json", status_code=404)
-        reestr_number, meter_type = cur[0], cur[1]
+        reestr_number, meter_type, cur_verified, cur_status_changed_at = cur[0], cur[1], cur[2], cur[3]
         if reestr_number:
             return Response(content=json.dumps(
                 {"error": "Реестр уже присвоен — редактирование закрыто"}, ensure_ascii=False),
@@ -265,16 +268,100 @@ async def api_ulr_update_execution(
         co_required = meter_type == "3ф" and short_to_id.get(task_report) in CO_EXECUTOR_WORK_IDS
         status = compute_status(executor, done_day, task_report, co_executor, co_required, reestr_number)
 
+        # Автор и время перехода в «Выполнено» — храним последние значения.
+        if status == STATUS_DONE:
+            verified = user.full_name
+            status_changed_at = datetime.now().strftime("%d.%m.%Y %H:%M:%S")
+        else:
+            verified = cur_verified
+            status_changed_at = cur_status_changed_at
+
         await session.execute(text(
             "UPDATE main_afl SET executor = :executor, co_executor = :co_executor, "
             "task_report = :task_report, done_day = :done_day, violations = :violations, "
-            "status = :status WHERE task_number = :tn"),
+            "status = :status, verified = :verified, status_changed_at = :status_changed_at "
+            "WHERE task_number = :tn"),
             {"executor": executor, "co_executor": co_executor, "task_report": task_report,
-             "done_day": done_day, "violations": violations, "status": status, "tn": task_number})
+             "done_day": done_day, "violations": violations, "status": status,
+             "verified": verified, "status_changed_at": status_changed_at, "tn": task_number})
         await session.commit()
 
     return Response(content=json.dumps({"success": True, "status": status}, ensure_ascii=False),
                     media_type="application/json")
 
 
-ulr_router = Router("/api", route_handlers=[api_ulr_options, api_ulr_upload, api_ulr_execution, api_ulr_update_execution])
+@post("/ulr/reestr", guards=[require_auth])
+async def api_ulr_reestr(
+    request: Request, db_session: AsyncSession,
+    data: dict = Body(media_type=RequestEncodingType.JSON),
+) -> Response:
+    user = await get_current_user(request, db_session)
+    if not user or user.effective_role not in ADMIN_ROLES:
+        raise NotAuthorizedException()
+
+    task_numbers = [str(t).strip() for t in data.get("task_numbers", []) if t]
+    if not task_numbers:
+        return Response(content=json.dumps({"error": "Не выбраны строки"}, ensure_ascii=False),
+                        media_type="application/json", status_code=400)
+
+    # Локале исполнителя — из mytra.db.
+    loc_rows = await db_session.execute(text(
+        "SELECT executor_name, locale FROM users WHERE executor_name IS NOT NULL AND executor_name != ''"))
+    locale_map = {r[0]: r[1] for r in loc_rows}
+
+    year_suffix = datetime.now().strftime("%y")
+    reestr_date = datetime.now().strftime("%Y-%m-%d")
+    reestrs = []
+    skipped = 0
+
+    async with sand_session_factory() as session:
+        names = ", ".join(f":tn{i}" for i in range(len(task_numbers)))
+        params = {f"tn{i}": tn for i, tn in enumerate(task_numbers)}
+        result = await session.execute(text(
+            f"SELECT task_number, customer, task_organization, task_report, executor_organization, "
+            f"executor, reestr_number, status FROM main_afl WHERE task_number IN ({names})"), params)
+        rows = [dict(r._mapping) for r in result]
+
+        eligible = [r for r in rows if r.get("status") == STATUS_DONE and not r.get("reestr_number")]
+        skipped = len(rows) - len(eligible)
+
+        groups: dict = {}
+        for r in eligible:
+            locale = locale_map.get(r.get("executor") or "", "") or ""
+            key = (r.get("task_organization"), locale, r.get("task_report"))
+            groups.setdefault(key, []).append(r)
+
+        for (task_org, locale, task_report), group in groups.items():
+            tns = [r["task_number"] for r in group]
+            display = f"{task_org or '-'} / {locale or '-'} / {task_report or 'Без категории'}"
+
+            if task_report == NO_EXECUTION:
+                rn = "Отклонён"
+            else:
+                dept = group[0].get("executor_organization") or ""
+                prefix = DEPT_PREFIXES.get(dept, "XX")
+                suffix = LOCALE_SUFFIXES.get(locale, "")
+                pattern = f"%-{prefix}{suffix}-{year_suffix}"
+                existing = (await session.execute(text(
+                    "SELECT reestr_number FROM main_afl WHERE reestr_number LIKE :p AND reestr_number != 'Отклонён'"),
+                    {"p": pattern})).fetchall()
+                max_seq = max((int(n[0].split("-")[0]) for n in existing
+                               if n[0] and "-" in n[0] and n[0].split("-")[0].isdigit()), default=0)
+                rn = f"{max_seq + 1}-{prefix}{suffix}-{year_suffix}"
+
+            tn_names = ", ".join(f":rn{i}" for i in range(len(tns)))
+            tn_params = {f"rn{i}": tn for i, tn in enumerate(tns)}
+            await session.execute(text(
+                f"UPDATE main_afl SET reestr_number = :rn, reestr_date = :rd, status = :st "
+                f"WHERE task_number IN ({tn_names})"),
+                {"rn": rn, "rd": reestr_date, "st": STATUS_SENT, **tn_params})
+            reestrs.append({"name": display, "reestr_number": rn, "count": len(tns)})
+
+        await session.commit()
+
+    return Response(content=json.dumps(
+        {"success": True, "reestrs": reestrs, "skipped": skipped, "reestr_date": reestr_date},
+        ensure_ascii=False), media_type="application/json")
+
+
+ulr_router = Router("/api", route_handlers=[api_ulr_options, api_ulr_upload, api_ulr_execution, api_ulr_update_execution, api_ulr_reestr])

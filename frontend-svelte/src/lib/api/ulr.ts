@@ -104,3 +104,24 @@ export async function updateUlrExecution(fields: {
 	}
 	return res.json();
 }
+
+export type UlrReestrResult = {
+	success: boolean;
+	reestrs: { name: string; reestr_number: string; count: number }[];
+	skipped: number;
+	reestr_date: string;
+};
+
+export async function createUlrReestr(taskNumbers: string[]): Promise<UlrReestrResult> {
+	const res = await fetch('/api/ulr/reestr', {
+		method: 'POST',
+		credentials: 'include',
+		headers: { 'Content-Type': 'application/json' },
+		body: JSON.stringify({ task_numbers: taskNumbers })
+	});
+	if (!res.ok) {
+		const body = (await res.json().catch(() => ({}))) as { error?: string };
+		throw new Error(body.error ?? 'Ошибка создания реестра');
+	}
+	return res.json();
+}

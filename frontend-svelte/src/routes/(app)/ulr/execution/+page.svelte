@@ -2,7 +2,7 @@
 	import { createQuery } from '@tanstack/svelte-query';
 	import { toStore, fromStore } from 'svelte/store';
 	import { queryClient } from '$lib/query';
-	import { fetchUlrExecution, updateUlrExecution, type UlrExecutionRow } from '$lib/api/ulr';
+	import { fetchUlrExecution, updateUlrExecution, createUlrReestr, type UlrExecutionRow } from '$lib/api/ulr';
 	import {
 		Table,
 		TableBody,
@@ -12,6 +12,7 @@
 		TableRow
 	} from '$lib/components/ui/table';
 	import { Skeleton } from '$lib/components/ui/skeleton';
+	import { Button } from '$lib/components/ui/button';
 	import { toast } from '$lib/store/toast.svelte';
 	import { copyText } from '$lib/clipboard';
 	import Coins from '@lucide/svelte/icons/coins';
@@ -138,9 +139,31 @@
 			toast(e instanceof Error ? e.message : 'Ошибка сохранения');
 		}
 	}
+
+	async function createReestrs() {
+		const tns = rows.filter((r) => selected.has(r.task_number ?? '')).map((r) => r.task_number ?? '');
+		if (tns.length === 0) return;
+		try {
+			const res = await createUlrReestr(tns);
+			toast(`В реестр добавлено: ${res.reestrs.length} групп${res.skipped ? ` (пропущено ${res.skipped})` : ''}`);
+			selected = new Set();
+			await queryClient.invalidateQueries({ queryKey: ['ulr-execution'] });
+		} catch (e) {
+			toast(e instanceof Error ? e.message : 'Ошибка создания реестра');
+		}
+	}
 </script>
 
 <div class="h-full overflow-auto p-4">
+	<div class="mb-3 flex items-center justify-between gap-3">
+		<span class="text-sm text-muted-foreground">
+			Всего: {rows.length}{#if selected.size > 0} · Выбрано: {selected.size}{/if}
+		</span>
+		<Button variant="default" size="sm" disabled={selected.size === 0} onclick={createReestrs}>
+			<ListChecks class="size-4" />
+			В реестр
+		</Button>
+	</div>
 	<div class="flex min-h-0 flex-1 flex-col overflow-hidden rounded-md border bg-card">
 		<Table containerClass="min-h-0 flex-1 overflow-auto">
 			<TableHeader>
