@@ -19,7 +19,11 @@ from services.ulr import (CO_EXECUTOR_WORK_IDS, EXECUTOR_POSITIONS, INSERT_SQL, 
                           read_register, resolve_work_ids)
 
 CUSTOMERS = ["ПСК", "РЛЭ"]
-GRIDS = ["-", "ГтЭС", "КнЭС", "НлЭС", "СЭС", "ТхЭС", "ЮЭС", "ВЭС", "ЛОЭСК", "Оборонэнерго"]
+# Подразделения заказчика: ПСК — из Книга123.xlsx (лист 3), РЛЭ — филиалы.
+SUBDIVISIONS = {
+    "ПСК": ["ДРЛО", "ЛО", "ОВОКУ", "ОДРДП", "ОДРП ЖКХ ЛО", "ОДРП ЖКХ СПБ", "ОКРБП", "ОКРЮЛ", "ООКПЭ", "ОТАПЭ", "ОЭР", "ПТО", "УРБП", "УРДЗ", "УРДЗ ЖКХ и РСО", "УРКП", "УРНП", "ЦОДК"],
+    "РЛЭ": ["ВЭС", "ГтЭС", "КнЭС", "НлЭС", "СЭС", "ТхЭС", "ЮЭС"],
+}
 # Виды работ, которые не показываем в выпадающем списке «Поручение» формы УЛР.
 EXCLUDED_WORK_TYPES = ("недопуск", "бездог")
 # Виды поручений (категории) по заказчику — из Книга123.xlsx (лист 2).
@@ -50,7 +54,7 @@ async def api_ulr_options(request: Request, db_session: AsyncSession) -> Respons
         key=lambda w: (w["short"] or "").lower(),
     )
     return Response(content=json.dumps(
-        {"customers": CUSTOMERS, "grids": GRIDS, "work_types": work_types,
+        {"customers": CUSTOMERS, "subdivisions": SUBDIVISIONS, "work_types": work_types,
          "assignment_types": ASSIGNMENT_TYPES},
         ensure_ascii=False), media_type="application/json")
 
@@ -68,7 +72,7 @@ async def api_ulr_upload(request: Request, db_session: AsyncSession) -> Response
     customer = _f("customer")
     visit_reason = _f("visit_reason")
     work_type_in_task = _f("work_type_in_task")
-    grid = _f("grid")
+    subdivision = _f("subdivision")
     due_date = _f("due_date")
     task_type = _f("task_type")
     file = form.get("file")
@@ -76,11 +80,9 @@ async def api_ulr_upload(request: Request, db_session: AsyncSession) -> Response
     missing = []
     for label, val in [("заказчик", customer), ("основание", visit_reason),
                        ("поручение", work_type_in_task), ("плановая дата выполнения", due_date),
-                       ("тип поручения", task_type)]:
+                       ("тип поручения", task_type), ("подразделение заказчика", subdivision)]:
         if not val:
             missing.append(label)
-    if customer == "РЛЭ" and not grid:
-        missing.append("филиал сетей (для РЛЭ)")
     if missing:
         return Response(content=json.dumps(
             {"error": "Не заполнены поля: " + ", ".join(missing)}, ensure_ascii=False),
@@ -98,7 +100,7 @@ async def api_ulr_upload(request: Request, db_session: AsyncSession) -> Response
                         media_type="application/json", status_code=400)
 
     form_ctx = {"customer": customer, "visit_reason": visit_reason,
-                "work_type_in_task": work_type_in_task, "grid": grid, "due_date": due_date,
+                "work_type_in_task": work_type_in_task, "subdivision": subdivision, "due_date": due_date,
                 "task_type": task_type}
     now = datetime.now()
 

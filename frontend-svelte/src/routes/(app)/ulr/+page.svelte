@@ -15,7 +15,7 @@
 	let customer = $state('');
 	let visitReason = $state('');
 	let workType = $state('');
-	let grid = $state('');
+	let subdivision = $state('');
 	let dueDate = $state('');
 	let taskType = $state('');
 	let file = $state<File | null>(null);
@@ -23,16 +23,27 @@
 	let result = $state<UlrUploadResult | null>(null);
 
 	const assignmentOptions = $derived(
-		customer ? (options?.assignment_types?.[customer] ?? []) : []
+		customer
+			? (options?.assignment_types?.[customer] ?? []).filter(
+					(a) => taskType !== 'Плановый' || a === 'КСП' || a === 'ИП'
+				)
+			: []
+	);
+
+	const subdivisionOptions = $derived(
+		customer ? (options?.subdivisions?.[customer] ?? []) : []
 	);
 
 	const canSubmit = $derived(
-		!!file && !!customer && !!visitReason && !!workType && !!dueDate && !!taskType && (customer !== 'РЛЭ' || !!grid)
+		!!file && !!customer && !!visitReason && !!workType && !!dueDate && !!taskType && !!subdivision
 	);
 
 	$effect(() => {
 		if (workType && !assignmentOptions.includes(workType)) {
 			workType = '';
+		}
+		if (subdivision && !subdivisionOptions.includes(subdivision)) {
+			subdivision = '';
 		}
 	});
 
@@ -73,7 +84,7 @@
 		result = null;
 		try {
 			result = await uploadUlr(
-				{ customer, visit_reason: visitReason, work_type_in_task: workType, grid, due_date: dueDate, task_type: taskType },
+				{ customer, visit_reason: visitReason, work_type_in_task: workType, subdivision, due_date: dueDate, task_type: taskType },
 				file
 			);
 			toast(`Загружено: ${result.inserted} строк, неидентифицировано: ${result.feedback.length}`);
@@ -114,15 +125,15 @@
 						</div>
 					</div>
 					<div class="space-y-1.5">
-						<label class="text-sm font-medium" for="ulr-grid">Сети (филиал) *</label>
+						<label class="text-sm font-medium" for="ulr-subdivision">Подразделение заказчика</label>
 						<select
-							id="ulr-grid"
+							id="ulr-subdivision"
 							class="h-9 w-full rounded-md border border-input bg-background px-2 text-sm outline-none focus-visible:border-ring"
-							bind:value={grid}
+							bind:value={subdivision}
 						>
 							<option value="">—</option>
-							{#each options?.grids ?? [] as g (g)}
-								<option value={g}>{g}</option>
+							{#each subdivisionOptions as s (s)}
+								<option value={s}>{s}</option>
 							{/each}
 						</select>
 					</div>
@@ -141,16 +152,27 @@
 
 				<div class="grid grid-cols-2 gap-4">
 					<div class="space-y-1.5">
-						<label class="text-sm font-medium" for="ulr-task-type">Тип поручения</label>
-						<select
-							id="ulr-task-type"
-							class="h-9 w-full rounded-md border border-input bg-background px-2 text-sm outline-none focus-visible:border-ring"
-							bind:value={taskType}
-						>
-							<option value="">—</option>
-							<option value="Плановый">Плановый</option>
-							<option value="Внеплановый">Внеплановый</option>
-						</select>
+						<span class="text-sm font-medium">Тип поручения</span>
+						<div class="flex items-center gap-4 pt-1">
+							<label class="flex items-center gap-1.5 text-sm">
+								<input
+									type="checkbox"
+									class="size-4 cursor-pointer accent-primary"
+									checked={taskType === 'Плановый'}
+									onchange={() => (taskType = taskType === 'Плановый' ? '' : 'Плановый')}
+								/>
+								Плановый
+							</label>
+							<label class="flex items-center gap-1.5 text-sm">
+								<input
+									type="checkbox"
+									class="size-4 cursor-pointer accent-primary"
+									checked={taskType === 'Внеплановый'}
+									onchange={() => (taskType = taskType === 'Внеплановый' ? '' : 'Внеплановый')}
+								/>
+								Внеплановый
+							</label>
+						</div>
 					</div>
 					<div class="space-y-1.5">
 						<label class="text-sm font-medium" for="ulr-work">Поручение</label>
@@ -175,10 +197,6 @@
 				<Button onclick={submit} disabled={uploading || !canSubmit}>
 					{uploading ? 'Загружаем…' : 'Загрузить реестр'}
 				</Button>
-
-				<p class="text-xs text-muted-foreground">
-					«Сети (филиал)» обязателен только для заказчика РЛЭ.
-				</p>
 			</CardContent>
 		</Card>
 

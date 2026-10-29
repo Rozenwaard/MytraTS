@@ -10,7 +10,7 @@ from sqlalchemy import text
 LIBRA_SELECT = (
     "object_code, contract_number, meter_serial_number, tu_number, tu_id, metering_point, "
     "meter_type, phase_count, tu_name, object_name, subscriber_category, subscriber_name, "
-    "subscriber_short_name, address, municipal_district, region, is_mkd, contract_division, depts"
+    "subscriber_short_name, address, municipal_district, region, is_mkd, contract_division, depts, grid_company"
 )
 
 INSERT_SQL = """
@@ -20,14 +20,14 @@ INSERT INTO main_afl (
     metering_point, personal_account, meter_model, meter_type, meter_serial_number,
     house_type, meter_installation_place, contract_status,
     subscriber_name, address, municipal_district, region,
-    service_object_type, third_party_organization, assignee, executor_organization, status
+    service_object_type, third_party_organization, task_organization, assignee, executor_organization, status
 ) VALUES (
     :task_number, :task_source, :task_type, :work_type_in_task, :created_at, :due_date,
     :customer, :visit_reason, :subscriber_type, :grid,
     :metering_point, :personal_account, :meter_model, :meter_type, :meter_serial_number,
     :house_type, :meter_installation_place, :contract_status,
     :subscriber_name, :address, :municipal_district, :region,
-    :service_object_type, :third_party_organization, :assignee, :executor_organization, :status
+    :service_object_type, :third_party_organization, :task_organization, :assignee, :executor_organization, :status
 )
 """
 
@@ -204,6 +204,8 @@ def build_main_afl_row(p: dict, form: dict, now, head_map: dict) -> dict:
     dept = p.get("depts")
     model = p.get("meter_type")
     phase = p.get("phase_count")
+    subdivision = form.get("subdivision")
+    is_rle = form.get("customer") == "РЛЭ"
     return {
         "task_number": f"{now.strftime('%Y%m%d')}_{p['tu_id'] or ''}",
         "task_source": "mytra",
@@ -214,7 +216,7 @@ def build_main_afl_row(p: dict, form: dict, now, head_map: dict) -> dict:
         "customer": form["customer"],
         "visit_reason": form["visit_reason"],
         "subscriber_type": "ЮЛ",
-        "grid": form["grid"],
+        "grid": subdivision if is_rle else p.get("grid_company"),
         "metering_point": p["tu_id"],
         "personal_account": p["metering_point"],
         "meter_model": model,
@@ -229,6 +231,7 @@ def build_main_afl_row(p: dict, form: dict, now, head_map: dict) -> dict:
         "region": p["region"],
         "service_object_type": p["object_name"],
         "third_party_organization": p["contract_division"],
+        "task_organization": subdivision,
         "assignee": head_map.get(dept) if dept else None,
         "executor_organization": dept,
         "status": STATUS_CREATED,
