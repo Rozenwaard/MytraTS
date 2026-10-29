@@ -182,8 +182,8 @@ async def api_ulr_execution(request: Request, db_session: AsyncSession) -> Respo
         params["dept"] = user.dept
 
     # Справочники для дропдаунов (из mytra.db).
-    wc_rows = await db_session.execute(text(
-        "SELECT id, short FROM work_catalog WHERE kind = 'base'"))
+    wc_rows = (await db_session.execute(text(
+        "SELECT id, short FROM work_catalog WHERE kind = 'base'"))).fetchall()
     wc_short = {r[0]: r[1] for r in wc_rows}
     short_to_id = {r[1]: r[0] for r in wc_rows if r[1]}
 
