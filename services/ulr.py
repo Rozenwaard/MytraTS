@@ -207,7 +207,6 @@ def build_main_afl_row(p: dict, form: dict, now, head_map: dict) -> dict:
     subdivision = form.get("subdivision")
     is_rle = form.get("customer") == "РЛЭ"
     return {
-        "task_number": f"{now.strftime('%Y%m%d')}_{p['tu_id'] or ''}",
         "task_source": "mytra",
         "task_type": form["task_type"],
         "work_type_in_task": form["work_type_in_task"],

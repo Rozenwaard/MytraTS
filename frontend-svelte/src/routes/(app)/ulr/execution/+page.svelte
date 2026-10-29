@@ -193,7 +193,7 @@
 	}
 </script>
 
-<div class="h-full overflow-auto p-4">
+<div class="flex h-full flex-col p-4">
 	<div class="mb-3 flex items-center justify-between gap-3">
 		<span class="text-sm text-muted-foreground">
 			Всего: {rows.length}{#if selected.size > 0} · Выбрано: {selected.size}{/if}
@@ -256,7 +256,9 @@
 							{#each COLUMNS as col (col.key)}
 								<TableCell class={col.key === 'norm' ? 'whitespace-nowrap text-center text-sm' : 'whitespace-nowrap text-sm'}>
 									{#if col.key === 'reestr_number'}
-										{#if row.reestr_number}
+										{#if row.reestr_number === 'Отклонён'}
+											<span class="font-bold text-brand-reestr-rejected">Р</span>
+										{:else if row.reestr_number}
 											<span class="font-bold text-brand-brown">Р</span>
 										{:else}
 											-
