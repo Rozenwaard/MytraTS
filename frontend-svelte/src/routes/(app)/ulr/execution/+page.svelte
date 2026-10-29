@@ -2,7 +2,7 @@
 	import { createQuery } from '@tanstack/svelte-query';
 	import { toStore, fromStore } from 'svelte/store';
 	import { queryClient } from '$lib/query';
-	import { fetchUlrExecution, updateUlrExecution, createUlrReestr, type UlrExecutionRow } from '$lib/api/ulr';
+	import { fetchUlrExecution, updateUlrExecution, createUlrReestr, resetUlrReestr, changeUlrTaskReport, fetchUlrOptions, type UlrExecutionRow, type UlrOptions } from '$lib/api/ulr';
 	import {
 		Table,
 		TableBody,
@@ -14,9 +14,11 @@
 	import { Skeleton } from '$lib/components/ui/skeleton';
 	import { Button } from '$lib/components/ui/button';
 	import { toast } from '$lib/store/toast.svelte';
+	import { auth } from '$lib/store/auth.svelte';
 	import { copyText } from '$lib/clipboard';
 	import Coins from '@lucide/svelte/icons/coins';
 	import ListChecks from '@lucide/svelte/icons/list-checks';
+	import Trash2 from '@lucide/svelte/icons/trash-2';
 	import type { Component } from 'svelte';
 
 	const HEADER_ICONS: Partial<Record<keyof UlrExecutionRow, Component>> = {
@@ -90,6 +92,15 @@
 	const rows = $derived(result.current.data?.rows ?? []);
 	const loading = $derived(result.current.isPending);
 
+	const optionsQuery = createQuery<UlrOptions>(
+		toStore(() => ({
+			queryKey: ['ulr-options'],
+			queryFn: () => fetchUlrOptions()
+		}))
+	);
+	const optionsResult = fromStore(optionsQuery);
+	const workTypes = $derived(optionsResult.current.data?.work_types ?? []);
+
 	const today = (() => {
 		const d = new Date();
 		return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
@@ -150,6 +161,34 @@
 			await queryClient.invalidateQueries({ queryKey: ['ulr-execution'] });
 		} catch (e) {
 			toast(e instanceof Error ? e.message : 'Ошибка создания реестра');
+		}
+	}
+
+	let reportChoice = $state<Record<string, string>>({});
+	const isAdmin = $derived(auth.user?.role === 'администратор');
+
+	function workTypesForCustomer(customer: string | null) {
+		return workTypes.filter((w) => w.customer === customer).map((w) => w.short);
+	}
+
+	async function resetReestr(row: UlrExecutionRow) {
+		try {
+			await resetUlrReestr([row.task_number ?? '']);
+			await queryClient.invalidateQueries({ queryKey: ['ulr-execution'] });
+		} catch (e) {
+			toast(e instanceof Error ? e.message : 'Ошибка удаления из реестра');
+		}
+	}
+
+	async function changeReport(row: UlrExecutionRow) {
+		const value = reportChoice[row.task_number ?? ''] ?? '';
+		if (!value) return;
+		try {
+			await changeUlrTaskReport(row.task_number ?? '', value);
+			reportChoice[row.task_number ?? ''] = '';
+			await queryClient.invalidateQueries({ queryKey: ['ulr-execution'] });
+		} catch (e) {
+			toast(e instanceof Error ? e.message : 'Ошибка замены вида работ');
 		}
 	}
 </script>
@@ -278,6 +317,29 @@
 												{/each}
 											</div>
 										{/each}
+									</div>
+									<div class="mt-3 flex flex-wrap items-center gap-2 border-t pt-3">
+										{#if row.reestr_number && row.reestr_number !== 'Отклонён'}
+											<Button size="sm" variant="destructive" onclick={() => resetReestr(row)}>
+												<Trash2 class="size-4" />
+												Удалить из реестра
+											</Button>
+										{/if}
+										{#if isAdmin}
+											<select
+												class="h-8 rounded-md border border-input bg-transparent px-2 text-sm outline-none focus-visible:border-ring"
+												value={reportChoice[id] ?? ''}
+												onchange={(e) => (reportChoice[id] = (e.currentTarget as HTMLSelectElement).value)}
+											>
+												<option value="" disabled>Заменить вид работ</option>
+												{#each workTypesForCustomer(row.customer) as w (w)}
+													<option value={w}>{w}</option>
+												{/each}
+											</select>
+											<Button size="sm" variant="default" disabled={!reportChoice[id]} onclick={() => changeReport(row)}>
+												Заменить
+											</Button>
+										{/if}
 									</div>
 								</TableCell>
 							</TableRow>

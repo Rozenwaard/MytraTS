@@ -125,3 +125,31 @@ export async function createUlrReestr(taskNumbers: string[]): Promise<UlrReestrR
 	}
 	return res.json();
 }
+
+export async function resetUlrReestr(taskNumbers: string[]): Promise<{ success: boolean; cleared: number }> {
+	const res = await fetch('/api/ulr/reestr/reset', {
+		method: 'POST',
+		credentials: 'include',
+		headers: { 'Content-Type': 'application/json' },
+		body: JSON.stringify({ task_numbers: taskNumbers })
+	});
+	if (!res.ok) {
+		const body = (await res.json().catch(() => ({}))) as { error?: string };
+		throw new Error(body.error ?? 'Ошибка удаления из реестра');
+	}
+	return res.json();
+}
+
+export async function changeUlrTaskReport(taskNumber: string, taskReport: string): Promise<{ success: boolean }> {
+	const res = await fetch('/api/ulr/task-report', {
+		method: 'PATCH',
+		credentials: 'include',
+		headers: { 'Content-Type': 'application/json' },
+		body: JSON.stringify({ task_number: taskNumber, task_report: taskReport })
+	});
+	if (!res.ok) {
+		const body = (await res.json().catch(() => ({}))) as { error?: string };
+		throw new Error(body.error ?? 'Ошибка замены вида работ');
+	}
+	return res.json();
+}
