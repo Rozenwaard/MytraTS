@@ -47,6 +47,10 @@ ALLOWED_NEW_BALANCE_CL = {
     "Сч.собств.ПСК",
 }
 
+# task_detail, при котором доступ к ПУ отсутствует — балансовую принадлежность
+# определить невозможно, поэтому ошибку «Балансовая принадлежность» не ставим.
+NO_ACCESS_PU_TASK_DETAIL = "причина невыполнения: нет доступа до пу"
+
 ECR_TYPES = {
     "эу-20м-33",
     "эу20",
@@ -364,12 +368,14 @@ def check_row(row: dict) -> list:
         add_error(errors, "Годы несовпадают")
 
     # Балансовая принадлежность старого ПУ.
-    # Не ставим, если нет старого ПУ (meter_type пуст).
+    # Не ставим, если нет старого ПУ (meter_type пуст) или нет доступа до ПУ.
     old_balance = norm_key(row.get("meter_ownership"))
+    no_access_pu = norm_key(row.get("task_detail")) == NO_ACCESS_PU_TASK_DETAIL
 
     if (is_filled(row.get("meter_type"))
             and (old_balance == "" or old_balance == "не задано")
-            and is_empty(row.get("meter_ownership_1"))):
+            and is_empty(row.get("meter_ownership_1"))
+            and not no_access_pu):
         add_error(errors, "Балансовая принадлежность")
 
     # Активное отключение
