@@ -15,7 +15,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from data.config import sand_session_factory
 from deps import get_current_user, require_auth
 from services.ulr import (CO_EXECUTOR_WORK_IDS, EXECUTOR_POSITIONS, INSERT_SQL, NO_EXECUTION,
-                          STATUS_DONE, STATUS_SENT, build_main_afl_row, compute_status,
+                          STATUS_DONE, STATUS_SENT, build_main_afl_row, compute_due_date, compute_status,
                           feedback_xlsx_b64, find_points, read_register, resolve_work_ids)
 
 CUSTOMERS = ["ПСК", "РЛЭ"]
@@ -66,16 +66,16 @@ async def api_ulr_upload(request: Request, db_session: AsyncSession) -> Response
         return v.strip() if isinstance(v, str) else ""
 
     customer = _f("customer")
-    visit_reason = _f("visit_reason")
+    letter_number = _f("letter_number")
+    letter_date = _f("letter_date")
     work_type_in_task = _f("work_type_in_task")
     subdivision = _f("subdivision")
-    due_date = _f("due_date")
     task_type = _f("task_type")
     file = form.get("file")
 
     missing = []
-    for label, val in [("заказчик", customer), ("основание", visit_reason),
-                       ("поручение", work_type_in_task), ("плановая дата выполнения", due_date),
+    for label, val in [("заказчик", customer), ("номер письма", letter_number),
+                       ("дата письма", letter_date), ("поручение", work_type_in_task),
                        ("тип поручения", task_type), ("подразделение заказчика", subdivision)]:
         if not val:
             missing.append(label)
@@ -95,10 +95,13 @@ async def api_ulr_upload(request: Request, db_session: AsyncSession) -> Response
         return Response(content=json.dumps({"error": "В файле нет строк"}, ensure_ascii=False),
                         media_type="application/json", status_code=400)
 
+    now = datetime.now()
+    # «визитризон» = номер письма + пробел + дата письма; due_date — автоматически.
+    visit_reason = f"{letter_number} {letter_date}".strip()
+    due_date = compute_due_date(task_type, now)
     form_ctx = {"customer": customer, "visit_reason": visit_reason,
                 "work_type_in_task": work_type_in_task, "subdivision": subdivision, "due_date": due_date,
                 "task_type": task_type}
-    now = datetime.now()
 
     # Начальники отделений (dept -> ФИО) из mytra.db
     head_rows = await db_session.execute(text(
@@ -437,4 +440,35 @@ async def api_ulr_task_report(
                     media_type="application/json")
 
 
-ulr_router = Router("/api", route_handlers=[api_ulr_options, api_ulr_upload, api_ulr_execution, api_ulr_update_execution, api_ulr_reestr, api_ulr_reestr_reset, api_ulr_task_report])
+@post("/ulr/due-date", guards=[require_auth])
+async def api_ulr_change_due_date(
+    request: Request, db_session: AsyncSession,
+    data: dict = Body(media_type=RequestEncodingType.JSON),
+) -> Response:
+    user = await get_current_user(request, db_session)
+    if not user or user.effective_role not in ADMIN_ROLES:
+        raise NotAuthorizedException()
+
+    task_numbers = [str(t).strip() for t in data.get("task_numbers", []) if t]
+    due_date = (data.get("due_date") or "").strip()
+    if not task_numbers:
+        return Response(content=json.dumps({"error": "Не выбраны строки"}, ensure_ascii=False),
+                        media_type="application/json", status_code=400)
+    if not due_date:
+        return Response(content=json.dumps({"error": "Не указана дата"}, ensure_ascii=False),
+                        media_type="application/json", status_code=400)
+
+    sand_session = sand_session_factory()
+    names = ", ".join(f":d{i}" for i in range(len(task_numbers)))
+    params = {f"d{i}": tn for i, tn in enumerate(task_numbers)}
+    result = await sand_session.execute(text(
+        f"UPDATE main_afl SET due_date = :dd WHERE task_number IN ({names})"),
+        {"dd": due_date, **params})
+    await sand_session.commit()
+    await sand_session.close()
+
+    return Response(content=json.dumps({"success": True, "updated": result.rowcount}, ensure_ascii=False),
+                    media_type="application/json")
+
+
+ulr_router = Router("/api", route_handlers=[api_ulr_options, api_ulr_upload, api_ulr_execution, api_ulr_update_execution, api_ulr_reestr, api_ulr_reestr_reset, api_ulr_task_report, api_ulr_change_due_date])

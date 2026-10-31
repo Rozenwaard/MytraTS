@@ -23,15 +23,15 @@ export async function fetchUlrOptions(): Promise<UlrOptions> {
 }
 
 export async function uploadUlr(
-	fields: { customer: string; visit_reason: string; work_type_in_task: string; subdivision: string; due_date: string; task_type: string },
+	fields: { customer: string; letter_number: string; letter_date: string; work_type_in_task: string; subdivision: string; task_type: string },
 	file: File
 ): Promise<UlrUploadResult> {
 	const form = new FormData();
 	form.append('customer', fields.customer);
-	form.append('visit_reason', fields.visit_reason);
+	form.append('letter_number', fields.letter_number);
+	form.append('letter_date', fields.letter_date);
 	form.append('work_type_in_task', fields.work_type_in_task);
 	form.append('subdivision', fields.subdivision);
-	form.append('due_date', fields.due_date);
 	form.append('task_type', fields.task_type);
 	form.append('file', file);
 
@@ -150,6 +150,20 @@ export async function changeUlrTaskReport(taskNumber: string, taskReport: string
 	if (!res.ok) {
 		const body = (await res.json().catch(() => ({}))) as { error?: string };
 		throw new Error(body.error ?? 'Ошибка замены вида работ');
+	}
+	return res.json();
+}
+
+export async function changeUlrDueDate(taskNumbers: string[], dueDate: string): Promise<{ success: boolean; updated: number }> {
+	const res = await fetch('/api/ulr/due-date', {
+		method: 'POST',
+		credentials: 'include',
+		headers: { 'Content-Type': 'application/json' },
+		body: JSON.stringify({ task_numbers: taskNumbers, due_date: dueDate })
+	});
+	if (!res.ok) {
+		const body = (await res.json().catch(() => ({}))) as { error?: string };
+		throw new Error(body.error ?? 'Ошибка изменения даты');
 	}
 	return res.json();
 }

@@ -1,6 +1,8 @@
 """Логика УЛР: матчинг строк реестра по libra и формирование строк main_afl (sand.db)."""
 import base64
+import calendar
 import io
+from datetime import datetime, timedelta
 
 from openpyxl import Workbook
 from python_calamine import CalamineWorkbook
@@ -198,6 +200,22 @@ async def find_points(session, row):
                 return None, "ПУ не найден"
             return None, "ПУ неоднозначен"
         return None, "только ТУ без объекта — недостаточно"
+
+
+def compute_due_date(task_type: str, now: datetime) -> str:
+    """Дата выполнения по типу поручения.
+
+    «Плановый» — последний день следующего месяца;
+    «Внеплановый» — +15 дней к текущей дате.
+    """
+    if task_type == "Плановый":
+        if now.month == 12:
+            nxt = datetime(now.year + 1, 1, 1)
+        else:
+            nxt = datetime(now.year, now.month + 1, 1)
+        last_day = calendar.monthrange(nxt.year, nxt.month)[1]
+        return nxt.replace(day=last_day).strftime("%Y-%m-%d")
+    return (now + timedelta(days=15)).strftime("%Y-%m-%d")
 
 
 def build_main_afl_row(p: dict, form: dict, now, head_map: dict) -> dict:

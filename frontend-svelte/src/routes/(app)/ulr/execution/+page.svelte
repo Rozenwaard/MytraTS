@@ -2,7 +2,7 @@
 	import { createQuery } from '@tanstack/svelte-query';
 	import { toStore, fromStore } from 'svelte/store';
 	import { queryClient } from '$lib/query';
-	import { fetchUlrExecution, updateUlrExecution, createUlrReestr, resetUlrReestr, changeUlrTaskReport, fetchUlrOptions, type UlrExecutionRow, type UlrOptions } from '$lib/api/ulr';
+	import { fetchUlrExecution, updateUlrExecution, createUlrReestr, resetUlrReestr, changeUlrTaskReport, changeUlrDueDate, fetchUlrOptions, type UlrExecutionRow, type UlrOptions } from '$lib/api/ulr';
 	import {
 		Table,
 		TableBody,
@@ -13,12 +13,14 @@
 	} from '$lib/components/ui/table';
 	import { Skeleton } from '$lib/components/ui/skeleton';
 	import { Button } from '$lib/components/ui/button';
+	import { Input } from '$lib/components/ui/input';
 	import { toast } from '$lib/store/toast.svelte';
 	import { auth } from '$lib/store/auth.svelte';
 	import { copyText } from '$lib/clipboard';
 	import Coins from '@lucide/svelte/icons/coins';
 	import ListChecks from '@lucide/svelte/icons/list-checks';
 	import Trash2 from '@lucide/svelte/icons/trash-2';
+	import CalendarDays from '@lucide/svelte/icons/calendar-days';
 	import type { Component } from 'svelte';
 
 	const HEADER_ICONS: Partial<Record<keyof UlrExecutionRow, Component>> = {
@@ -92,6 +94,43 @@
 	const rows = $derived(result.current.data?.rows ?? []);
 	const loading = $derived(result.current.isPending);
 
+	let sortKey = $state<keyof UlrExecutionRow | null>(null);
+	let sortDesc = $state(false);
+
+	function setSort(key: keyof UlrExecutionRow) {
+		if (sortKey === key) {
+			if (sortDesc) {
+				sortKey = null;
+				sortDesc = false;
+			} else {
+				sortDesc = true;
+			}
+		} else {
+			sortKey = key;
+			sortDesc = false;
+		}
+	}
+
+	function sortIndicator(key: keyof UlrExecutionRow) {
+		if (sortKey !== key) return '';
+		return sortDesc ? ' ↓' : ' ↑';
+	}
+
+	const sortedRows = $derived.by(() => {
+		if (!sortKey) return rows;
+		const key = sortKey;
+		const desc = sortDesc;
+		return [...rows].sort((a, b) => {
+			const av = a[key];
+			const bv = b[key];
+			if (av == null && bv == null) return 0;
+			if (av == null) return 1;
+			if (bv == null) return -1;
+			const c = typeof av === 'number' && typeof bv === 'number' ? av - bv : String(av).localeCompare(String(bv), 'ru');
+			return desc ? -c : c;
+		});
+	});
+
 	const optionsQuery = createQuery<UlrOptions>(
 		toStore(() => ({
 			queryKey: ['ulr-options'],
@@ -103,6 +142,12 @@
 
 	const today = (() => {
 		const d = new Date();
+		return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+	})();
+
+	const tomorrow = (() => {
+		const d = new Date();
+		d.setDate(d.getDate() + 1);
 		return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
 	})();
 
@@ -191,6 +236,37 @@
 			toast(e instanceof Error ? e.message : 'Ошибка замены вида работ');
 		}
 	}
+
+	let dueDateDialogOpen = $state(false);
+	let dueDateValue = $state('');
+	let dueDateBusy = $state(false);
+
+	function openDueDateDialog() {
+		dueDateValue = '';
+		dueDateDialogOpen = true;
+	}
+
+	async function submitDueDate() {
+		if (!dueDateValue) return;
+		if (dueDateValue < tomorrow) {
+			toast('Дата должна быть в будущем');
+			return;
+		}
+		const tns = rows.filter((r) => selected.has(r.task_number ?? '')).map((r) => r.task_number ?? '');
+		if (tns.length === 0) return;
+		dueDateBusy = true;
+		try {
+			await changeUlrDueDate(tns, dueDateValue);
+			toast(`Плановая дата обновлена для ${tns.length} строк`);
+			selected = new Set();
+			dueDateDialogOpen = false;
+			await queryClient.invalidateQueries({ queryKey: ['ulr-execution'] });
+		} catch (e) {
+			toast(e instanceof Error ? e.message : 'Ошибка изменения даты');
+		} finally {
+			dueDateBusy = false;
+		}
+	}
 </script>
 
 <div class="flex h-full flex-col p-4">
@@ -198,10 +274,16 @@
 		<span class="text-sm text-muted-foreground">
 			Всего: {rows.length}{#if selected.size > 0} · Выбрано: {selected.size}{/if}
 		</span>
-		<Button variant="default" size="sm" disabled={selected.size === 0} onclick={createReestrs}>
-			<ListChecks class="size-4" />
-			В реестр
-		</Button>
+		<div class="flex items-center gap-2">
+			<Button variant="outline" size="sm" disabled={selected.size === 0} onclick={openDueDateDialog}>
+				<CalendarDays class="size-4" />
+				Изменить плановую дату
+			</Button>
+			<Button variant="default" size="sm" disabled={selected.size === 0} onclick={createReestrs}>
+				<ListChecks class="size-4" />
+				В реестр
+			</Button>
+		</div>
 	</div>
 	<div class="flex min-h-0 flex-1 flex-col overflow-hidden rounded-md border bg-card">
 		<Table containerClass="min-h-0 flex-1 overflow-auto">
@@ -212,12 +294,13 @@
 					</TableHead>
 					{#each COLUMNS as col (col.key)}
 						{@const Icon = HEADER_ICONS[col.key]}
-						<TableHead class="sticky top-0 z-10 bg-muted text-center">
+						<TableHead class="sticky top-0 z-10 cursor-pointer select-none bg-muted text-center" onclick={() => setSort(col.key)}>
 							{#if Icon}
 								<span class="inline-flex items-center justify-center" title={col.header}><Icon class="size-4" /></span>
 							{:else}
 								{col.header}
 							{/if}
+							{sortIndicator(col.key)}
 						</TableHead>
 					{/each}
 				</TableRow>
@@ -239,7 +322,7 @@
 						</TableCell>
 					</TableRow>
 				{:else}
-					{#each rows as row (row.task_number)}
+					{#each sortedRows as row (row.task_number)}
 						{@const id = row.task_number ?? ''}
 						<TableRow
 							class="cursor-pointer"
@@ -352,3 +435,23 @@
 		</Table>
 	</div>
 </div>
+
+{#if dueDateDialogOpen}
+	<button type="button" class="fixed inset-0 z-40 bg-black/50" aria-label="Закрыть" onclick={() => (dueDateDialogOpen = false)}></button>
+	<div class="pointer-events-none fixed inset-0 z-50 flex items-center justify-center p-4">
+		<div class="pointer-events-auto w-full max-w-md rounded-lg border bg-card p-6 shadow-lg" role="dialog" aria-modal="true" tabindex="-1">
+			<h2 class="text-lg font-semibold">Изменить плановую дату</h2>
+			<p class="mt-2 text-sm text-muted-foreground">
+				Новая плановая дата будет установлена для выбранных строк ({selected.size}).
+			</p>
+			<div class="mt-4">
+				<label class="text-sm font-medium" for="ulr-due-date-change">Дата</label>
+				<Input id="ulr-due-date-change" type="date" min={tomorrow} bind:value={dueDateValue} class="mt-1" />
+			</div>
+			<div class="mt-6 flex justify-end gap-4">
+				<Button variant="outline" size="sm" onclick={() => (dueDateDialogOpen = false)} disabled={dueDateBusy}>Отмена</Button>
+				<Button size="sm" onclick={submitDueDate} disabled={dueDateBusy || !dueDateValue}>{dueDateBusy ? 'Сохраняем…' : 'Сохранить'}</Button>
+			</div>
+		</div>
+	</div>
+{/if}

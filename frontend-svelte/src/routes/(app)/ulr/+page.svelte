@@ -13,10 +13,10 @@
 
 	let options = $state<UlrOptions | null>(null);
 	let customer = $state('');
-	let visitReason = $state('');
+	let letterNumber = $state('');
 	let workType = $state('');
 	let subdivision = $state('');
-	let dueDate = $state('');
+	let letterDate = $state('');
 	let taskType = $state('');
 	let file = $state<File | null>(null);
 	let uploading = $state(false);
@@ -35,7 +35,7 @@
 	);
 
 	const canSubmit = $derived(
-		!!file && !!customer && !!visitReason && !!workType && !!dueDate && !!taskType && !!subdivision
+		!!file && !!customer && !!letterNumber && !!workType && !!letterDate && !!taskType && !!subdivision
 	);
 
 	$effect(() => {
@@ -84,7 +84,7 @@
 		result = null;
 		try {
 			result = await uploadUlr(
-				{ customer, visit_reason: visitReason, work_type_in_task: workType, subdivision, due_date: dueDate, task_type: taskType },
+				{ customer, letter_number: letterNumber, letter_date: letterDate, work_type_in_task: workType, subdivision, task_type: taskType },
 				file
 			);
 			toast(`Загружено: ${result.inserted} строк, неидентифицировано: ${result.feedback.length}`);
@@ -141,12 +141,12 @@
 
 				<div class="grid grid-cols-2 gap-4">
 					<div class="space-y-1.5">
-						<label class="text-sm font-medium" for="ulr-reason">Основание</label>
-						<Input id="ulr-reason" bind:value={visitReason} placeholder="Исходящий номер письма" />
+						<label class="text-sm font-medium" for="ulr-reason">Номер письма</label>
+						<Input id="ulr-reason" bind:value={letterNumber} placeholder="Исходящий номер письма" />
 					</div>
 					<div class="space-y-1.5">
-						<label class="text-sm font-medium" for="ulr-due">Плановая дата выполнения</label>
-						<Input id="ulr-due" type="date" bind:value={dueDate} />
+						<label class="text-sm font-medium" for="ulr-due">Дата письма</label>
+						<Input id="ulr-due" type="date" bind:value={letterDate} />
 					</div>
 				</div>
 
