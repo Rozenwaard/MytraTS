@@ -16,6 +16,23 @@ export type UlrUploadResult = {
 	feedback_filename?: string;
 };
 
+export const ASSIGNMENT_LABELS: Record<string, string> = {
+	'Архив': 'Чтение архива прибора учёта',
+	'Допуск': 'Допуск прибора учёта',
+	'Доставка': 'Доставка документов',
+	'ИП': 'Инструментальная проверка',
+	'КРО': 'Контроль режима ограничения',
+	'КСП': 'Снятие контрольных показаний',
+	'Опрос': 'Восстановление опроса точки',
+	'Осмотр': 'Осмотр энергопринимающего устройства',
+	'Привязка': 'Идентификация точки учёта'
+};
+
+export function assignmentLabel(value: string | null | undefined): string {
+	if (!value) return '';
+	return ASSIGNMENT_LABELS[value] ?? value;
+}
+
 export async function fetchUlrOptions(): Promise<UlrOptions> {
 	const res = await fetch('/api/ulr/options', { credentials: 'include' });
 	if (!res.ok) throw new Error('Не удалось получить справочники');
@@ -62,8 +79,10 @@ export type UlrExecutionRow = {
 	address: string | null;
 	meter_model: string | null;
 	meter_installation_place: string | null;
+	meter_serial_number: string | null;
 	violations: string | null;
 	meter_type: string | null;
+	has_current_transformer: string | null;
 	executor: string | null;
 	executor_organization: string | null;
 	co_executor: string | null;

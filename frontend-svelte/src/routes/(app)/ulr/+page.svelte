@@ -7,6 +7,7 @@
 	import {
 		fetchUlrOptions,
 		uploadUlr,
+		assignmentLabel,
 		type UlrOptions,
 		type UlrUploadResult
 	} from '$lib/api/ulr';
@@ -183,7 +184,7 @@
 						>
 							<option value="">—</option>
 							{#each assignmentOptions as a (a)}
-								<option value={a}>{a}</option>
+								<option value={a}>{assignmentLabel(a)}</option>
 							{/each}
 						</select>
 					</div>

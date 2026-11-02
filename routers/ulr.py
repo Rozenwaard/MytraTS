@@ -205,8 +205,8 @@ async def api_ulr_execution(request: Request, db_session: AsyncSession) -> Respo
         f"SELECT task_number, task_source, task_type, work_type_in_task, created_at, "
         f"due_date, customer, visit_reason, subscriber_type, grid, "
         f"personal_account, service_object_type, subscriber_name, address, "
-        f"meter_model, meter_installation_place, violations, meter_type, "
-        f"executor, executor_organization, co_executor, task_report, done_day, "
+        f"meter_model, meter_installation_place, meter_serial_number, violations, meter_type, "
+        f"has_current_transformer, executor, executor_organization, co_executor, task_report, done_day, "
         f"reestr_number, status, contract_status, "
         f"COALESCE(norm, 0) + COALESCE(extra, 0) AS norm "
         f"FROM main_afl WHERE {where} ORDER BY CAST(task_number AS INTEGER)"), params)

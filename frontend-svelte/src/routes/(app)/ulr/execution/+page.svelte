@@ -2,7 +2,7 @@
 	import { createQuery } from '@tanstack/svelte-query';
 	import { toStore, fromStore } from 'svelte/store';
 	import { queryClient } from '$lib/query';
-	import { fetchUlrExecution, updateUlrExecution, createUlrReestr, resetUlrReestr, changeUlrTaskReport, changeUlrDueDate, fetchUlrOptions, type UlrExecutionRow, type UlrOptions } from '$lib/api/ulr';
+	import { fetchUlrExecution, updateUlrExecution, createUlrReestr, resetUlrReestr, changeUlrTaskReport, changeUlrDueDate, fetchUlrOptions, assignmentLabel, type UlrExecutionRow, type UlrOptions } from '$lib/api/ulr';
 	import {
 		Table,
 		TableBody,
@@ -43,6 +43,7 @@
 		key: keyof UlrExecutionRow;
 		label: string;
 		edit?: 'executor' | 'work' | 'date' | 'co' | 'checkbox';
+		value?: (row: UlrExecutionRow) => string | null;
 	};
 
 	const GROUPS: { title: string; fields: FieldDef[] }[] = [
@@ -52,33 +53,37 @@
 				{ key: 'task_number', label: 'Номер задания' },
 				{ key: 'created_at', label: 'Создано' },
 				{ key: 'visit_reason', label: 'Основание' },
-				{ key: 'task_type', label: 'Вид задания' }
+				{ key: 'task_type', label: 'Вид задания' },
+				{ key: 'grid', label: 'Сеть' }
 			]
 		},
 		{
 			title: 'Потребитель',
 			fields: [
-				{ key: 'personal_account', label: 'Точка учёта' },
+				{ key: 'subscriber_type', label: 'Тип потребителя' },
+				{ key: 'contract_status', label: 'Тариф' },
 				{ key: 'service_object_type', label: 'Объект' },
-				{ key: 'grid', label: 'Сеть' },
-				{ key: 'subscriber_type', label: 'Тип потребителя' }
+				{ key: 'personal_account', label: 'Номер ЭО', value: (row) => (row.personal_account ? row.personal_account.slice(0, -3) : null) },
+				{ key: 'personal_account', label: 'Номер ТУ', value: (row) => (row.personal_account ? row.personal_account.slice(-3) : null) }
 			]
 		},
 		{
 			title: 'ПУ',
 			fields: [
-				{ key: 'meter_model', label: 'Модель ПУ' },
-				{ key: 'meter_type', label: 'Тип ПУ' },
 				{ key: 'meter_installation_place', label: 'Место ПУ' },
-				{ key: 'violations', label: 'Составлен акт БУ', edit: 'checkbox' }
+				{ key: 'meter_model', label: 'Модель ПУ' },
+				{ key: 'meter_serial_number', label: 'Номер ПУ' },
+				{ key: 'meter_type', label: 'Тип ПУ' },
+				{ key: 'has_current_transformer', label: 'Подключение ПУ' }
 			]
 		},
 		{
 			title: 'Исполнение',
 			fields: [
-				{ key: 'executor', label: 'Исполнитель', edit: 'executor' },
+				{ key: 'done_day', label: 'Дата работ', edit: 'date' },
 				{ key: 'task_report', label: 'Вид работ', edit: 'work' },
-				{ key: 'done_day', label: 'Дата', edit: 'date' },
+				{ key: 'violations', label: 'Составлен акт БУ', edit: 'checkbox' },
+				{ key: 'executor', label: 'Исполнитель', edit: 'executor' },
 				{ key: 'co_executor', label: 'Соисполнитель', edit: 'co' }
 			]
 		}
@@ -346,6 +351,8 @@
 										{:else}
 											-
 										{/if}
+									{:else if col.key === 'work_type_in_task'}
+										{assignmentLabel(row.work_type_in_task)}
 									{:else}
 										{row[col.key] ?? ''}
 									{/if}
@@ -358,7 +365,7 @@
 									<div class="grid grid-cols-1 gap-x-6 gap-y-4 py-2 sm:grid-cols-2 lg:grid-cols-4">
 										{#each GROUPS as group (group.title)}
 											<div class="space-y-2">
-												{#each group.fields as f (f.key)}
+												{#each group.fields as f (f.label)}
 													<div class="text-sm">
 														{#if f.edit === 'checkbox'}
 															<label class="flex items-center gap-1.5">
@@ -396,7 +403,7 @@
 															{/if}
 														{:else}
 															<span class="text-muted-foreground">{f.label}:</span>{' '}
-															<span>{row[f.key] || '-'}</span>
+															<span>{f.value ? f.value(row) : (row[f.key] || '-')}</span>
 														{/if}
 													</div>
 												{/each}
