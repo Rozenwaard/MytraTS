@@ -21,6 +21,11 @@
 	import ListChecks from '@lucide/svelte/icons/list-checks';
 	import Trash2 from '@lucide/svelte/icons/trash-2';
 	import CalendarDays from '@lucide/svelte/icons/calendar-days';
+	import ChevronLeft from '@lucide/svelte/icons/chevron-left';
+	import ChevronRight from '@lucide/svelte/icons/chevron-right';
+	import ChevronsLeft from '@lucide/svelte/icons/chevrons-left';
+	import ChevronsRight from '@lucide/svelte/icons/chevrons-right';
+	import Search from '@lucide/svelte/icons/search';
 	import type { Component } from 'svelte';
 
 	const HEADER_ICONS: Partial<Record<keyof UlrExecutionRow, Component>> = {
@@ -121,11 +126,24 @@
 		return sortDesc ? ' ↓' : ' ↑';
 	}
 
+	let searchQuery = $state('');
+
+	const filteredRows = $derived.by(() => {
+		const q = searchQuery.trim().toLowerCase();
+		if (!q) return rows;
+		return rows.filter((r) => {
+			const name = (r.subscriber_name ?? '').toLowerCase();
+			const address = (r.address ?? '').toLowerCase();
+			const eo = (r.personal_account ?? '').slice(0, -3).toLowerCase();
+			return name.includes(q) || address.includes(q) || eo.includes(q);
+		});
+	});
+
 	const sortedRows = $derived.by(() => {
-		if (!sortKey) return rows;
+		if (!sortKey) return filteredRows;
 		const key = sortKey;
 		const desc = sortDesc;
-		return [...rows].sort((a, b) => {
+		return [...filteredRows].sort((a, b) => {
 			const av = a[key];
 			const bv = b[key];
 			if (av == null && bv == null) return 0;
@@ -135,6 +153,47 @@
 			return desc ? -c : c;
 		});
 	});
+
+	const perPage = 50;
+	let page = $state(1);
+
+	const total = $derived(filteredRows.length);
+	const totalPages = $derived(Math.max(1, Math.ceil(total / perPage)));
+	const paginatedRows = $derived.by(() => {
+		const start = (page - 1) * perPage;
+		return sortedRows.slice(start, start + perPage);
+	});
+
+	$effect(() => {
+		if (page > totalPages) page = totalPages;
+	});
+
+	$effect(() => {
+		// при изменении поиска возвращаемся на первую страницу
+		void searchQuery;
+		page = 1;
+	});
+
+	function goToPage(p: number) {
+		if (p >= 1 && p <= totalPages) page = p;
+	}
+
+	function pageItems(current: number, total: number): (number | '…')[] {
+		if (total <= 1) return [1];
+		const neighbors = new Set<number>([1, total]);
+		for (let i = current - 2; i <= current + 2; i++) {
+			if (i >= 1 && i <= total) neighbors.add(i);
+		}
+		const sorted = [...neighbors].sort((a, b) => a - b);
+		const result: (number | '…')[] = [];
+		let prev = 0;
+		for (const n of sorted) {
+			if (n - prev > 1) result.push('…');
+			result.push(n);
+			prev = n;
+		}
+		return result;
+	}
 
 	const optionsQuery = createQuery<UlrOptions>(
 		toStore(() => ({
@@ -282,9 +341,15 @@
 
 <div class="flex h-full flex-col p-4">
 	<div class="mb-3 flex items-center justify-between gap-3">
-		<span class="text-sm text-muted-foreground">
-			Всего: {rows.length}{#if selected.size > 0} · Выбрано: {selected.size}{/if}
-		</span>
+		<div class="flex items-center gap-2">
+			<div class="relative w-64">
+				<Search class="pointer-events-none absolute left-2.5 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
+				<Input bind:value={searchQuery} placeholder="Поиск: потребитель, адрес, номер ЭО" class="bg-background pl-8" />
+			</div>
+			<Button variant="outline" size="sm" disabled={!searchQuery} onclick={() => (searchQuery = '')}>
+				Сбросить
+			</Button>
+		</div>
 		<div class="flex items-center gap-2">
 			<Button variant="outline" size="sm" disabled={selected.size === 0} onclick={openDueDateDialog}>
 				<CalendarDays class="size-4" />
@@ -333,7 +398,7 @@
 						</TableCell>
 					</TableRow>
 				{:else}
-					{#each sortedRows as row (row.task_number)}
+					{#each paginatedRows as row (row.task_number)}
 						{@const id = row.task_number ?? ''}
 						<TableRow
 							class="cursor-pointer"
@@ -446,6 +511,38 @@
 				{/if}
 			</TableBody>
 		</Table>
+	</div>
+
+	<div class="flex items-center justify-between gap-3 pt-3">
+		<span class="text-sm text-muted-foreground">
+			Всего: {total.toLocaleString('ru-RU')}
+			{#if selected.size > 0}
+				· Выбрано: {selected.size}
+			{/if}
+		</span>
+		<div class="flex flex-wrap items-center gap-1">
+			<Button variant="outline" size="sm" disabled={page <= 1} onclick={() => goToPage(1)} aria-label="Первая страница">
+				<ChevronsLeft class="size-4" />
+			</Button>
+			<Button variant="outline" size="sm" disabled={page <= 1} onclick={() => goToPage(page - 1)} aria-label="Назад">
+				<ChevronLeft class="size-4" />
+			</Button>
+			{#each pageItems(page, totalPages) as item, i (i)}
+				{#if item === '…'}
+					<span class="px-1 text-sm text-muted-foreground">…</span>
+				{:else}
+					<Button variant={item === page ? 'default' : 'outline'} size="sm" onclick={() => goToPage(item)}>
+						{item}
+					</Button>
+				{/if}
+			{/each}
+			<Button variant="outline" size="sm" disabled={page >= totalPages} onclick={() => goToPage(page + 1)} aria-label="Вперёд">
+				<ChevronRight class="size-4" />
+			</Button>
+			<Button variant="outline" size="sm" disabled={page >= totalPages} onclick={() => goToPage(totalPages)} aria-label="Последняя страница">
+				<ChevronsRight class="size-4" />
+			</Button>
+		</div>
 	</div>
 </div>
 
