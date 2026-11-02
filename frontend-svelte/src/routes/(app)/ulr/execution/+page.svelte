@@ -132,10 +132,11 @@
 		const q = searchQuery.trim().toLowerCase();
 		if (!q) return rows;
 		return rows.filter((r) => {
+			const reason = (r.visit_reason ?? '').toLowerCase();
 			const name = (r.subscriber_name ?? '').toLowerCase();
 			const address = (r.address ?? '').toLowerCase();
 			const eo = (r.personal_account ?? '').slice(0, -3).toLowerCase();
-			return name.includes(q) || address.includes(q) || eo.includes(q);
+			return reason.includes(q) || name.includes(q) || address.includes(q) || eo.includes(q);
 		});
 	});
 
@@ -342,9 +343,9 @@
 <div class="flex h-full flex-col p-4">
 	<div class="mb-3 flex items-center justify-between gap-3">
 		<div class="flex items-center gap-2">
-			<div class="relative w-64">
+			<div class="relative w-[300px]">
 				<Search class="pointer-events-none absolute left-2.5 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
-				<Input bind:value={searchQuery} placeholder="Поиск: потребитель, адрес, номер ЭО" class="bg-background pl-8" />
+				<Input bind:value={searchQuery} placeholder="Основание, Потребитель, Адрес, №ЭО" class="bg-background pl-8" />
 			</div>
 			<Button variant="outline" size="sm" disabled={!searchQuery} onclick={() => (searchQuery = '')}>
 				Сбросить
