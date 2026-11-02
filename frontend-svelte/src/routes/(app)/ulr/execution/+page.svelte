@@ -28,15 +28,15 @@
 		norm: Coins
 	};
 
-	const COLUMNS: { key: keyof UlrExecutionRow; header: string }[] = [
-		{ key: 'customer', header: 'Заказчик' },
-		{ key: 'work_type_in_task', header: 'Поручение' },
-		{ key: 'due_date', header: 'Завершить' },
-		{ key: 'subscriber_name', header: 'Потребитель' },
-		{ key: 'address', header: 'Адрес' },
-		{ key: 'status', header: 'Статус задания' },
-		{ key: 'reestr_number', header: 'Реестр' },
-		{ key: 'norm', header: 'Норматив' }
+	const COLUMNS: { key: keyof UlrExecutionRow; header: string; width: string }[] = [
+		{ key: 'customer', header: 'Заказчик', width: 'w-16' },
+		{ key: 'work_type_in_task', header: 'Поручение', width: 'w-48' },
+		{ key: 'due_date', header: 'Завершить', width: 'w-24' },
+		{ key: 'subscriber_name', header: 'Потребитель', width: 'w-56' },
+		{ key: 'address', header: 'Адрес', width: 'w-80' },
+		{ key: 'status', header: 'Статус задания', width: 'w-28' },
+		{ key: 'reestr_number', header: 'Реестр', width: 'w-10' },
+		{ key: 'norm', header: 'Норматив', width: 'w-12' }
 	];
 
 	type FieldDef = {
@@ -221,6 +221,12 @@
 		return workTypes.filter((w) => w.customer === customer).map((w) => w.short);
 	}
 
+	function cellTitle(row: UlrExecutionRow, key: keyof UlrExecutionRow): string {
+		if (key === 'work_type_in_task') return assignmentLabel(row.work_type_in_task);
+		const v = row[key];
+		return v == null ? '' : String(v);
+	}
+
 	async function resetReestr(row: UlrExecutionRow) {
 		try {
 			await resetUlrReestr([row.task_number ?? '']);
@@ -291,7 +297,7 @@
 		</div>
 	</div>
 	<div class="flex min-h-0 flex-1 flex-col overflow-hidden rounded-md border bg-card">
-		<Table containerClass="min-h-0 flex-1 overflow-auto">
+		<Table class="table-fixed" containerClass="min-h-0 flex-1 overflow-auto">
 			<TableHeader>
 				<TableRow class="hover:bg-transparent">
 					<TableHead class="sticky top-0 z-10 w-8 bg-muted text-center">
@@ -299,7 +305,7 @@
 					</TableHead>
 					{#each COLUMNS as col (col.key)}
 						{@const Icon = HEADER_ICONS[col.key]}
-						<TableHead class="sticky top-0 z-10 cursor-pointer select-none bg-muted text-center" onclick={() => setSort(col.key)}>
+						<TableHead class="sticky top-0 z-10 cursor-pointer select-none truncate bg-muted text-center {col.width}" onclick={() => setSort(col.key)}>
 							{#if Icon}
 								<span class="inline-flex items-center justify-center" title={col.header}><Icon class="size-4" /></span>
 							{:else}
@@ -342,7 +348,7 @@
 								<input type="checkbox" class="size-4 cursor-pointer accent-primary" checked={selected.has(id)} onchange={() => toggleSelected(id)} />
 							</TableCell>
 							{#each COLUMNS as col (col.key)}
-								<TableCell class={col.key === 'norm' ? 'whitespace-nowrap text-center text-sm' : 'whitespace-nowrap text-sm'}>
+								<TableCell class={`truncate text-sm ${col.width}${col.key === 'norm' ? ' text-center' : ''}`} title={cellTitle(row, col.key)}>
 									{#if col.key === 'reestr_number'}
 										{#if row.reestr_number === 'Отклонён'}
 											<span class="font-bold text-brand-reestr-rejected">Р</span>
