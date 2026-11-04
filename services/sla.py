@@ -83,9 +83,8 @@ DEADLINE_DAYS = 10  # дедлайн = created_at + 10 календарных д
 
 
 def period_like(month: str) -> str:
-    """'2026-10' → '%.10.2026' (due_date хранится как 'ДД.ММ.ГГГГ')."""
-    year, mon = month.split("-")
-    return f"%.{mon}.{year}"
+    """'2026-10' → '2026-10%' (due_date хранится как 'ГГГГ-ММ-ДД')."""
+    return f"{month}%"
 
 
 def step_coef(non_resultative_pct: float, thresholds: list) -> float:

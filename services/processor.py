@@ -478,6 +478,12 @@ async def process_raw_afl(db_session: AsyncSession, upload_progress: dict, uploa
             "SUBSTR(created_at, 7, 4) || '-' || SUBSTR(created_at, 4, 2) || '-' || SUBSTR(created_at, 1, 2)"
         ))
 
+        # Форматирование due_date (ДД.ММ.ГГГГ → ГГГГ-ММ-ДД), как created_at.
+        await db_session.execute(text(
+            "UPDATE raw_afl SET due_date = "
+            "SUBSTR(due_date, 7, 4) || '-' || SUBSTR(due_date, 4, 2) || '-' || SUBSTR(due_date, 1, 2)"
+        ))
+
         # Дедупликация перенесена в merger.merge_to_main (учитывает серию загрузок).
 
         progress = 85
