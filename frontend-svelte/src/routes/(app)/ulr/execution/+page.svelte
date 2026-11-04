@@ -2,7 +2,7 @@
 	import { createQuery } from '@tanstack/svelte-query';
 	import { toStore, fromStore } from 'svelte/store';
 	import { queryClient } from '$lib/query';
-	import { fetchUlrExecution, updateUlrExecution, createUlrReestr, resetUlrReestr, changeUlrTaskReport, changeUlrDueDate, fetchUlrOptions, assignmentLabel, type UlrExecutionRow, type UlrOptions } from '$lib/api/ulr';
+	import { fetchUlrExecution, updateUlrExecution, createUlrReestr, resetUlrReestr, changeUlrTaskReport, changeUlrDueDate, fetchUlrOptions, fetchObjectPoints, addPoint, assignmentLabel, type UlrExecutionRow, type UlrOptions, type ObjectPoint } from '$lib/api/ulr';
 	import {
 		Table,
 		TableBody,
@@ -26,6 +26,7 @@
 	import ChevronsLeft from '@lucide/svelte/icons/chevrons-left';
 	import ChevronsRight from '@lucide/svelte/icons/chevrons-right';
 	import Search from '@lucide/svelte/icons/search';
+	import Plus from '@lucide/svelte/icons/plus';
 	import type { Component } from 'svelte';
 
 	const HEADER_ICONS: Partial<Record<keyof UlrExecutionRow, Component>> = {
@@ -69,7 +70,7 @@
 				{ key: 'contract_status', label: 'Тариф' },
 				{ key: 'service_object_type', label: 'Объект' },
 				{ key: 'personal_account', label: 'Номер ЭО', value: (row) => (row.personal_account ? row.personal_account.slice(0, -3) : null) },
-				{ key: 'personal_account', label: 'Номер ТУ', value: (row) => (row.personal_account ? row.personal_account.slice(-3) : null) }
+				{ key: 'meter_status', label: 'Номер ТУ' }
 			]
 		},
 		{
@@ -126,6 +127,12 @@
 		return sortDesc ? ' ↓' : ' ↑';
 	}
 
+	function taskNumberValue(v: unknown): number {
+		if (v == null) return 0;
+		const n = parseInt(String(v).split('-')[0], 10);
+		return Number.isNaN(n) ? 0 : n;
+	}
+
 	let searchQuery = $state('');
 
 	const filteredRows = $derived.by(() => {
@@ -150,7 +157,9 @@
 			if (av == null && bv == null) return 0;
 			if (av == null) return 1;
 			if (bv == null) return -1;
-			const c = typeof av === 'number' && typeof bv === 'number' ? av - bv : String(av).localeCompare(String(bv), 'ru');
+			const c = key === 'task_number'
+				? taskNumberValue(av) - taskNumberValue(bv)
+				: (typeof av === 'number' && typeof bv === 'number' ? av - bv : String(av).localeCompare(String(bv), 'ru'));
 			return desc ? -c : c;
 		});
 	});
@@ -338,6 +347,59 @@
 			dueDateBusy = false;
 		}
 	}
+
+	let addPointOpen = $state(false);
+	let addPointTask = $state('');
+	let addPointOptions = $state<ObjectPoint[]>([]);
+	let addPointSelected = $state('');
+	let addPointLoading = $state(false);
+	let addPointBusy = $state(false);
+
+	const addPointHasSelectable = $derived(addPointOptions.some((p) => !p.active_task));
+
+	async function openAddPoint(row: UlrExecutionRow) {
+		addPointTask = row.task_number ?? '';
+		addPointOptions = [];
+		addPointSelected = '';
+		addPointOpen = true;
+		addPointLoading = true;
+		try {
+			const res = await fetchObjectPoints(addPointTask);
+			addPointOptions = res.points;
+		} catch (e) {
+			toast(e instanceof Error ? e.message : 'Ошибка загрузки точек');
+			addPointOpen = false;
+		} finally {
+			addPointLoading = false;
+		}
+	}
+
+	function closeAddPoint() {
+		addPointOpen = false;
+		addPointTask = '';
+		addPointOptions = [];
+		addPointSelected = '';
+	}
+
+	async function submitAddPoint() {
+		if (!addPointSelected) return;
+		addPointBusy = true;
+		try {
+			await addPoint(addPointTask, addPointSelected);
+			toast('Точка добавлена');
+			addPointOpen = false;
+			addPointTask = '';
+			addPointOptions = [];
+			addPointSelected = '';
+			sortKey = 'task_number';
+			sortDesc = true;
+			await queryClient.invalidateQueries({ queryKey: ['ulr-execution'] });
+		} catch (e) {
+			toast(e instanceof Error ? e.message : 'Ошибка добавления точки');
+		} finally {
+			addPointBusy = false;
+		}
+	}
 </script>
 
 <div class="flex h-full flex-col p-4">
@@ -504,6 +566,10 @@
 												Заменить
 											</Button>
 										{/if}
+									<Button variant="outline" size="sm" onclick={() => openAddPoint(row)}>
+										<Plus class="size-4" />
+										Добавить точку
+									</Button>
 									</div>
 								</TableCell>
 							</TableRow>
@@ -562,6 +628,38 @@
 			<div class="mt-6 flex justify-end gap-4">
 				<Button variant="outline" size="sm" onclick={() => (dueDateDialogOpen = false)} disabled={dueDateBusy}>Отмена</Button>
 				<Button size="sm" onclick={submitDueDate} disabled={dueDateBusy || !dueDateValue}>{dueDateBusy ? 'Сохраняем…' : 'Сохранить'}</Button>
+			</div>
+		</div>
+	</div>
+{/if}
+
+{#if addPointOpen}
+	<button type="button" class="fixed inset-0 z-40 bg-black/50" aria-label="Закрыть" onclick={closeAddPoint}></button>
+	<div class="pointer-events-none fixed inset-0 z-50 flex items-center justify-center p-4">
+		<div class="pointer-events-auto w-full max-w-md rounded-lg border bg-card p-6 shadow-lg" role="dialog" aria-modal="true" tabindex="-1">
+			<h2 class="text-lg font-semibold">Добавить точку</h2>
+			{#if addPointLoading}
+				<p class="mt-2 text-sm text-muted-foreground">Загрузка…</p>
+			{:else}
+				{#if addPointOptions.length > 0}
+					<select class="mt-3 h-9 w-full rounded-md border border-input bg-background px-2 text-sm outline-none focus-visible:border-ring" bind:value={addPointSelected}>
+						<option value="" disabled>— выберите точку —</option>
+						{#each addPointOptions as p (p.tu_id)}
+							<option value={p.tu_id} disabled={!!p.active_task}>
+								{p.tu_number}{p.active_task ? ` (задание ${p.active_task})` : ''}
+							</option>
+						{/each}
+					</select>
+				{/if}
+				{#if !addPointHasSelectable}
+					<p class="mt-3 text-sm text-muted-foreground">Нет доступных точек</p>
+				{/if}
+			{/if}
+			<div class="mt-6 flex justify-end gap-4">
+				<Button variant="outline" size="sm" onclick={closeAddPoint} disabled={addPointBusy}>Отмена</Button>
+				<Button size="sm" onclick={submitAddPoint} disabled={addPointBusy || !addPointSelected}>
+					{addPointBusy ? 'Добавляем…' : 'Добавить'}
+				</Button>
 			</div>
 		</div>
 	</div>

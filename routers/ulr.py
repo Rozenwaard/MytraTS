@@ -15,7 +15,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from data.config import sand_session_factory
 from deps import get_current_user, require_auth
 from services.ulr import (CO_EXECUTOR_WORK_IDS, EXECUTOR_POSITIONS, INSERT_SQL, NO_EXECUTION,
-                          STATUS_DONE, STATUS_SENT, build_main_afl_row, compute_due_date, compute_status,
+                          STATUS_CREATED, STATUS_ASSIGNED, STATUS_DONE, STATUS_SENT,
+                          build_main_afl_row, compute_due_date, compute_status,
                           feedback_xlsx_b64, find_points, read_register, resolve_work_ids)
 
 CUSTOMERS = ["ПСК", "РЛЭ"]
@@ -205,7 +206,7 @@ async def api_ulr_execution(request: Request, db_session: AsyncSession) -> Respo
         f"SELECT task_number, task_source, task_type, work_type_in_task, created_at, "
         f"due_date, customer, visit_reason, subscriber_type, grid, "
         f"personal_account, service_object_type, subscriber_name, address, "
-        f"meter_model, meter_installation_place, meter_serial_number, violations, meter_type, "
+        f"meter_model, meter_installation_place, meter_serial_number, meter_status, violations, meter_type, "
         f"has_current_transformer, executor, executor_organization, co_executor, task_report, done_day, "
         f"reestr_number, status, contract_status, "
         f"COALESCE(norm, 0) + COALESCE(extra, 0) AS norm "
@@ -471,4 +472,116 @@ async def api_ulr_change_due_date(
                     media_type="application/json")
 
 
-ulr_router = Router("/api", route_handlers=[api_ulr_options, api_ulr_upload, api_ulr_execution, api_ulr_update_execution, api_ulr_reestr, api_ulr_reestr_reset, api_ulr_task_report, api_ulr_change_due_date])
+@post("/ulr/add-point", guards=[require_auth])
+async def api_ulr_add_point(
+    request: Request, db_session: AsyncSession,
+    data: dict = Body(media_type=RequestEncodingType.JSON),
+) -> Response:
+    user = await get_current_user(request, db_session)
+    if not user or user.effective_role not in ADMIN_ROLES:
+        raise NotAuthorizedException()
+
+    parent_task = (data.get("task_number") or "").strip()
+    new_tu_id = (data.get("tu_id") or "").strip()
+    if not parent_task or not new_tu_id:
+        return Response(content=json.dumps({"error": "Не указаны параметры"}, ensure_ascii=False),
+                        media_type="application/json", status_code=400)
+
+    head_rows = await db_session.execute(text(
+        "SELECT dept, full_name FROM users WHERE position LIKE '%Начальник%'"))
+    head_map = {r[0]: r[1] for r in head_rows}
+
+    async with sand_session_factory() as sand_session:
+        parent = (await sand_session.execute(text(
+            "SELECT * FROM main_afl WHERE task_number = :tn AND task_source = 'mytra'"),
+            {"tn": parent_task})).mappings().first()
+        if parent is None:
+            return Response(content=json.dumps({"error": "Задание не найдено"}, ensure_ascii=False),
+                            media_type="application/json", status_code=404)
+
+        new_point = (await sand_session.execute(text(
+            "SELECT * FROM libra WHERE tu_id = :tu_id"),
+            {"tu_id": new_tu_id})).mappings().first()
+        if new_point is None:
+            return Response(content=json.dumps({"error": "Точка не найдена"}, ensure_ascii=False),
+                            media_type="application/json", status_code=404)
+
+        parent_obj = (await sand_session.execute(text(
+            "SELECT object_code FROM libra WHERE tu_id = :tu_id"),
+            {"tu_id": parent["metering_point"]})).mappings().first()
+        if parent_obj is None or parent_obj["object_code"] != new_point["object_code"]:
+            return Response(content=json.dumps({"error": "Точка из другого объекта"}, ensure_ascii=False),
+                            media_type="application/json", status_code=400)
+
+        active = (await sand_session.execute(text(
+            "SELECT 1 FROM main_afl WHERE personal_account = :pa AND status IN (:st1, :st2)"),
+            {"pa": new_point["metering_point"], "st1": STATUS_CREATED, "st2": STATUS_ASSIGNED})).first()
+        if active is not None:
+            return Response(content=json.dumps({"error": "У точки уже есть активное задание"}, ensure_ascii=False),
+                            media_type="application/json", status_code=400)
+
+        now = datetime.now()
+        year_suffix = now.strftime("%y")
+        existing = (await sand_session.execute(text(
+            "SELECT task_number FROM main_afl WHERE task_number LIKE :p"),
+            {"p": f"%-{year_suffix}"})).fetchall()
+        seq = max((int(n[0].split("-")[0]) for n in existing
+                   if n[0] and "-" in n[0] and n[0].split("-")[0].isdigit()), default=0) + 1
+
+        form_ctx = {
+            "customer": parent["customer"],
+            "visit_reason": parent["visit_reason"],
+            "work_type_in_task": parent["work_type_in_task"],
+            "subdivision": parent["task_organization"],
+            "due_date": parent["due_date"],
+            "task_type": parent["task_type"],
+        }
+        rec = build_main_afl_row(dict(new_point), form_ctx, now, head_map)
+        rec["task_number"] = f"{seq}-{year_suffix}"
+        await sand_session.execute(text(INSERT_SQL), rec)
+        await sand_session.commit()
+
+        return Response(content=json.dumps({"success": True, "task_number": rec["task_number"]}, ensure_ascii=False),
+                        media_type="application/json")
+
+
+@get("/ulr/object-points", guards=[require_auth])
+async def api_ulr_object_points(request: Request, db_session: AsyncSession, task_number: str = "") -> Response:
+    user = await get_current_user(request, db_session)
+    if not user or user.effective_role not in ADMIN_ROLES:
+        raise NotAuthorizedException()
+
+    task_number = (task_number or "").strip()
+    if not task_number:
+        return Response(content=json.dumps({"error": "Не указан номер задания"}, ensure_ascii=False),
+                        media_type="application/json", status_code=400)
+
+    async with sand_session_factory() as sand_session:
+        parent = (await sand_session.execute(text(
+            "SELECT metering_point FROM main_afl WHERE task_number = :tn AND task_source = 'mytra'"),
+            {"tn": task_number})).mappings().first()
+        if parent is None:
+            return Response(content=json.dumps({"error": "Задание не найдено"}, ensure_ascii=False),
+                            media_type="application/json", status_code=404)
+
+        obj = (await sand_session.execute(text(
+            "SELECT object_code FROM libra WHERE tu_id = :tu_id"),
+            {"tu_id": parent["metering_point"]})).mappings().first()
+        if obj is None:
+            return Response(content=json.dumps({"error": "Объект не найден"}, ensure_ascii=False),
+                            media_type="application/json", status_code=404)
+
+        points = (await sand_session.execute(text(
+            "SELECT l.tu_id, l.tu_number, "
+            "  (SELECT m.task_number FROM main_afl m "
+            "   WHERE m.personal_account = l.metering_point AND m.status IN (:st1, :st2) LIMIT 1) AS active_task "
+            "FROM libra l WHERE l.object_code = :oc ORDER BY CAST(l.tu_number AS INTEGER)"),
+            {"oc": obj["object_code"], "st1": STATUS_CREATED, "st2": STATUS_ASSIGNED})).mappings().all()
+
+        items = [{"tu_id": p["tu_id"], "tu_number": p["tu_number"], "active_task": p["active_task"]}
+                 for p in points]
+        return Response(content=json.dumps({"points": items}, ensure_ascii=False),
+                        media_type="application/json")
+
+
+ulr_router = Router("/api", route_handlers=[api_ulr_options, api_ulr_upload, api_ulr_execution, api_ulr_update_execution, api_ulr_reestr, api_ulr_reestr_reset, api_ulr_task_report, api_ulr_change_due_date, api_ulr_object_points, api_ulr_add_point])

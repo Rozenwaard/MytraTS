@@ -20,14 +20,14 @@ INSERT INTO main_afl (
     task_number, task_source, task_type, work_type_in_task, created_at, due_date,
     customer, visit_reason, subscriber_type, grid,
     metering_point, personal_account, meter_model, meter_type, meter_serial_number,
-    house_type, meter_installation_place, contract_status,
+    house_type, meter_installation_place, contract_status, meter_status,
     subscriber_name, address, municipal_district, region,
     service_object_type, third_party_organization, task_organization, assignee, executor_organization, status
 ) VALUES (
     :task_number, :task_source, :task_type, :work_type_in_task, :created_at, :due_date,
     :customer, :visit_reason, :subscriber_type, :grid,
     :metering_point, :personal_account, :meter_model, :meter_type, :meter_serial_number,
-    :house_type, :meter_installation_place, :contract_status,
+    :house_type, :meter_installation_place, :contract_status, :meter_status,
     :subscriber_name, :address, :municipal_district, :region,
     :service_object_type, :third_party_organization, :task_organization, :assignee, :executor_organization, :status
 )
@@ -241,6 +241,7 @@ def build_main_afl_row(p: dict, form: dict, now, head_map: dict) -> dict:
         "meter_serial_number": p["meter_serial_number"],
         "house_type": p["is_mkd"],
         "meter_installation_place": p["tu_name"],
+        "meter_status": p.get("tu_number"),
         "contract_status": p["subscriber_category"],
         "subscriber_name": p.get("subscriber_short_name") or p.get("subscriber_name"),
         "address": p["address"],

@@ -83,6 +83,7 @@ export type UlrExecutionRow = {
 	violations: string | null;
 	meter_type: string | null;
 	has_current_transformer: string | null;
+	meter_status: string | null;
 	executor: string | null;
 	executor_organization: string | null;
 	co_executor: string | null;
@@ -183,6 +184,31 @@ export async function changeUlrDueDate(taskNumbers: string[], dueDate: string): 
 	if (!res.ok) {
 		const body = (await res.json().catch(() => ({}))) as { error?: string };
 		throw new Error(body.error ?? 'Ошибка изменения даты');
+	}
+	return res.json();
+}
+
+export type ObjectPoint = { tu_id: string; tu_number: string; active_task: string | null };
+
+export async function fetchObjectPoints(taskNumber: string): Promise<{ points: ObjectPoint[] }> {
+	const res = await fetch(`/api/ulr/object-points?task_number=${encodeURIComponent(taskNumber)}`, { credentials: 'include' });
+	if (!res.ok) {
+		const body = (await res.json().catch(() => ({}))) as { error?: string };
+		throw new Error(body.error ?? 'Ошибка загрузки точек');
+	}
+	return res.json();
+}
+
+export async function addPoint(taskNumber: string, tuId: string): Promise<{ success: boolean; task_number: string }> {
+	const res = await fetch('/api/ulr/add-point', {
+		method: 'POST',
+		credentials: 'include',
+		headers: { 'Content-Type': 'application/json' },
+		body: JSON.stringify({ task_number: taskNumber, tu_id: tuId })
+	});
+	if (!res.ok) {
+		const body = (await res.json().catch(() => ({}))) as { error?: string };
+		throw new Error(body.error ?? 'Ошибка добавления точки');
 	}
 	return res.json();
 }
