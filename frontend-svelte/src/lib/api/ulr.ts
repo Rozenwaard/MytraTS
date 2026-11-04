@@ -212,3 +212,17 @@ export async function addPoint(taskNumber: string, tuId: string): Promise<{ succ
 	}
 	return res.json();
 }
+
+export async function removeControl(taskNumber: string): Promise<{ success: boolean; deleted: number }> {
+	const res = await fetch('/api/ulr/remove-control', {
+		method: 'POST',
+		credentials: 'include',
+		headers: { 'Content-Type': 'application/json' },
+		body: JSON.stringify({ task_number: taskNumber })
+	});
+	if (!res.ok) {
+		const body = (await res.json().catch(() => ({}))) as { error?: string };
+		throw new Error(body.error ?? 'Ошибка снятия с контроля');
+	}
+	return res.json();
+}

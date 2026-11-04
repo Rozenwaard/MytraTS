@@ -2,7 +2,7 @@
 	import { createQuery } from '@tanstack/svelte-query';
 	import { toStore, fromStore } from 'svelte/store';
 	import { queryClient } from '$lib/query';
-	import { fetchUlrExecution, updateUlrExecution, createUlrReestr, resetUlrReestr, changeUlrTaskReport, changeUlrDueDate, fetchUlrOptions, fetchObjectPoints, addPoint, assignmentLabel, type UlrExecutionRow, type UlrOptions, type ObjectPoint } from '$lib/api/ulr';
+	import { fetchUlrExecution, updateUlrExecution, createUlrReestr, resetUlrReestr, changeUlrTaskReport, changeUlrDueDate, fetchUlrOptions, fetchObjectPoints, addPoint, removeControl, assignmentLabel, type UlrExecutionRow, type UlrOptions, type ObjectPoint } from '$lib/api/ulr';
 	import {
 		Table,
 		TableBody,
@@ -27,6 +27,7 @@
 	import ChevronsRight from '@lucide/svelte/icons/chevrons-right';
 	import Search from '@lucide/svelte/icons/search';
 	import Plus from '@lucide/svelte/icons/plus';
+	import Ban from '@lucide/svelte/icons/ban';
 	import type { Component } from 'svelte';
 
 	const HEADER_ICONS: Partial<Record<keyof UlrExecutionRow, Component>> = {
@@ -400,6 +401,16 @@
 			addPointBusy = false;
 		}
 	}
+
+	async function handleRemoveControl(row: UlrExecutionRow) {
+		try {
+			await removeControl(row.task_number ?? '');
+			toast('Снято с контроля');
+			await queryClient.invalidateQueries({ queryKey: ['ulr-execution'] });
+		} catch (e) {
+			toast(e instanceof Error ? e.message : 'Ошибка снятия с контроля');
+		}
+	}
 </script>
 
 <div class="flex h-full flex-col p-4">
@@ -570,6 +581,12 @@
 										<Plus class="size-4" />
 										Добавить точку
 									</Button>
+									{#if row.work_type_in_task === 'КРО'}
+										<Button size="sm" class="bg-brand-brown text-white hover:bg-brand-brown/80" onclick={() => handleRemoveControl(row)}>
+											<Ban class="size-4" />
+											Снять с контроля
+										</Button>
+									{/if}
 									</div>
 								</TableCell>
 							</TableRow>

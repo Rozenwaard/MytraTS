@@ -2,7 +2,7 @@
 import base64
 import calendar
 import io
-from datetime import datetime, timedelta
+from datetime import date, datetime, timedelta
 
 from openpyxl import Workbook
 from python_calamine import CalamineWorkbook
@@ -70,6 +70,94 @@ STATUS_CREATED = "Создано"
 STATUS_ASSIGNED = "Назначено"
 STATUS_DONE = "Выполнено"
 STATUS_SENT = "Отправлено"
+
+# «Контроль режима ограничения» (КРО) — график проверок.
+KRO_WORK_TYPE = "КРО"
+CLONE_DUE_DAYS = 10  # дата завершения = дата создания + 10 календарных дней
+CLONE_INTERVALS = (30, 60)  # интервалы до 1-го и 2-го клона
+CLONE_INTERVAL_REPEAT = 120  # интервал для 3-го клона и далее
+
+# Поля INSERT_SQL, копируемые из родительской строки при клонировании.
+CLONE_FIELDS = (
+    "task_source", "task_type", "work_type_in_task", "customer", "visit_reason",
+    "subscriber_type", "grid", "metering_point", "personal_account", "meter_model",
+    "meter_type", "meter_serial_number", "house_type", "meter_installation_place",
+    "contract_status", "meter_status", "subscriber_name", "address", "municipal_district",
+    "region", "service_object_type", "third_party_organization", "task_organization",
+    "assignee", "executor_organization",
+)
+
+
+def clone_interval(gen: int) -> int:
+    """Интервал (в днях) от дьюдейт текущей строки до создания следующего клона."""
+    return CLONE_INTERVALS[gen] if gen < len(CLONE_INTERVALS) else CLONE_INTERVAL_REPEAT
+
+
+def kro_due_date(now: datetime) -> str:
+    """Дата завершения КРО-задания = дата создания + 10 календарных дней."""
+    return (now + timedelta(days=CLONE_DUE_DAYS)).strftime("%Y-%m-%d")
+
+
+def kro_due_from(created: str) -> str:
+    """due_date = created_at + CLONE_DUE_DAYS (из строки YYYY-MM-DD)."""
+    return (date.fromisoformat(created) + timedelta(days=CLONE_DUE_DAYS)).isoformat()
+
+
+def kro_next_due(due: str, gen: int) -> str:
+    """Дата создания следующего клона = due_date + интервал поколения."""
+    return (date.fromisoformat(due) + timedelta(days=clone_interval(gen))).isoformat()
+
+
+async def next_task_number(sand_session, now: datetime) -> str:
+    year_suffix = now.strftime("%y")
+    existing = (await sand_session.execute(text(
+        "SELECT task_number FROM main_afl WHERE task_number LIKE :p"),
+        {"p": f"%-{year_suffix}"})).fetchall()
+    seq = max((int(n[0].split("-")[0]) for n in existing
+               if n[0] and "-" in n[0] and n[0].split("-")[0].isdigit()), default=0) + 1
+    return f"{seq}-{year_suffix}"
+
+
+async def materialize_kro_clones(sand_session) -> int:
+    """Создаёт «созревшие» клоны КРО по расписанию (по таблице kro_control). Запускается cron'ом."""
+    today = date.today()
+    due_rows = (await sand_session.execute(text(
+        "SELECT * FROM kro_control WHERE active = 1 AND next_due IS NOT NULL AND next_due <= :today"),
+        {"today": today.isoformat()})).mappings().all()
+
+    created = 0
+    for ctrl in due_rows:
+        pa = ctrl["personal_account"]
+        tpl = (await sand_session.execute(text(
+            "SELECT * FROM main_afl WHERE personal_account = :pa AND work_type_in_task = :wt "
+            "ORDER BY CAST(substr(task_number, 1, instr(task_number, '-') - 1) AS INTEGER) DESC LIMIT 1"),
+            {"pa": pa, "wt": KRO_WORK_TYPE})).mappings().first()
+        if tpl is None:
+            continue
+        tpl = dict(tpl)
+        gen = ctrl["generation"]
+        next_due = ctrl["next_due"]
+        for _ in range(100):  # защита от зацикливания
+            if not next_due or next_due > today.isoformat():
+                break
+            tn = await next_task_number(sand_session, datetime.now())
+            clone = {f: tpl.get(f) for f in CLONE_FIELDS}
+            clone["task_number"] = tn
+            clone["created_at"] = next_due
+            clone["due_date"] = kro_due_from(next_due)
+            clone["status"] = STATUS_CREATED
+            await sand_session.execute(text(INSERT_SQL), clone)
+            created += 1
+            gen += 1
+            next_due = kro_next_due(clone["due_date"], gen)
+            tpl = clone
+        await sand_session.execute(text(
+            "UPDATE kro_control SET generation = :g, next_due = :nd WHERE id = :id"),
+            {"g": gen, "nd": next_due, "id": ctrl["id"]})
+
+    if created:
+        await sand_session.commit()
+    return created
 
 
 def resolve_work_ids(customer, category, task_type, meter_type, subscriber_category) -> list:

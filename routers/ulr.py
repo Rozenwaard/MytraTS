@@ -16,8 +16,9 @@ from data.config import sand_session_factory
 from deps import get_current_user, require_auth
 from services.ulr import (CO_EXECUTOR_WORK_IDS, EXECUTOR_POSITIONS, INSERT_SQL, NO_EXECUTION,
                           STATUS_CREATED, STATUS_ASSIGNED, STATUS_DONE, STATUS_SENT,
-                          build_main_afl_row, compute_due_date, compute_status,
-                          feedback_xlsx_b64, find_points, read_register, resolve_work_ids)
+                          KRO_WORK_TYPE, build_main_afl_row, compute_due_date, compute_status,
+                          feedback_xlsx_b64, find_points, kro_due_date, kro_next_due,
+                          read_register, resolve_work_ids)
 
 CUSTOMERS = ["ПСК", "РЛЭ"]
 # Подразделения заказчика: ПСК — из Книга123.xlsx (лист 3), РЛЭ — филиалы.
@@ -99,7 +100,7 @@ async def api_ulr_upload(request: Request, db_session: AsyncSession) -> Response
     now = datetime.now()
     # «визитризон» = номер письма + пробел + дата письма; due_date — автоматически.
     visit_reason = f"{letter_number} {letter_date}".strip()
-    due_date = compute_due_date(task_type, now)
+    due_date = kro_due_date(now) if work_type_in_task == KRO_WORK_TYPE else compute_due_date(task_type, now)
     form_ctx = {"customer": customer, "visit_reason": visit_reason,
                 "work_type_in_task": work_type_in_task, "subdivision": subdivision, "due_date": due_date,
                 "task_type": task_type}
@@ -150,6 +151,12 @@ async def api_ulr_upload(request: Request, db_session: AsyncSession) -> Response
             rec = build_main_afl_row(p, form_ctx, now, head_map)
             rec["task_number"] = f"{seq}-{year_suffix}"
             await sand_session.execute(text(INSERT_SQL), rec)
+            if rec["work_type_in_task"] == KRO_WORK_TYPE:
+                await sand_session.execute(text(
+                    "INSERT INTO kro_control (personal_account, generation, active, next_due) "
+                    "VALUES (:pa, 0, 1, :nd) "
+                    "ON CONFLICT(personal_account) DO UPDATE SET generation = 0, active = 1, next_due = :nd"),
+                    {"pa": rec["personal_account"], "nd": kro_next_due(rec["due_date"], 0)})
             inserted += 1
             seq += 1
     await sand_session.commit()
@@ -584,4 +591,41 @@ async def api_ulr_object_points(request: Request, db_session: AsyncSession, task
                         media_type="application/json")
 
 
-ulr_router = Router("/api", route_handlers=[api_ulr_options, api_ulr_upload, api_ulr_execution, api_ulr_update_execution, api_ulr_reestr, api_ulr_reestr_reset, api_ulr_task_report, api_ulr_change_due_date, api_ulr_object_points, api_ulr_add_point])
+@post("/ulr/remove-control", guards=[require_auth])
+async def api_ulr_remove_control(
+    request: Request, db_session: AsyncSession,
+    data: dict = Body(media_type=RequestEncodingType.JSON),
+) -> Response:
+    user = await get_current_user(request, db_session)
+    if not user or user.effective_role not in ADMIN_ROLES:
+        raise NotAuthorizedException()
+
+    task_number = (data.get("task_number") or "").strip()
+    if not task_number:
+        return Response(content=json.dumps({"error": "Не указан номер задания"}, ensure_ascii=False),
+                        media_type="application/json", status_code=400)
+
+    async with sand_session_factory() as sand_session:
+        row = (await sand_session.execute(text(
+            "SELECT personal_account, work_type_in_task FROM main_afl "
+            "WHERE task_number = :tn AND task_source = 'mytra'"),
+            {"tn": task_number})).mappings().first()
+        if row is None:
+            return Response(content=json.dumps({"error": "Задание не найдено"}, ensure_ascii=False),
+                            media_type="application/json", status_code=404)
+
+        result = await sand_session.execute(text(
+            "DELETE FROM main_afl WHERE personal_account = :pa AND work_type_in_task = :wt "
+            "AND status IN (:st1, :st2)"),
+            {"pa": row["personal_account"], "wt": row["work_type_in_task"],
+             "st1": STATUS_CREATED, "st2": STATUS_ASSIGNED})
+        await sand_session.execute(text(
+            "UPDATE kro_control SET active = 0 WHERE personal_account = :pa"),
+            {"pa": row["personal_account"]})
+        await sand_session.commit()
+
+        return Response(content=json.dumps({"success": True, "deleted": result.rowcount}, ensure_ascii=False),
+                        media_type="application/json")
+
+
+ulr_router = Router("/api", route_handlers=[api_ulr_options, api_ulr_upload, api_ulr_execution, api_ulr_update_execution, api_ulr_reestr, api_ulr_reestr_reset, api_ulr_task_report, api_ulr_change_due_date, api_ulr_object_points, api_ulr_add_point, api_ulr_remove_control])
