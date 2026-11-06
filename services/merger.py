@@ -58,6 +58,7 @@ MAIN_AFL_COLUMNS = [
     'work_end_date', 'sent_to_billing', 'billing_sent_at',
     'task_organization', 'third_party_organization', 'assignee',
     'executor', 'executor_organization', 'visit_reason', 'verified',
+    'verified_at', 'verified_by',
     'status', 'work_result_1', 'status_changed_at', 'task_link',
     'customer', 'task_output', 'task_report', 'task_detail',
     'region', 'grid', 'task_report_id', 'done_day', 'done_day_type',
@@ -67,7 +68,7 @@ MAIN_AFL_COLUMNS = [
 # «Жизненные» поля, которые обновляются даже у строк с номером реестра:
 # проверка/статус/биллинг меняются в источнике независимо от реестра.
 STATUS_ONLY_COLUMNS = [
-    'verified', 'status', 'sent_to_billing', 'billing_sent_at', 'status_changed_at',
+    'verified', 'verified_at', 'verified_by', 'status', 'sent_to_billing', 'billing_sent_at', 'status_changed_at',
 ]
 
 

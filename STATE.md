@@ -26,7 +26,7 @@ Start-Process pwsh -WindowStyle Hidden -ArgumentList '-NoExit','-Command','cd C:
 ```
 Браузер: http://localhost:5174. Логин: табельный номер + пароль (первый вход — пароль = табельный номер, потом смена).
 
-Локальные отладочные креды (админ) — в gitignored `_credentials.py` (`TEST_ADMIN_STAFF_ID` / `TEST_ADMIN_PASSWORD`); в git не попадают (маска `_*.py`).
+Локальные отладочные креды (админ) — в gitignored `_scratch/_credentials.py` (`TEST_ADMIN_STAFF_ID` / `TEST_ADMIN_PASSWORD`); в git не попадают (маска `_*.py`).
 
 ### Проверка, что бэк поднят
 Бэкенд — **Litestar** (не FastAPI): рутов `/` и `/docs` у него нет (это FastAPI-пути), поэтому 404 там — **норма, а не падение**. Swagger-схема Litestar живёт на `/schema`.
@@ -52,7 +52,7 @@ Invoke-WebRequest http://localhost:8000/api/user/settings -UseBasicParsing
 Остановка фонового процесса: `taskkill /PID <pid> /T /F` (pid смотри через `netstat -ano | findstr :8000` / `:5174`).
 
 ## Смок-тест
-`_scratch/_smoke_test.py` — прогон всех GET-эндпоинтов после коммитов/замены базы (логин админом + проверка 200/JSON). Запуск из корня: `uv run python _scratch/_smoke_test.py`.
+`_scratch/_smoke_test.py` — прогон всех GET-эндпоинтов после коммитов/замены базы (логин админом + проверка 200/JSON). Креды лежат в `_scratch/_credentials.py`, поэтому запуск из `_scratch/`: `cd _scratch; uv run python _smoke_test.py`.
 **Новые `/api/*` эндпоинты обязательно добавлять сюда**: JSON-руты — в список `JSON_GETS`, бинарные/файловые выгрузки — в `BINARY_GETS`.
 
 ## Cron / расписание (полноправная часть проекта)

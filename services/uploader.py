@@ -45,6 +45,7 @@ RAW_AFL_XLSX_COLUMNS = [
     'work_end_date', 'sent_to_billing', 'billing_sent_at',
     'task_organization', 'third_party_organization', 'assignee',
     'executor', 'executor_organization', 'visit_reason', 'verified',
+    'verified_at', 'verified_by',
     'status', 'work_result_1', 'status_changed_at', 'task_link',
 ]
 
