@@ -85,3 +85,14 @@ export async function toggleQuarantineBlock(executor: string): Promise<{ ok: boo
 		body: JSON.stringify({ executor })
 	});
 }
+
+export async function impersonate(id: number): Promise<void> {
+	await api('/api/admin/impersonate', {
+		method: 'POST',
+		body: JSON.stringify({ user_id: id })
+	});
+}
+
+export async function stopImpersonation(): Promise<void> {
+	await api('/api/admin/impersonate/stop', { method: 'POST' });
+}

@@ -49,7 +49,10 @@ async def api_me(request: Request, db_session: AsyncSession) -> Response:
     user = await get_current_user(request, db_session)
     if not user:
         return Response(content=json.dumps({"user": None}, ensure_ascii=False), media_type="application/json", status_code=401)
-    return Response(content=json.dumps({"user": {"id": user.id, "full_name": user.full_name, "dept": user.dept, "locale": user.locale, "position": user.position, "staff_id": user.staff_id, "role": user.effective_role}}, ensure_ascii=False), media_type="application/json")
+    return Response(content=json.dumps({
+        "user": {"id": user.id, "full_name": user.full_name, "dept": user.dept, "locale": user.locale, "position": user.position, "staff_id": user.staff_id, "role": user.effective_role},
+        "impersonator_id": request.session.get("impersonator_id"),
+    }, ensure_ascii=False), media_type="application/json")
 
 
 @post("/logout")

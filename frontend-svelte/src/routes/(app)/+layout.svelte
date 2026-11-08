@@ -1,7 +1,8 @@
 <script lang="ts">
 	import { goto } from '$app/navigation';
 	import { page } from '$app/state';
-	import { auth, logout } from '$lib/store/auth.svelte';
+	import { auth, logout, refreshAuth } from '$lib/store/auth.svelte';
+	import { stopImpersonation } from '$lib/api/admin';
 	import { toggleMode } from 'mode-watcher';
 	import Logo from '$lib/components/logo.svelte';
 	import { Button } from '$lib/components/ui/button';
@@ -64,6 +65,16 @@
 		await logout();
 		await goto('/login');
 	}
+
+	async function handleStopImpersonation() {
+		try {
+			await stopImpersonation();
+		} catch {
+			// если остановить не удалось — всё равно обновим состояние
+		}
+		await refreshAuth();
+		await goto('/admin');
+	}
 </script>
 
 <div class="flex h-screen flex-col overflow-hidden bg-background">
@@ -102,6 +113,15 @@
 			{/if}
 		</div>
 	</header>
+
+	{#if auth.impersonatorId != null && user}
+		<div class="flex shrink-0 items-center justify-between gap-3 border-b bg-amber-100 px-4 py-2 text-sm">
+			<span>
+				Вы работаете как: <span class="font-semibold">{user.full_name}</span> ({user.role})
+			</span>
+			<Button variant="outline" size="sm" onclick={handleStopImpersonation}>Вернуться</Button>
+		</div>
+	{/if}
 
 	{#if subTabs.length > 0}
 		<nav class="flex shrink-0 items-center gap-1 border-b px-4">

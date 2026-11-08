@@ -3,9 +3,11 @@ import { api, type User } from '$lib/api/client';
 export const auth = $state<{
 	user: User | null;
 	loading: boolean;
+	impersonatorId: number | null;
 }>({
 	user: null,
-	loading: true
+	loading: true,
+	impersonatorId: null
 });
 
 let loadPromise: Promise<void> | null = null;
@@ -14,16 +16,22 @@ export function loadAuth(): Promise<void> {
 	if (!loadPromise) {
 		loadPromise = (async () => {
 			try {
-				const data = await api<{ user: User | null }>('/api/me');
-				auth.user = data.user;
+				await refreshAuth();
 			} catch {
 				auth.user = null;
-			} finally {
+				auth.impersonatorId = null;
 				auth.loading = false;
 			}
 		})();
 	}
 	return loadPromise;
+}
+
+export async function refreshAuth(): Promise<void> {
+	const data = await api<{ user: User | null; impersonator_id?: number | null }>('/api/me');
+	auth.user = data.user;
+	auth.impersonatorId = data.impersonator_id ?? null;
+	auth.loading = false;
 }
 
 export async function login(
@@ -40,8 +48,7 @@ export async function login(
 		body: JSON.stringify({ staff_id: staffId, password })
 	});
 	if (data.ok) {
-		const me = await api<{ user: User }>('/api/me');
-		auth.user = me.user;
+		await refreshAuth();
 	}
 	return { changePassword: data.change_password };
 }
@@ -53,4 +60,5 @@ export async function logout(): Promise<void> {
 		// игнорируем — сессия могла уже истечь
 	}
 	auth.user = null;
+	auth.impersonatorId = null;
 }

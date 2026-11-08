@@ -333,8 +333,57 @@ async def api_admin_user_reset_password(request: Request, db_session: AsyncSessi
     return _json({"ok": True})
 
 
+@post("/admin/impersonate", guards=[require_auth])
+async def api_admin_impersonate(
+    request: Request, db_session: AsyncSession,
+    data: dict = Body(media_type=RequestEncodingType.JSON),
+) -> Response:
+    """«Войти как»: администратор смотрит систему глазами другого пользователя (A1)."""
+    if request.session.get("impersonator_id"):
+        return _json({"error": "Уже выполняется вход под другим пользователем"}, 400)
+    admin = await _admin_or_403(request, db_session)
+    if not admin:
+        return _json({"error": "Нет прав"}, 403)
+
+    user_id = data.get("user_id")
+    if not user_id:
+        return _json({"error": "Не указан user_id"}, 400)
+    target = (await db_session.execute(sa_select(User).where(User.id == user_id))).scalar_one_or_none()
+    if not target:
+        return _json({"error": "Пользователь не найден"}, 404)
+    if target.id == admin.id:
+        return _json({"error": "Нельзя войти под самим собой"}, 400)
+
+    # A4: guard require_auth сверяет session_version с БД — подменяем на версию target,
+    # чтобы сессия «от имени target» проходила проверку. Возврат — в /impersonate/stop.
+    request.session["impersonator_id"] = admin.id
+    request.session["user_id"] = target.id
+    request.session["session_version"] = target.session_version
+    return _json({"ok": True, "user": _serialize(target)})
+
+
+@post("/admin/impersonate/stop", guards=[require_auth])
+async def api_admin_impersonate_stop(request: Request, db_session: AsyncSession) -> Response:
+    """«Вернуться»: завершить имперсонацию и восстановить сессию администратора."""
+    impersonator_id = request.session.get("impersonator_id")
+    if not impersonator_id:
+        return _json({"error": "Не выполняется вход под другим пользователем"}, 400)
+
+    impersonator = (await db_session.execute(
+        sa_select(User).where(User.id == impersonator_id))).scalar_one_or_none()
+    if not impersonator:
+        request.session.clear()
+        return _json({"error": "Исходный пользователь не найден"}, 401)
+
+    request.session["user_id"] = impersonator.id
+    request.session["session_version"] = impersonator.session_version
+    request.session.pop("impersonator_id", None)
+    return _json({"ok": True, "user": _serialize(impersonator)})
+
+
 users_router = Router("/api", route_handlers=[
     api_admin_users, api_admin_missing, api_admin_missing_dismiss, api_admin_user_create,
     api_admin_user_executor_name, api_admin_user_delete, api_admin_user_reset_password,
     api_admin_quarantine, api_admin_quarantine_toggle,
+    api_admin_impersonate, api_admin_impersonate_stop,
 ])

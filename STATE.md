@@ -305,6 +305,8 @@ MytraTS/
 | PATCH | `/admin/users/{id}/executor-name` | правка поля «Алькор» (точное ФИО из main_afl) |
 | DELETE | `/admin/users/{id}` | удалить (нельзя себя и последнего админа) |
 | POST | `/admin/users/{id}/reset-password` | сброс пароля (password_hash=NULL → первый вход + смена) |
+| POST | `/admin/impersonate` | «войти как» (только админ; тело `{user_id}`; вложенность → 400) |
+| POST | `/admin/impersonate/stop` | «вернуться» из имперсонации (восстанавливает сессию админа) |
 | GET | `/admin/quarantine` | карантин: исполнители main_afl без совпадения с users.executor_name |
 | POST | `/admin/quarantine/toggle` | блок/разблок исполнителя (блок удаляет его строки из main_afl) |
 

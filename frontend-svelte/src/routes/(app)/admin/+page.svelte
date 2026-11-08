@@ -1,6 +1,6 @@
 <script lang="ts">
 	import { goto } from '$app/navigation';
-	import { auth } from '$lib/store/auth.svelte';
+	import { auth, refreshAuth } from '$lib/store/auth.svelte';
 	import { toast } from '$lib/store/toast.svelte';
 	import { cn } from '$lib/utils.js';
 	import {
@@ -8,6 +8,7 @@
 		deleteUser,
 		resetPassword,
 		updateExecutorName,
+		impersonate,
 		type AdminUser
 	} from '$lib/api/admin';
 	import { Button } from '$lib/components/ui/button';
@@ -115,6 +116,17 @@
 		} finally {
 			loading = false;
 		}
+	}
+
+	async function handleImpersonate(u: AdminUser) {
+		try {
+			await impersonate(u.id);
+		} catch (e) {
+			toast(e instanceof Error ? e.message : 'Ошибка');
+			return;
+		}
+		await refreshAuth();
+		// auth.user теперь target → $effect перенаправит с /admin
 	}
 
 	function openEditName(u: AdminUser) {
@@ -277,17 +289,29 @@
 										{/if}
 									</TableCell>
 									<TableCell class="text-right">
-										<Button
-											variant="ghost"
-											size="icon-sm"
-											onclick={(e) => {
-												e.stopPropagation();
-												remove(u);
-											}}
-											aria-label="Удалить"
-										>
-											<Trash2 class="size-4 text-destructive" />
-										</Button>
+										<div class="flex items-center justify-end gap-1">
+											<Button
+												variant="outline"
+												size="sm"
+												onclick={(e) => {
+													e.stopPropagation();
+													handleImpersonate(u);
+												}}
+											>
+												Войти как
+											</Button>
+											<Button
+												variant="ghost"
+												size="icon-sm"
+												onclick={(e) => {
+													e.stopPropagation();
+													remove(u);
+												}}
+												aria-label="Удалить"
+											>
+												<Trash2 class="size-4 text-destructive" />
+											</Button>
+										</div>
 									</TableCell>
 								</TableRow>
 							{/each}
