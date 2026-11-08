@@ -328,6 +328,7 @@ MytraTS/
 - Сопоставление исполнителя (`main_afl.executor`) с работником — через точное равенство `users.executor_name = main_afl.executor`. `norm_name()` из JOIN'ов вынесен (остался в `sql.py` как хелпер). При импорте xlsx `executor`/`executor_organization` нормализуются `clean_text()` (в `sql.py`): strip + неразрывные пробелы (NBSP `\xa0` и др.) → обычный пробел.
 - Роли проверяются через `user.effective_role`. Общий guard — `deps.require_role(request, db_session, *roles)`; зона видимости — `deps.role_scope_clauses(user)` (оператор/работник → locale, менеджер → dept).
 - Фильтры на бэке строятся из `clauses` + `params` dict.
+- Новые эндпоинты: тело запроса/ответа описывать DTO (`msgspec.Struct`; pydantic в проекте нет) вместо ручного `data: dict = Body(...)` — Litestar сам валидирует тело и отдаёт 400/422. Старые эндпоинты переводить постепенно (см. TODO.md «DTO-рефакторинг»).
 - Фронт: типы в `api/main-afl.ts`, запросы через `api<T>()` (client.ts, credentials:include).
 - Коммиты атомарные, ветка master, пушится на GitHub.
 - Read-only smoke-тест (`_smoke_test.py`, локальный, gitignored) — логин админом + прогон всех GET-рутов; держать актуальным и прогонять после каждых 3–5 коммитов. Новые GET-эндпоинты — дописывать путь в `JSON_GETS` / `BINARY_GETS`; временно падающие — в `KNOWN_SKIPS`.
