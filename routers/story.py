@@ -33,11 +33,26 @@ async def api_story_afl(
     meter_installation_place: str = "", executor_organization: str = "",
     executor: str = "", report: str = "", task_detail: str = "",
 ) -> Response:
-    await get_current_user(request, db_session)
+    user = await get_current_user(request, db_session)
     if page < 1 or per_page < 1 or per_page > 500:
         return Response(content=json.dumps({"error": "page должен быть >= 1, per_page — от 1 до 500"}, ensure_ascii=False), media_type="application/json", status_code=400)
     clauses = ["1=1"]
     params: dict = {}
+
+    # B1: зона видимости. story.db не видит таблицу users, поэтому список
+    # исполнителей локали для оператора/работника тянем из основной БД заранее.
+    if user.effective_role in ("оператор", "работник"):
+        executors = [r[0] for r in (await db_session.execute(
+            text("SELECT executor_name FROM users WHERE locale = :locale AND executor_name IS NOT NULL"),
+            {"locale": user.locale})).fetchall()]
+        if not executors:
+            return Response(content=json.dumps({"rows": [], "total": 0, "page": page, "per_page": per_page, "filter_counts": {}}, ensure_ascii=False, default=str), media_type="application/json")
+        names, bind_params = build_in_clause("ex", executors)
+        clauses.append(f"executor IN ({names})")
+        params.update(bind_params)
+    elif user.effective_role == "менеджер":
+        clauses.append("executor_organization = :dept")
+        params["dept"] = user.dept
 
     if search:
         clauses.append("(task_number LIKE :s OR personal_account LIKE :s OR address LIKE :s)")

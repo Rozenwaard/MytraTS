@@ -15,7 +15,7 @@ from litestar.response import Response
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from deps import require_auth
+from deps import require_auth, require_role
 from services.merger import merge_to_main
 from services.processor import process_raw_afl
 from services.report_check import recompute_errors
@@ -27,7 +27,10 @@ _active_uploads: set = set()  # upload_id активных загрузок (B5:
 
 
 @post("/upload", guards=[require_auth])
-async def api_upload(data: UploadFile = Body(media_type=RequestEncodingType.MULTI_PART)) -> Response:
+async def api_upload(request: Request, db_session: AsyncSession, data: UploadFile = Body(media_type=RequestEncodingType.MULTI_PART)) -> Response:
+    user = await require_role(request, db_session, "администратор", "специалист")
+    if not user:
+        return Response(content=json.dumps({"error": "Нет прав"}, ensure_ascii=False), media_type="application/json", status_code=403)
     if not data or not data.filename.endswith('.xlsx'):
         return Response(content=json.dumps({"error": "Нужен файл .xlsx"}, ensure_ascii=False), media_type="application/json", status_code=400)
     if _active_uploads:

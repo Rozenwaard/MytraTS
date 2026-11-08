@@ -71,7 +71,7 @@ MytraTS/
 ├── app.py                 # точка входа: сборка Litestar-приложения из роутеров
 │                          # (request_max_body_size = 65 МБ — потолок загрузки xlsx;
 │                          #  CORSConfig только под dev-origin localhost:5174)
-├── deps.py                # get_current_user, require_auth (общие зависимости; require_auth сверяет session_version с БД — отзыв сессий)
+├── deps.py                # get_current_user, require_auth (require_auth сверяет session_version с БД — отзыв сессий), require_role, role_scope_clauses (зона видимости)
 ├── sql.py                 # build_in_clause, norm_name (общие SQL-хелперы: IN-клаузы + нормализация ФИО «ё/е»)
 ├── data/
 │   ├── config.py          # engine (mytra.db), story_engine (story.db), tickets_engine (tickets.db), STORY_DB_PATH, SECRET_KEY из .env (валидация 16/24/32 байта); WAL + busy_timeout на каждом соединении
@@ -324,7 +324,7 @@ MytraTS/
 ## Конвенции
 - SQL: только bindparams (`:name`), без f-string-инъекций. Для IN — `build_in_clause(prefix, values)` в sql.py. Большие списки (десятки тысяч) бить на чанки `_IN_CHUNK = 32500` — лимит SQLite на число переменных (32766).
 - Сопоставление исполнителя (`main_afl.executor`) с работником — через точное равенство `users.executor_name = main_afl.executor`. `norm_name()` из JOIN'ов вынесен (остался в `sql.py` как хелпер). При импорте xlsx `executor`/`executor_organization` нормализуются `clean_text()` (в `sql.py`): strip + неразрывные пробелы (NBSP `\xa0` и др.) → обычный пробел.
-- Роли проверяются через `user.effective_role`.
+- Роли проверяются через `user.effective_role`. Общий guard — `deps.require_role(request, db_session, *roles)`; зона видимости — `deps.role_scope_clauses(user)` (оператор/работник → locale, менеджер → dept).
 - Фильтры на бэке строятся из `clauses` + `params` dict.
 - Фронт: типы в `api/main-afl.ts`, запросы через `api<T>()` (client.ts, credentials:include).
 - Коммиты атомарные, ветка master, пушится на GitHub.

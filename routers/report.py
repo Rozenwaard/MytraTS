@@ -10,7 +10,7 @@ from litestar.response import Response
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from deps import get_current_user, require_auth
+from deps import get_current_user, require_auth, require_role
 from services.reestr import generate_report_xlsx_bytes
 
 
@@ -50,7 +50,10 @@ async def api_report(
 
 
 @get("/download-report/{period:str}", guards=[require_auth])
-async def api_download_report(period: str, db_session: AsyncSession) -> Response:
+async def api_download_report(request: Request, period: str, db_session: AsyncSession) -> Response:
+    user = await require_role(request, db_session, "администратор", "специалист")
+    if not user:
+        return Response(content=json.dumps({"error": "Нет прав"}, ensure_ascii=False), media_type="application/json", status_code=403)
     output = await generate_report_xlsx_bytes(db_session, period)
     filename = f"Отчёт_{period}.xlsx"
     return Response(content=output, media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",

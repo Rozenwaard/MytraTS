@@ -9,7 +9,7 @@ from litestar.response import Response
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from deps import get_current_user, require_auth
+from deps import get_current_user, require_auth, role_scope_clauses
 from sql import build_in_clause
 from services.premium import apply_manual_norm
 
@@ -42,12 +42,9 @@ def _build_main_afl_clauses(user, search, customer, task_report, executor_org,
     # В разделе «Реестры» показываем только закрытые/завершённые задания (status LIKE 'З%').
     clauses.append("status LIKE 'З%'")
 
-    if user.effective_role in ("оператор", "работник"):
-        clauses.append(f"executor IN (SELECT executor_name FROM users WHERE locale = :locale)")
-        params["locale"] = user.locale
-    elif user.effective_role == "менеджер":
-        clauses.append("executor_organization = :dept")
-        params["dept"] = user.dept
+    scope_clauses, scope_params = role_scope_clauses(user)
+    clauses.extend(scope_clauses)
+    params.update(scope_params)
 
     if search:
         clauses.append("(task_number LIKE :s OR personal_account LIKE :s OR address LIKE :s)")
@@ -172,12 +169,10 @@ async def api_main_afl_stats(request: Request, db_session: AsyncSession) -> Resp
     params = {}
     base_where += " AND status LIKE 'З%'"
 
-    if user.effective_role in ("оператор", "работник"):
-        base_where += f" AND executor IN (SELECT executor_name FROM users WHERE locale = :locale)"
-        params["locale"] = user.locale
-    elif user.effective_role == "менеджер":
-        base_where += " AND executor_organization = :dept"
-        params["dept"] = user.dept
+    scope_clauses, scope_params = role_scope_clauses(user)
+    if scope_clauses:
+        base_where += " AND " + " AND ".join(scope_clauses)
+        params.update(scope_params)
 
     cust_result = await db_session.execute(
         text(f"SELECT customer, COUNT(*) FROM main_afl WHERE {base_where} GROUP BY customer"), params)

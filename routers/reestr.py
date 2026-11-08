@@ -11,7 +11,7 @@ from litestar.response import Response
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from deps import get_current_user, require_auth
+from deps import get_current_user, require_auth, role_scope_clauses
 from sql import build_in_clause
 from services.reestr import DEPT_PREFIXES, LOCALE_SUFFIXES, generate_reestr_xlsx_bytes
 from services.report_check import is_stop_blocked
@@ -30,6 +30,8 @@ async def api_reestr(
         return Response(content=json.dumps({"success": False, "error": "Не выбраны строки"}, ensure_ascii=False), media_type="application/json")
 
     user = await get_current_user(request, db_session)
+    scope_clauses, scope_params = role_scope_clauses(user)
+    scope_where = (" AND " + " AND ".join(scope_clauses)) if scope_clauses else ""
 
     all_rows = []
     for i in range(0, len(task_numbers), _IN_CHUNK):
@@ -38,7 +40,8 @@ async def api_reestr(
         result = await db_session.execute(
             text(f"SELECT task_number, task_report, executor_organization, customer, grid, reestr_number, errors, region, municipal_district, "
                  f"(SELECT locale FROM users WHERE users.executor_name = main_afl.executor LIMIT 1) as locale "
-                 f"FROM main_afl WHERE task_number IN ({names})"), bind_params)
+                 f"FROM main_afl WHERE task_number IN ({names}){scope_where}"),
+            {**bind_params, **scope_params})
         all_rows.extend([dict(row._mapping) for row in result])
 
     blocked_set = {r["task_number"] for r in all_rows if is_stop_blocked(r)}
@@ -111,9 +114,11 @@ async def api_reestr(
 @get("/download-reestr/{reestr_number:str}", guards=[require_auth])
 async def api_download_reestr(request: Request, db_session: AsyncSession, reestr_number: str) -> Response:
     user = await get_current_user(request, db_session)
+    scope_clauses, scope_params = role_scope_clauses(user)
+    scope_where = (" AND " + " AND ".join(scope_clauses)) if scope_clauses else ""
     result = await db_session.execute(
-        text("SELECT task_report, executor_organization, reestr_date, customer, grid FROM main_afl WHERE reestr_number = :rn LIMIT 1"),
-        {"rn": reestr_number})
+        text(f"SELECT task_report, executor_organization, reestr_date, customer, grid FROM main_afl WHERE reestr_number = :rn{scope_where} LIMIT 1"),
+        {"rn": reestr_number, **scope_params})
     row = result.fetchone()
     if not row:
         return Response(content="Реестр не найден", status_code=404)
@@ -129,15 +134,19 @@ async def api_download_reestr(request: Request, db_session: AsyncSession, reestr
 
 @post("/reestr/reset", guards=[require_auth])
 async def api_reset_reestr(
-    db_session: AsyncSession,
+    request: Request, db_session: AsyncSession,
     data: dict = Body(media_type=RequestEncodingType.JSON),
 ) -> Response:
     task_numbers = data.get("task_numbers", [])
     if not task_numbers:
         return Response(content=json.dumps({"success": False, "error": "Не выбраны строки"}, ensure_ascii=False), media_type="application/json")
+    user = await get_current_user(request, db_session)
+    scope_clauses, scope_params = role_scope_clauses(user)
+    scope_where = (" AND " + " AND ".join(scope_clauses)) if scope_clauses else ""
     names, bind_params = build_in_clause("rs", task_numbers)
     result = await db_session.execute(
-        text(f"UPDATE main_afl SET reestr_number = NULL, reestr_date = NULL WHERE task_number IN ({names})"), bind_params)
+        text(f"UPDATE main_afl SET reestr_number = NULL, reestr_date = NULL WHERE task_number IN ({names}){scope_where}"),
+        {**bind_params, **scope_params})
     await db_session.commit()
     return Response(content=json.dumps({"success": True, "cleared": result.rowcount}, ensure_ascii=False), media_type="application/json")
 
@@ -147,12 +156,10 @@ async def api_reestr_list(request: Request, db_session: AsyncSession) -> Respons
     user = await get_current_user(request, db_session)
     query = "SELECT DISTINCT reestr_number FROM main_afl WHERE reestr_number IS NOT NULL AND reestr_number != 'Отклонён'"
     params = {}
-    if user.effective_role in ("оператор", "работник"):
-        query += f" AND executor IN (SELECT executor_name FROM users WHERE locale = :locale)"
-        params["locale"] = user.locale
-    elif user.effective_role == "менеджер":
-        query += " AND executor_organization = :dept"
-        params["dept"] = user.dept
+    scope_clauses, scope_params = role_scope_clauses(user)
+    if scope_clauses:
+        query += " AND " + " AND ".join(scope_clauses)
+        params.update(scope_params)
     query += " ORDER BY CAST(substr(reestr_number, 1, instr(reestr_number, '-') - 1) AS INTEGER)"
     result = await db_session.execute(text(query), params)
     reestrs_raw = await db_session.execute(
@@ -180,12 +187,10 @@ async def api_reestr_find(request: Request, db_session: AsyncSession, q: str = "
         "AND reestr_number IS NOT NULL AND reestr_number != 'Отклонён'"
     )
     params = {"q": q}
-    if user.effective_role in ("оператор", "работник"):
-        query += f" AND executor IN (SELECT executor_name FROM users WHERE locale = :locale)"
-        params["locale"] = user.locale
-    elif user.effective_role == "менеджер":
-        query += " AND executor_organization = :dept"
-        params["dept"] = user.dept
+    scope_clauses, scope_params = role_scope_clauses(user)
+    if scope_clauses:
+        query += " AND " + " AND ".join(scope_clauses)
+        params.update(scope_params)
     query += " ORDER BY reestr_number LIMIT 1"
 
     result = await db_session.execute(text(query), params)

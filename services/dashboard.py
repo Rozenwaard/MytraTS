@@ -7,6 +7,7 @@ from openpyxl import Workbook
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from deps import role_scope_clauses
 from services.report_check import STOP_FACTOR_REGIONS, STOP_FACTOR_DISTRICTS
 
 
@@ -34,13 +35,9 @@ def build_scope(user, dept: str = "") -> tuple[list, dict]:
     d_in = ", ".join(f":{n}" for n in d_names)
     clauses.append(f"(region IN ({r_in}) OR municipal_district IN ({d_in}))")
 
-    role = user.effective_role
-    if role in ("оператор", "работник"):
-        clauses.append(f"executor IN (SELECT executor_name FROM users WHERE locale = :locale)")
-        params["locale"] = user.locale
-    elif role == "менеджер":
-        clauses.append("executor_organization = :dept")
-        params["dept"] = user.dept
+    scope_clauses, scope_params = role_scope_clauses(user)
+    clauses.extend(scope_clauses)
+    params.update(scope_params)
 
     return clauses, params
 
