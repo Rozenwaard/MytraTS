@@ -52,6 +52,9 @@
 	let editValue = $state('');
 	let editSaving = $state(false);
 
+	let tempPassword = $state('');
+	let tempPasswordUser = $state('');
+
 	const filteredUsers = $derived(
 		search.trim()
 			? users.filter((u) =>
@@ -167,14 +170,20 @@
 	}
 
 	async function reset(u: AdminUser) {
-		if (!confirm(`Сбросить пароль «${u.full_name}» на табельный номер?`)) return;
+		if (!confirm(`Сбросить пароль «${u.full_name}»? Будет выдан одноразовый пароль.`)) return;
 		try {
-			await resetPassword(u.id);
-			toast('Пароль сброшен (вход по табельному номеру)');
+			const result = await resetPassword(u.id);
+			tempPasswordUser = u.full_name;
+			tempPassword = result.temp_password;
 			await load();
 		} catch (e) {
 			toast(e instanceof Error ? e.message : 'Ошибка сброса');
 		}
+	}
+
+	function closeTempPassword() {
+		tempPassword = '';
+		tempPasswordUser = '';
 	}
 </script>
 
@@ -280,10 +289,12 @@
 													e.stopPropagation();
 													reset(u);
 												}}
-												title="Сбросить пароль в табельный номер"
+												title="Сбросить пароль (выдать одноразовый)"
 											>
 												custom
 											</button>
+										{:else if u.has_temp_password}
+											<Badge class="bg-amber-500 text-white">временный</Badge>
 										{:else}
 											<Badge class="bg-brand-logo text-white">system</Badge>
 										{/if}
@@ -355,6 +366,40 @@
 				<Button onclick={saveEditName} disabled={editSaving}>
 					{editSaving ? 'Сохранение…' : 'Сохранить'}
 				</Button>
+			</div>
+		</div>
+	</div>
+{/if}
+
+{#if tempPassword}
+	<div
+		class="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4"
+		role="button"
+		tabindex="-1"
+		aria-label="Закрыть"
+		onclick={(e) => {
+			if (e.target === e.currentTarget) closeTempPassword();
+		}}
+		onkeydown={(e) => {
+			if (e.key === 'Escape') closeTempPassword();
+		}}
+	>
+		<div class="w-full max-w-sm rounded-lg border bg-card p-4 shadow-lg" role="dialog" aria-modal="true">
+			<div class="mb-3 flex items-center justify-between">
+				<h3 class="text-base font-semibold">Одноразовый пароль</h3>
+				<Button variant="ghost" size="icon-sm" onclick={closeTempPassword} aria-label="Закрыть">
+					<X class="size-4" />
+				</Button>
+			</div>
+			<p class="text-sm text-muted-foreground">
+				Для <span class="font-medium text-foreground">{tempPasswordUser}</span>
+			</p>
+			<div class="mt-2 rounded bg-muted px-3 py-2 text-center font-mono text-lg">{tempPassword}</div>
+			<p class="mt-2 text-xs text-muted-foreground">
+				Показывается один раз. При первом входе сотрудник должен сменить пароль.
+			</p>
+			<div class="mt-4 flex justify-end">
+				<Button onclick={closeTempPassword}>Закрыть</Button>
 			</div>
 		</div>
 	</div>

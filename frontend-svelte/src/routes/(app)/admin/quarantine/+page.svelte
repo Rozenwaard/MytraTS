@@ -55,6 +55,9 @@
 	let matchExecutor = $state('');
 	let matchSaving = $state(false);
 
+	let tempPassword = $state('');
+	let tempPasswordUser = $state('');
+
 	function emptyForm(): UserPayload {
 		return {
 			full_name: '',
@@ -127,7 +130,7 @@
 		}
 		saving = true;
 		try {
-			await createUser({
+			const result = await createUser({
 				full_name: form.full_name.trim(),
 				staff_id: form.staff_id.trim(),
 				dept: form.dept,
@@ -136,7 +139,8 @@
 				role: form.role,
 				executor_name: form.executor_name.trim()
 			});
-			toast('Пользователь добавлен');
+			tempPasswordUser = form.full_name.trim();
+			tempPassword = result.temp_password;
 			closeForm();
 			await load();
 		} catch (e) {
@@ -144,6 +148,11 @@
 		} finally {
 			saving = false;
 		}
+	}
+
+	function closeTempPassword() {
+		tempPassword = '';
+		tempPasswordUser = '';
 	}
 
 	function onMatchChange(item: QuarantineItem, value: string) {
@@ -495,6 +504,40 @@
 				<Button onclick={saveMatch} disabled={matchSaving}>
 					{matchSaving ? 'Сохранение…' : 'Сопоставить'}
 				</Button>
+			</div>
+		</div>
+	</div>
+{/if}
+
+{#if tempPassword}
+	<div
+		class="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4"
+		role="button"
+		tabindex="-1"
+		aria-label="Закрыть"
+		onclick={(e) => {
+			if (e.target === e.currentTarget) closeTempPassword();
+		}}
+		onkeydown={(e) => {
+			if (e.key === 'Escape') closeTempPassword();
+		}}
+	>
+		<div class="w-full max-w-sm rounded-lg border bg-card p-4 shadow-lg" role="dialog" aria-modal="true">
+			<div class="mb-3 flex items-center justify-between">
+				<h3 class="text-base font-semibold">Одноразовый пароль</h3>
+				<Button variant="ghost" size="icon-sm" onclick={closeTempPassword} aria-label="Закрыть">
+					<X class="size-4" />
+				</Button>
+			</div>
+			<p class="text-sm text-muted-foreground">
+				Для <span class="font-medium text-foreground">{tempPasswordUser}</span>
+			</p>
+			<div class="mt-2 rounded bg-muted px-3 py-2 text-center font-mono text-lg">{tempPassword}</div>
+			<p class="mt-2 text-xs text-muted-foreground">
+				Показывается один раз. При первом входе сотрудник должен сменить пароль.
+			</p>
+			<div class="mt-4 flex justify-end">
+				<Button onclick={closeTempPassword}>Закрыть</Button>
 			</div>
 		</div>
 	</div>

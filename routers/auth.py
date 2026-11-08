@@ -30,8 +30,14 @@ async def api_login(
         return Response(content=json.dumps({"ok": False, "error": "Неверный логин или пароль"}, ensure_ascii=False), media_type="application/json", status_code=401)
 
     if user.password_hash is None:
-        if password != user.staff_id:
-            return Response(content=json.dumps({"ok": False, "error": "Неверный логин или пароль"}, ensure_ascii=False), media_type="application/json", status_code=401)
+        if user.temp_password_hash is not None:
+            # Новый/сброшенный: вход по одноразовому паролю (A3).
+            if hashlib.sha256(password.encode()).hexdigest() != user.temp_password_hash:
+                return Response(content=json.dumps({"ok": False, "error": "Неверный логин или пароль"}, ensure_ascii=False), media_type="application/json", status_code=401)
+        else:
+            # Переходный режим (A3): старые пользователи без хеша входят по табельному.
+            if password != user.staff_id:
+                return Response(content=json.dumps({"ok": False, "error": "Неверный логин или пароль"}, ensure_ascii=False), media_type="application/json", status_code=401)
         request.session["user_id"] = user.id
         request.session["session_version"] = user.session_version
         return Response(content=json.dumps({"ok": True, "change_password": True, "full_name": user.full_name, "role": user.effective_role}, ensure_ascii=False), media_type="application/json")
@@ -74,8 +80,9 @@ async def api_change_password(
         return Response(content=json.dumps({"ok": False, "error": "Пароли не совпадают"}, ensure_ascii=False), media_type="application/json", status_code=400)
     user_id = request.session.get("user_id")
     # session_version + 1 отзывает все прочие сессии этого пользователя (A4).
+    # temp_password_hash очищаем — одноразовый пароль больше не действует (A3).
     await db_session.execute(
-        text("UPDATE users SET password_hash = :hash, session_version = session_version + 1 WHERE id = :id"),
+        text("UPDATE users SET password_hash = :hash, temp_password_hash = NULL, session_version = session_version + 1 WHERE id = :id"),
         {"hash": hashlib.sha256(new_password.encode()).hexdigest(), "id": user_id})
     await db_session.commit()
     return Response(content=json.dumps({"ok": True}), media_type="application/json")

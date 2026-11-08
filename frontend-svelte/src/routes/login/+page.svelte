@@ -106,7 +106,6 @@
 									}}
 								>
 									<div class="text-sm font-medium">{s.full_name}</div>
-									<div class="text-xs text-muted-foreground">{s.position} • {s.staff_id}</div>
 								</button>
 							{/each}
 						</div>
@@ -132,10 +131,6 @@
 					{loading ? 'Вход...' : 'Войти'}
 				</Button>
 			</form>
-
-			<p class="mt-4 text-center text-xs text-muted-foreground">
-				Первый вход — используйте табельный номер
-			</p>
 		</CardContent>
 	</Card>
 </div>

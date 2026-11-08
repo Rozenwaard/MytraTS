@@ -13,6 +13,7 @@ export interface AdminUser {
 	effective_role: Role;
 	executor_name: string | null;
 	has_password: boolean;
+	has_temp_password: boolean;
 }
 
 export interface MissingPerson {
@@ -55,16 +56,16 @@ export async function dismissMissing(staff_id: string): Promise<void> {
 	});
 }
 
-export async function createUser(payload: UserPayload): Promise<void> {
-	await api('/api/admin/users', { method: 'POST', body: JSON.stringify(payload) });
+export async function createUser(payload: UserPayload): Promise<{ temp_password: string }> {
+	return api('/api/admin/users', { method: 'POST', body: JSON.stringify(payload) });
 }
 
 export async function deleteUser(id: number): Promise<void> {
 	await api(`/api/admin/users/${id}`, { method: 'DELETE' });
 }
 
-export async function resetPassword(id: number): Promise<void> {
-	await api(`/api/admin/users/${id}/reset-password`, { method: 'POST' });
+export async function resetPassword(id: number): Promise<{ temp_password: string }> {
+	return api(`/api/admin/users/${id}/reset-password`, { method: 'POST' });
 }
 
 export async function updateExecutorName(id: number, executorName: string): Promise<void> {

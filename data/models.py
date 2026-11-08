@@ -369,6 +369,7 @@ class User(Base):
     position: Mapped[str] = mapped_column(Text)
     staff_id: Mapped[str] = mapped_column(Text)
     password_hash: Mapped[Optional[str]] = mapped_column(Text)
+    temp_password_hash: Mapped[Optional[str]] = mapped_column(Text)  # одноразовый пароль (A3)
     last_seen: Mapped[str] = mapped_column(Text)
     settings: Mapped[Optional[str]] = mapped_column(Text)
     role: Mapped[Optional[str]] = mapped_column(Text)

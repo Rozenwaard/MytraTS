@@ -5,7 +5,10 @@
 запись — сырым SQL через text()/bindparams (конвенция проекта).
 """
 
+import hashlib
 import json
+import secrets
+import string
 
 from litestar import Router
 from litestar.connection import Request
@@ -64,7 +67,19 @@ def _serialize(u: User) -> dict:
         "effective_role": u.effective_role,
         "executor_name": u.executor_name,
         "has_password": u.password_hash is not None,
+        "has_temp_password": u.temp_password_hash is not None,
     }
+
+
+# Без похожих символов 0/O, 1/I (A3).
+_TEMP_PASSWORD_ALPHABET = "".join(
+    ch for ch in (string.ascii_uppercase + string.digits) if ch not in "0O1I"
+)
+
+
+def _generate_temp_password(length: int = 8) -> str:
+    """Одноразовый пароль (8 символов, без похожих 0/O, 1/I)."""
+    return "".join(secrets.choice(_TEMP_PASSWORD_ALPHABET) for _ in range(length))
 
 
 @get("/admin/users", guards=[require_auth])
@@ -247,15 +262,17 @@ async def api_admin_user_create(
         return _json({"error": "Некорректная роль"}, 400)
 
     executor_name = _clean(data.get("executor_name"))
+    temp_password = _generate_temp_password()
     await db_session.execute(text(
-        "INSERT INTO users (full_name, dept, locale, position, staff_id, password_hash, role, executor_name) "
-        "VALUES (:full_name, :dept, :locale, :position, :staff_id, NULL, :role, :executor_name)"
+        "INSERT INTO users (full_name, dept, locale, position, staff_id, password_hash, temp_password_hash, role, executor_name) "
+        "VALUES (:full_name, :dept, :locale, :position, :staff_id, NULL, :temp_hash, :role, :executor_name)"
     ), {
         "full_name": full_name,
         "dept": _clean(data.get("dept")) or "",
         "locale": _clean(data.get("locale")),
         "position": _clean(data.get("position")) or "",
         "staff_id": staff_id,
+        "temp_hash": hashlib.sha256(temp_password.encode()).hexdigest(),
         "role": role,
         "executor_name": executor_name,
     })
@@ -264,7 +281,7 @@ async def api_admin_user_create(
             text("DELETE FROM quarantine_status WHERE executor = :e"),
             {"e": executor_name})
     await db_session.commit()
-    return _json({"ok": True})
+    return _json({"ok": True, "temp_password": temp_password})
 
 
 @patch("/admin/users/{user_id:int}/executor-name", guards=[require_auth])
@@ -324,13 +341,13 @@ async def api_admin_user_reset_password(request: Request, db_session: AsyncSessi
     if not target:
         return _json({"error": "Пользователь не найден"}, 404)
 
-    # Сброс → NULL: при следующем входе пароль = табельный номер + принудительная смена.
-    # session_version + 1 отзывает все активные сессии пользователя (A4).
+    # Сброс → одноразовый пароль (A3). session_version + 1 отзывает все активные сессии (A4).
+    temp_password = _generate_temp_password()
     await db_session.execute(
-        text("UPDATE users SET password_hash = NULL, session_version = session_version + 1 WHERE id = :id"),
-        {"id": user_id})
+        text("UPDATE users SET password_hash = NULL, temp_password_hash = :th, session_version = session_version + 1 WHERE id = :id"),
+        {"th": hashlib.sha256(temp_password.encode()).hexdigest(), "id": user_id})
     await db_session.commit()
-    return _json({"ok": True})
+    return _json({"ok": True, "temp_password": temp_password})
 
 
 @post("/admin/impersonate", guards=[require_auth])
