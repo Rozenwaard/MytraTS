@@ -71,11 +71,11 @@ MytraTS/
 ├── app.py                 # точка входа: сборка Litestar-приложения из роутеров
 │                          # (request_max_body_size = 65 МБ — потолок загрузки xlsx;
 │                          #  CORSConfig только под dev-origin localhost:5174)
-├── deps.py                # get_current_user, require_auth (общие зависимости)
+├── deps.py                # get_current_user, require_auth (общие зависимости; require_auth сверяет session_version с БД — отзыв сессий)
 ├── sql.py                 # build_in_clause, norm_name (общие SQL-хелперы: IN-клаузы + нормализация ФИО «ё/е»)
 ├── data/
-│   ├── config.py          # engine (mytra.db), story_engine (story.db), tickets_engine (tickets.db), STORY_DB_PATH, SECRET_KEY из .env
-│   ├── models.py          # RawAfl, MainAfl (+errors, +norm, +extra), Tabel, Carte, WorkCatalog (новый справочник видов работ), MeterModelPhase (1ф/3ф), Utalo, Calendar, User (+executor_name), QuarantineStatus, HelpPage, DiscrepanciesLog, Ticket (тикеты «Вопросы») (+ ROLES, FIELD_ROLES, ADMIN_ROLES)
+│   ├── config.py          # engine (mytra.db), story_engine (story.db), tickets_engine (tickets.db), STORY_DB_PATH, SECRET_KEY из .env (валидация 16/24/32 байта)
+│   ├── models.py          # RawAfl, MainAfl (+errors, +norm, +extra), Tabel, Carte, WorkCatalog (новый справочник видов работ), MeterModelPhase (1ф/3ф), Utalo, Calendar, User (+executor_name, +session_version), QuarantineStatus, HelpPage, DiscrepanciesLog, Ticket (тикеты «Вопросы») (+ ROLES, FIELD_ROLES, ADMIN_ROLES)
 │   ├── story_models.py    # «сторидб» (story.db): Consumer (consumers), StoryAfl (story_afl)
 │   └── tickets_models.py  # «тикетдб» (tickets.db): TicketAttachment (вложения тикетов)
 ├── services/
@@ -197,11 +197,13 @@ MytraTS/
 | POST | `/user/settings` | сохранить настройки |
 | GET | `/users/search?q=` | поиск пользователей (по ФИО, от 2 симв.) |
 
+При входе в сессию кладётся `session_version`. Guard `require_auth` сверяет его с `users.session_version`; сброс пароля (свой или админом) инкрементит колонку и отзывает все сессии пользователя (401). После смены своего пароля фронт ведёт на `/login`.
+
 ### Данные (список заданий)
 | Метод | Путь | Что делает |
 |---|---|---|
-| GET | `/main-afl` | список строк; параметры: page, per_page, sort, order, search, customer, task_report, task_type, executor_org, executor_filter, only_completed, only_without_reestr, reestr, done_day, exact |
-| GET | `/main-afl/ids` | все task_number текущей фильтрации |
+| GET | `/main-afl` | список строк; параметры: page (≥1), per_page (1..500, иначе 400), sort, order, search, customer, task_report, task_type, executor_org, executor_filter, only_completed, only_without_reestr, reestr, done_day, exact |
+| GET | `/main-afl/ids` | все task_number текущей фильтрации (кап 50 000) |
 | GET | `/main-afl/stats` | сводка для фильтров |
 | PATCH | `/main-afl/task-report` | смена вида работ (только админ; сбрасывает reestr_number/reestr_date) |
 

@@ -26,6 +26,11 @@ MAIN_AFL_DISPLAY_COLUMNS = [
     "errors", "norm"
 ]
 
+# Safety cap для «Выбрать всё» (/api/main-afl/ids): не даём собрать всю базу
+# в один JSON-ответ (B2). Реестры формируются по периоду (~40 тыс. строк),
+# поэтому 50 тыс. покрывает реальный сценарий и отсекает неограниченную выборку.
+MAX_IDS_RESULTS = 50_000
+
 
 def _build_main_afl_clauses(user, search, customer, task_report, executor_org,
                             executor_filter, only_completed, only_without_reestr,
@@ -89,6 +94,8 @@ async def api_main_afl(
     reestr: str = "", task_type: str = "", done_day: str = "", exact: str = "",
 ) -> Response:
     user = await get_current_user(request, db_session)
+    if page < 1 or per_page < 1 or per_page > 500:
+        return Response(content=json.dumps({"error": "page должен быть >= 1, per_page — от 1 до 500"}, ensure_ascii=False), media_type="application/json", status_code=400)
     clauses, params = _build_main_afl_clauses(
         user, search, customer, task_report, executor_org, executor_filter,
         only_completed, only_without_reestr, reestr, task_type, done_day, exact)
@@ -131,7 +138,8 @@ async def api_main_afl_ids(
         only_completed, only_without_reestr, reestr, task_type, done_day, exact)
     where_sql = " AND ".join(clauses)
     result = await db_session.execute(
-        text(f"SELECT task_number FROM main_afl WHERE {where_sql}"), params)
+        text(f"SELECT task_number FROM main_afl WHERE {where_sql} LIMIT :limit"),
+        {**params, "limit": MAX_IDS_RESULTS})
     task_numbers = [row[0] for row in result if row[0]]
     return Response(content=json.dumps({"task_numbers": task_numbers}, ensure_ascii=False, default=str), media_type="application/json")
 

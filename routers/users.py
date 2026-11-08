@@ -325,7 +325,10 @@ async def api_admin_user_reset_password(request: Request, db_session: AsyncSessi
         return _json({"error": "Пользователь не найден"}, 404)
 
     # Сброс → NULL: при следующем входе пароль = табельный номер + принудительная смена.
-    await db_session.execute(text("UPDATE users SET password_hash = NULL WHERE id = :id"), {"id": user_id})
+    # session_version + 1 отзывает все активные сессии пользователя (A4).
+    await db_session.execute(
+        text("UPDATE users SET password_hash = NULL, session_version = session_version + 1 WHERE id = :id"),
+        {"id": user_id})
     await db_session.commit()
     return _json({"ok": True})
 

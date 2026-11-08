@@ -37,4 +37,20 @@ db_config = SQLAlchemyAsyncConfig(
 )
 sqlalchemy_plugin = SQLAlchemyPlugin(db_config)
 
-SECRET_KEY = os.getenv("SECRET_KEY", "change-me-in-production")
+def _load_secret_key() -> str:
+    """Litestar CookieBackendConfig требует ключ ровно 16/24/32 байта."""
+    key = os.getenv("SECRET_KEY")
+    if not key:
+        raise RuntimeError(
+            "SECRET_KEY не задан. Сгенерируйте: openssl rand -base64 24 "
+            "и пропишите в .env"
+        )
+    if len(key.encode()) not in (16, 24, 32):
+        raise RuntimeError(
+            f"SECRET_KEY должен быть 16/24/32 байта (сейчас {len(key.encode())} байт). "
+            "Сгенерируйте: openssl rand -base64 24"
+        )
+    return key
+
+
+SECRET_KEY = _load_secret_key()

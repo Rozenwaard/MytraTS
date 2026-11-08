@@ -42,7 +42,7 @@ cd /opt/mytra
 # only-system — использовать системный Python 3.11, а не скачивать свой в /home/<юзер>
 uv sync --python-preference only-system            # создаст .venv (в т.ч. uvicorn)
 cp .env.example .env
-echo "SECRET_KEY=$(openssl rand -hex 32)" > .env
+echo "SECRET_KEY=$(openssl rand -base64 24)" > .env
 ```
 База: положите полученный от разработчика файл `mytra.db` в `/opt/mytra/mytra.db`.
 Миграции схемы запускаются вручную (автозапуска при старте нет). Если база старой версии:
@@ -50,6 +50,7 @@ echo "SECRET_KEY=$(openssl rand -hex 32)" > .env
 - без таблицы `app_settings` (виджет «Приоритеты») — `uv run python _scratch/_migrate_app_settings.py`.
 - без таблицы `help_files` (исходник .docx для «Скачать .docx») — `uv run python migrate_help_files.py`.
 - без таблицы `tickets` (mytra.db) и `ticket_attachments` (tickets.db, вложения тикетов) — `uv run python _scratch/_migrate_tickets.py`.
+- без колонки `session_version` в `users` (отзыв сессий при сбросе пароля) — `uv run python _scratch/_migrate_session_version.py`.
 
 Первый вход: логин = табельный номер, пароль = табельный номер (система попросит сменить).
 

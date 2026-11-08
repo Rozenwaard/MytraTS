@@ -33,12 +33,14 @@ async def api_login(
         if password != user.staff_id:
             return Response(content=json.dumps({"ok": False, "error": "Неверный логин или пароль"}, ensure_ascii=False), media_type="application/json", status_code=401)
         request.session["user_id"] = user.id
+        request.session["session_version"] = user.session_version
         return Response(content=json.dumps({"ok": True, "change_password": True, "full_name": user.full_name, "role": user.effective_role}, ensure_ascii=False), media_type="application/json")
 
     if user.password_hash != hashlib.sha256(password.encode()).hexdigest():
         return Response(content=json.dumps({"ok": False, "error": "Неверный логин или пароль"}, ensure_ascii=False), media_type="application/json", status_code=401)
 
     request.session["user_id"] = user.id
+    request.session["session_version"] = user.session_version
     return Response(content=json.dumps({"ok": True, "change_password": False, "full_name": user.full_name, "role": user.effective_role}, ensure_ascii=False), media_type="application/json")
 
 
@@ -68,7 +70,10 @@ async def api_change_password(
     if new_password != confirm_password:
         return Response(content=json.dumps({"ok": False, "error": "Пароли не совпадают"}, ensure_ascii=False), media_type="application/json", status_code=400)
     user_id = request.session.get("user_id")
-    await db_session.execute(text("UPDATE users SET password_hash = :hash WHERE id = :id"), {"hash": hashlib.sha256(new_password.encode()).hexdigest(), "id": user_id})
+    # session_version + 1 отзывает все прочие сессии этого пользователя (A4).
+    await db_session.execute(
+        text("UPDATE users SET password_hash = :hash, session_version = session_version + 1 WHERE id = :id"),
+        {"hash": hashlib.sha256(new_password.encode()).hexdigest(), "id": user_id})
     await db_session.commit()
     return Response(content=json.dumps({"ok": True}), media_type="application/json")
 

@@ -34,6 +34,8 @@ async def api_story_afl(
     executor: str = "", report: str = "", task_detail: str = "",
 ) -> Response:
     await get_current_user(request, db_session)
+    if page < 1 or per_page < 1 or per_page > 500:
+        return Response(content=json.dumps({"error": "page должен быть >= 1, per_page — от 1 до 500"}, ensure_ascii=False), media_type="application/json", status_code=400)
     clauses = ["1=1"]
     params: dict = {}
 

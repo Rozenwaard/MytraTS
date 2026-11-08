@@ -27,7 +27,7 @@
 				method: 'POST',
 				body: JSON.stringify({ new_password: newPassword, confirm_password: confirmPassword })
 			});
-			await goto('/main-afl');
+			await goto('/login');
 		} catch {
 			error = 'Ошибка при смене пароля';
 		} finally {

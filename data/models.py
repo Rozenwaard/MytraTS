@@ -373,6 +373,7 @@ class User(Base):
     settings: Mapped[Optional[str]] = mapped_column(Text)
     role: Mapped[Optional[str]] = mapped_column(Text)
     executor_name: Mapped[Optional[str]] = mapped_column(Text)  # точное написание ФИО из main_afl.executor
+    session_version: Mapped[int] = mapped_column(Integer, default=0, server_default="0")
 
     @property
     def derived_role(self) -> str:

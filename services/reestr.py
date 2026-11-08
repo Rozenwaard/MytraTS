@@ -7,6 +7,8 @@ from openpyxl.utils import get_column_letter
 from openpyxl.styles import Font, Alignment, Border, Side, PatternFill
 from sqlalchemy import text
 
+from sql import build_in_clause
+
 DEPT_PREFIXES = {
     "Приозерское отделение": "Пр", "Лужское отделение": "Лг", "Выборгское отделение": "Вб",
     "Всеволожское отделение": "Вс", "Новоладожское отделение": "Нл", "Кингисеппское отделение": "Кн",
@@ -39,12 +41,13 @@ LOCALE_SUFFIXES = {
 }
 
 async def generate_reestr_xlsx_bytes(db_session, task_numbers, reestr_number, customer, grid, reestr_date, task_report, dept, current_user):
-    placeholders = ','.join([f"'{tn}'" for tn in task_numbers])
-    
+    names, bind_params = build_in_clause("tn", task_numbers)
+
     result = await db_session.execute(
         text(f"""SELECT task_number, personal_account, municipal_district, address, done_day
-                 FROM main_afl WHERE task_number IN ({placeholders})
-                 ORDER BY task_number""")
+                 FROM main_afl WHERE task_number IN ({names})
+                 ORDER BY task_number"""),
+        bind_params,
     )
     data_rows = [dict(row._mapping) for row in result]
     
