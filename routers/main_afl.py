@@ -148,7 +148,7 @@ async def api_update_task_report(
 ) -> Response:
     user = await get_current_user(request, db_session)
     if user.effective_role != 'администратор':
-        return Response(content=json.dumps({"success": False, "error": "Нет прав"}, ensure_ascii=False), media_type="application/json")
+        return Response(content=json.dumps({"success": False, "error": "Нет прав"}, ensure_ascii=False), media_type="application/json", status_code=403)
     task_numbers = data.get("task_numbers", [])
     task_report = data.get("task_report", "")
     if not task_numbers:

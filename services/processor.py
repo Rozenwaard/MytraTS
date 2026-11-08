@@ -2,6 +2,8 @@ import re
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from sql import regexp
+
 
 # Дата перехода на новый справочник видов работ (work_catalog): строки с датой
 # выполнения >= CUTOVER_DAY классифицируются по NEW_TASK_REPORT_RULES, более ранние —
@@ -77,16 +79,6 @@ def _in(column: str, values) -> str:
 
 def _not_in(column: str, values) -> str:
     return f"{column} NOT IN ({_sql_list(values)})"
-
-
-def regexp(expr, item):
-    """Функция REGEXP для SQLite"""
-    if item is None:
-        return False
-    try:
-        return re.search(expr, item) is not None
-    except:
-        return False
 
 
 def process_row(text):
@@ -381,15 +373,6 @@ async def _apply_rules(db_session, rules, upload_progress, upload_id, total_rows
 
 async def process_raw_afl(db_session: AsyncSession, upload_progress: dict, upload_id: str, total_rows: int) -> bool:
     try:
-        # === Регистрируем REGEXP ===
-        await db_session.execute(text("SELECT 1"))  # убеждаемся что сессия жива
-        def setup_regexp(connection):
-            connection.connection.create_function("REGEXP", 2, regexp)
-
-        from data.config import engine as async_engine
-        async with async_engine.begin() as conn:
-            await conn.run_sync(setup_regexp)
-
         # Хардкод-переименования исполнителей ДО отсева (чтобы «свои» под новым ФИО прошли проверку)
         await db_session.execute(text(
             "UPDATE raw_afl SET executor = 'Загуменнова Алёна Юрьевна' WHERE executor = 'Жагорова Алёна Юрьевна'"

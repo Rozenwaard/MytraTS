@@ -91,12 +91,20 @@
 	);
 
 	let reportCounts = $state<DashboardReportCounts | null>(null);
+	let reportCountsError = $state(false);
+
+	async function loadReportCounts() {
+		reportCountsError = false;
+		try {
+			reportCounts = await fetchDashboardReportCounts();
+		} catch {
+			reportCountsError = true;
+		}
+	}
 
 	$effect(() => {
 		if (canAdminReports || canSelectForReestr) {
-			fetchDashboardReportCounts()
-				.then((c) => (reportCounts = c))
-				.catch(() => {});
+			loadReportCounts();
 		}
 	});
 
@@ -105,6 +113,7 @@
 	let selectingAll = $state(false);
 	let done_day = $state('');
 	let stats = $state<MainAflStats | null>(null);
+	let statsError = $state(false);
 
 	let customer = $state<string | undefined>(undefined);
 	let taskType = $state<string | undefined>(undefined);
@@ -126,10 +135,17 @@
 		if (id) await copyText(id);
 	}
 
+	async function loadStats() {
+		statsError = false;
+		try {
+			stats = await fetchMainAflStats();
+		} catch {
+			statsError = true;
+		}
+	}
+
 	$effect(() => {
-		fetchMainAflStats()
-			.then((s) => (stats = s))
-			.catch(() => {});
+		loadStats();
 	});
 
 	const doneDays = $derived(stats?.done_days ?? []);
@@ -462,6 +478,11 @@
 						Отметка о проверке{reportCounts ? ` (${reportCounts.verified})` : ''}
 					</Button>
 				{/if}
+				{#if reportCountsError}
+					<button class="text-xs text-destructive underline" onclick={loadReportCounts}>
+						Ошибка счётчиков — повторить
+					</button>
+				{/if}
 			</div>
 		</div>
 		<div class="rounded-md border bg-card p-3">
@@ -482,6 +503,11 @@
 								<span class="ml-auto font-semibold tabular-nums">{s.count != null ? s.count.toLocaleString('ru-RU') : '—'}</span>
 							</button>
 						{/each}
+						{#if statsError}
+							<button class="mt-1 text-left text-xs text-destructive underline" onclick={loadStats}>
+								Ошибка — повторить
+							</button>
+						{/if}
 					</div>
 				</div>
 				{#if showDepartments}

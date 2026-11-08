@@ -8,6 +8,12 @@ export class ApiError extends Error {
 	}
 }
 
+let onUnauthorized: (() => void) | null = null;
+
+export function setOnUnauthorized(handler: (() => void) | null): void {
+	onUnauthorized = handler;
+}
+
 export async function api<T>(path: string, init?: RequestInit): Promise<T> {
 	const res = await fetch(`${BASE}${path}`, {
 		...init,
@@ -18,6 +24,9 @@ export async function api<T>(path: string, init?: RequestInit): Promise<T> {
 		credentials: 'include'
 	});
 	if (!res.ok) {
+		if (res.status === 401) {
+			onUnauthorized?.();
+		}
 		const body = await res.json().catch(() => ({}));
 		throw new ApiError(res.status, body.error ?? res.statusText);
 	}

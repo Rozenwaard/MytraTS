@@ -4,6 +4,7 @@ from pathlib import Path
 from dotenv import load_dotenv
 from sqlalchemy import event
 from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
+from sql import regexp
 from litestar.plugins.sqlalchemy import SQLAlchemyAsyncConfig, SQLAlchemyPlugin
 
 load_dotenv()
@@ -34,15 +35,18 @@ sand_session_factory = async_sessionmaker(sand_engine, expire_on_commit=False)
 
 
 def _sqlite_pragmas(dbapi_connection, _record):
-    """WAL + явный busy_timeout на каждом соединении (B7.1).
+    """WAL + busy_timeout + REGEXP на каждом соединении (B7.1 + B4).
 
     journal_mode=WAL хранится в файле, но ставим на каждом соединении.
     busy_timeout=30000 совпадает с connect_args timeout=30 (не снижаем его).
+    REGEXP регистрируем здесь, чтобы не зависеть от того, какое соединение
+    выдаст пул (раньше регистрировалось в services.processor «на удачу»).
     """
     cursor = dbapi_connection.cursor()
     cursor.execute("PRAGMA journal_mode=WAL")
     cursor.execute("PRAGMA busy_timeout=30000")
     cursor.close()
+    dbapi_connection.create_function("REGEXP", 2, regexp)
 
 
 for _engine in (engine, story_engine, tickets_engine, sand_engine):

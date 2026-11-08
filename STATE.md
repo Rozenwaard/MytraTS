@@ -74,7 +74,7 @@ MytraTS/
 ├── deps.py                # get_current_user, require_auth (require_auth сверяет session_version с БД — отзыв сессий), require_role, role_scope_clauses (зона видимости)
 ├── sql.py                 # build_in_clause, norm_name (общие SQL-хелперы: IN-клаузы + нормализация ФИО «ё/е»)
 ├── data/
-│   ├── config.py          # engine (mytra.db), story_engine (story.db), tickets_engine (tickets.db), STORY_DB_PATH, SECRET_KEY из .env (валидация 16/24/32 байта); WAL + busy_timeout на каждом соединении
+│   ├── config.py          # engine (mytra.db), story_engine (story.db), tickets_engine (tickets.db), STORY_DB_PATH, SECRET_KEY из .env (валидация 16/24/32 байта); WAL + busy_timeout + REGEXP на каждом соединении
 │   ├── models.py          # RawAfl, MainAfl (+errors, +norm, +extra), Tabel, Carte, WorkCatalog (новый справочник видов работ), MeterModelPhase (1ф/3ф), Utalo, Calendar, User (+executor_name, +session_version), QuarantineStatus, HelpPage, DiscrepanciesLog, Ticket (тикеты «Вопросы») (+ ROLES, FIELD_ROLES, ADMIN_ROLES)
 │   ├── story_models.py    # «сторидб» (story.db): Consumer (consumers), StoryAfl (story_afl)
 │   └── tickets_models.py  # «тикетдб» (tickets.db): TicketAttachment (вложения тикетов)

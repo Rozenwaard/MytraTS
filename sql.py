@@ -1,5 +1,17 @@
 """SQL-хелперы общего назначения."""
 
+import re
+
+
+def regexp(expr: str, item) -> bool:
+    """Функция REGEXP для SQLite (перенесена из services.processor — B4)."""
+    if item is None:
+        return False
+    try:
+        return re.search(expr, item) is not None
+    except Exception:
+        return False
+
 
 def build_in_clause(prefix: str, values: list[str]) -> tuple[str, dict]:
     """Собирает IN (...) с bind-параметрами вида :prefix0, :prefix1, ..."""

@@ -21,7 +21,7 @@ async def api_report(
 ) -> Response:
     user = await get_current_user(request, db_session)
     if user.effective_role not in ('администратор', 'специалист'):
-        return Response(content=json.dumps({"success": False, "error": "Нет прав"}, ensure_ascii=False), media_type="application/json")
+        return Response(content=json.dumps({"success": False, "error": "Нет прав"}, ensure_ascii=False), media_type="application/json", status_code=403)
     month = data.get("month")
     year = data.get("year")
     if not month or not year:

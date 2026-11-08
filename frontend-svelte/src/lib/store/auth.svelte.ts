@@ -1,4 +1,5 @@
-import { api, type User } from '$lib/api/client';
+import { goto } from '$app/navigation';
+import { api, setOnUnauthorized, type User } from '$lib/api/client';
 
 export const auth = $state<{
 	user: User | null;
@@ -8,6 +9,15 @@ export const auth = $state<{
 	user: null,
 	loading: true,
 	impersonatorId: null
+});
+
+// B8: глобально на 401 сбрасываем пользователя и уводим на вход.
+setOnUnauthorized(() => {
+	auth.user = null;
+	auth.impersonatorId = null;
+	if (typeof window !== 'undefined') {
+		goto('/login');
+	}
 });
 
 let loadPromise: Promise<void> | null = null;
