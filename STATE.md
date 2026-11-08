@@ -74,7 +74,7 @@ MytraTS/
 ├── deps.py                # get_current_user, require_auth (общие зависимости; require_auth сверяет session_version с БД — отзыв сессий)
 ├── sql.py                 # build_in_clause, norm_name (общие SQL-хелперы: IN-клаузы + нормализация ФИО «ё/е»)
 ├── data/
-│   ├── config.py          # engine (mytra.db), story_engine (story.db), tickets_engine (tickets.db), STORY_DB_PATH, SECRET_KEY из .env (валидация 16/24/32 байта)
+│   ├── config.py          # engine (mytra.db), story_engine (story.db), tickets_engine (tickets.db), STORY_DB_PATH, SECRET_KEY из .env (валидация 16/24/32 байта); WAL + busy_timeout на каждом соединении
 │   ├── models.py          # RawAfl, MainAfl (+errors, +norm, +extra), Tabel, Carte, WorkCatalog (новый справочник видов работ), MeterModelPhase (1ф/3ф), Utalo, Calendar, User (+executor_name, +session_version), QuarantineStatus, HelpPage, DiscrepanciesLog, Ticket (тикеты «Вопросы») (+ ROLES, FIELD_ROLES, ADMIN_ROLES)
 │   ├── story_models.py    # «сторидб» (story.db): Consumer (consumers), StoryAfl (story_afl)
 │   └── tickets_models.py  # «тикетдб» (tickets.db): TicketAttachment (вложения тикетов)
@@ -272,7 +272,7 @@ MytraTS/
 ### Загрузка
 | Метод | Путь | Что делает |
 |---|---|---|
-| POST | `/upload` | multipart .xlsx → raw_afl |
+| POST | `/upload` | multipart .xlsx → raw_afl (409, если загрузка уже идёт) |
 | GET | `/upload/progress/{upload_id}` | прогресс загрузки |
 | GET | `/upload/task-numbers-in-work` | выгрузка .txt номеров заданий «в работе» (report и reestr_number пустые) |
 | GET | `/status` | состояние загрузок для виджета «Состояние» (in_work/new_tasks счётчики + таймстампы) |
@@ -330,7 +330,7 @@ MytraTS/
 - Коммиты атомарные, ветка master, пушится на GitHub.
 - Read-only smoke-тест (`_smoke_test.py`, локальный, gitignored) — логин админом + прогон всех GET-рутов; держать актуальным и прогонять после каждых 3–5 коммитов. Новые GET-эндпоинты — дописывать путь в `JSON_GETS` / `BINARY_GETS`; временно падающие — в `KNOWN_SKIPS`.
 - Перед коммитом — обновить доки (`STATE.md`, `docs/*.md`); если просят запустить проект — стартуем и бэк, и фронт (см. «Запуск (dev)»).
-- Зависимости: pandas/numpy не используем. Для xlsx — `python-calamine` (чтение) / `openpyxl` (чтение fallback + выгрузки); вставка — сырой SQL `executemany`.
+- Зависимости: pandas/numpy не используем. Для xlsx — `python-calamine` (чтение) / `openpyxl` (чтение fallback + выгрузки); вставка — сырой SQL `executemany`. Синхронные чтение/запись xlsx (разбор файла, сборка выгрузок) оборачивать в `asyncio.to_thread`, чтобы не блокировать event loop.
 - ORM/доступ к БД: SQLAlchemy оставляем как есть — фактически это «async engine + сессия + сырой SQL через `text()`/bindparams», ORM-слой не используется. Tortoise ORM и SQLModel рассмотрены и отвергнуты: Tortoise тянет за собой ORM-стиль, который проекту не нужен, а SQLModel — тот же SQLAlchemy + Pydantic (дублирует валидацию Litestar).
 - Документация обновляется вместе с кодом в том же коммите:
   - `STATE.md` — структура, эндпоинты, роли, фичи, конвенции, TODO (всё «где и как»).

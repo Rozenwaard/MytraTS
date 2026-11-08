@@ -252,7 +252,10 @@ cd /opt/mytra && git reset --hard origin/master && git pull && \
 uv sync --python-preference only-system && \
 cd frontend-svelte && bun install && bun run build && cd .. && \
 sudo chown -R mytra:mytra /opt/mytra && \
-sudo chmod -R o+rX /opt/mytra && \
+sudo chmod 750 /opt/mytra && \
+sudo chmod 600 /opt/mytra/.env && \
+sudo chmod 640 /opt/mytra/mytra.db /opt/mytra/story.db /opt/mytra/tickets.db /opt/mytra/sand.db && \
+sudo chmod -R o+rX /opt/mytra/frontend-svelte/build && \
 sudo systemctl start mytra mytra-frontend
 ```
 - `git reset --hard origin/master` — сброс локальных правок на сервере (adapter-node уже в репо — `bun add`/`sed` больше не нужны).
@@ -272,6 +275,8 @@ for db in mytra.db story.db tickets.db sand.db; do
 done
 sudo systemctl start mytra
 ```
+
+> Включён WAL (`journal_mode=wal`): рядом с базами появляются файлы `-wal`/`-shm`. При штатной остановке сервиса (как выше) SQLite переносит их в основной файл, и `cp` корректен. При аварийном падении процесса в `-wal` могут остаться зафиксированные транзакции — тогда снимайте снимок на живой базе: `sqlite3 /opt/mytra/$db ".backup '/backup/${db%.db}-$D.db'"`.
 
 Проверить содержимое любого бэкапа (например `story.db`):
 ```bash

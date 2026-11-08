@@ -23,17 +23,22 @@ from services.status import get_status, record_upload, set_last_txt_count
 from services.uploader import load_xlsx_to_raw
 
 upload_progress: dict[str, dict] = {}
+_active_uploads: set = set()  # upload_id активных загрузок (B5: запрет параллельной загрузки)
 
 
 @post("/upload", guards=[require_auth])
 async def api_upload(data: UploadFile = Body(media_type=RequestEncodingType.MULTI_PART)) -> Response:
     if not data or not data.filename.endswith('.xlsx'):
         return Response(content=json.dumps({"error": "Нужен файл .xlsx"}, ensure_ascii=False), media_type="application/json", status_code=400)
+    if _active_uploads:
+        return Response(content=json.dumps({"error": "Загрузка уже идёт, дождитесь завершения"}, ensure_ascii=False), media_type="application/json", status_code=409)
     try:
         content = await data.read()
         upload_id = str(uuid.uuid4())
+        _active_uploads.add(upload_id)
         upload_progress[upload_id] = {"status": "starting", "progress": 0, "total": 0}
-        asyncio.create_task(_run_pipeline(upload_id, content))
+        task = asyncio.create_task(_run_pipeline(upload_id, content))
+        task.add_done_callback(lambda _: _active_uploads.discard(upload_id))
         return Response(content=json.dumps({"upload_id": upload_id}, ensure_ascii=False), media_type="application/json")
     except Exception as e:
         traceback.print_exc()

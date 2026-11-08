@@ -40,35 +40,7 @@ LOCALE_SUFFIXES = {
     "Тосно": "Т",
 }
 
-async def generate_reestr_xlsx_bytes(db_session, task_numbers, reestr_number, customer, grid, reestr_date, task_report, dept, current_user):
-    names, bind_params = build_in_clause("tn", task_numbers)
-
-    result = await db_session.execute(
-        text(f"""SELECT task_number, personal_account, municipal_district, address, done_day
-                 FROM main_afl WHERE task_number IN ({names})
-                 ORDER BY task_number"""),
-        bind_params,
-    )
-    data_rows = [dict(row._mapping) for row in result]
-    
-    # Начальник отделения
-    chief_result = await db_session.execute(
-        text("SELECT full_name FROM users WHERE dept = :dept AND position = 'Начальник отделения' LIMIT 1"),
-        {"dept": dept}
-    )
-    chief = chief_result.scalar_one_or_none()
-    if not chief:
-        chief = current_user.full_name
-    
-    # Форматирование даты
-    reestr_date_formatted = ""
-    if reestr_date:
-        try:
-            dt = datetime.strptime(reestr_date, "%Y-%m-%d")
-            reestr_date_formatted = dt.strftime("%d.%m.%Y")
-        except ValueError:
-            reestr_date_formatted = reestr_date
-    
+def _build_reestr_xlsx(data_rows, chief, reestr_date_formatted, reestr_number, customer, grid, task_report) -> bytes:
     wb = Workbook()
     ws = wb.active
     ws.title = "Реестр"
@@ -191,6 +163,80 @@ async def generate_reestr_xlsx_bytes(db_session, task_numbers, reestr_number, cu
     return output.read()
 
 
+async def generate_reestr_xlsx_bytes(db_session, task_numbers, reestr_number, customer, grid, reestr_date, task_report, dept, current_user):
+    names, bind_params = build_in_clause("tn", task_numbers)
+
+    result = await db_session.execute(
+        text(f"""SELECT task_number, personal_account, municipal_district, address, done_day
+                 FROM main_afl WHERE task_number IN ({names})
+                 ORDER BY task_number"""),
+        bind_params,
+    )
+    data_rows = [dict(row._mapping) for row in result]
+    
+    # Начальник отделения
+    chief_result = await db_session.execute(
+        text("SELECT full_name FROM users WHERE dept = :dept AND position = 'Начальник отделения' LIMIT 1"),
+        {"dept": dept}
+    )
+    chief = chief_result.scalar_one_or_none()
+    if not chief:
+        chief = current_user.full_name
+    
+    # Форматирование даты
+    reestr_date_formatted = ""
+    if reestr_date:
+        try:
+            dt = datetime.strptime(reestr_date, "%Y-%m-%d")
+            reestr_date_formatted = dt.strftime("%d.%m.%Y")
+        except ValueError:
+            reestr_date_formatted = reestr_date
+    
+    return await asyncio.to_thread(
+        _build_reestr_xlsx, data_rows, chief, reestr_date_formatted,
+        reestr_number, customer, grid, task_report,
+    )
+
+
+def _build_report_xlsx(rows, columns, headers) -> bytes:
+    wb = Workbook()
+    ws = wb.active
+    ws.title = "Отчёт"
+    
+    ws.page_setup.orientation = 'landscape'
+    
+    # Заголовки
+    header_fill = PatternFill(start_color="D9E1F2", end_color="D9E1F2", fill_type="solid")
+    thin_border = Border(
+        left=Side(style='thin'), right=Side(style='thin'),
+        top=Side(style='thin'), bottom=Side(style='thin')
+    )
+    
+    for i, header in enumerate(headers, 1):
+        cell = ws.cell(row=1, column=i, value=header)
+        cell.font = Font(bold=True, size=8)
+        cell.fill = header_fill
+        cell.border = thin_border
+        cell.alignment = Alignment(horizontal='center', vertical='center', wrap_text=True)
+    
+    # Данные
+    for r, row_data in enumerate(rows, 2):
+        for c, col in enumerate(columns, 1):
+            val = row_data.get(col, '')
+            cell = ws.cell(row=r, column=c, value=val)
+            cell.font = Font(size=8)
+            cell.border = thin_border
+    
+    # Автоширина
+    for col in range(1, len(headers) + 1):
+        ws.column_dimensions[get_column_letter(col)].width = 12
+    
+    output = io_module.BytesIO()
+    wb.save(output)
+    output.seek(0)
+    return output.read()
+
+
 async def generate_report_xlsx_bytes(db_session, period):
     """Генерирует xlsx-файл отчёта за период"""
     
@@ -274,42 +320,7 @@ async def generate_report_xlsx_bytes(db_session, period):
     )
     rows = [dict(row._mapping) for row in result]
     
-    wb = Workbook()
-    ws = wb.active
-    ws.title = "Отчёт"
-    
-    ws.page_setup.orientation = 'landscape'
-    
-    # Заголовки
-    header_fill = PatternFill(start_color="D9E1F2", end_color="D9E1F2", fill_type="solid")
-    thin_border = Border(
-        left=Side(style='thin'), right=Side(style='thin'),
-        top=Side(style='thin'), bottom=Side(style='thin')
-    )
-    
-    for i, header in enumerate(headers, 1):
-        cell = ws.cell(row=1, column=i, value=header)
-        cell.font = Font(bold=True, size=8)
-        cell.fill = header_fill
-        cell.border = thin_border
-        cell.alignment = Alignment(horizontal='center', vertical='center', wrap_text=True)
-    
-    # Данные
-    for r, row_data in enumerate(rows, 2):
-        for c, col in enumerate(columns, 1):
-            val = row_data.get(col, '')
-            cell = ws.cell(row=r, column=c, value=val)
-            cell.font = Font(size=8)
-            cell.border = thin_border
-    
-    # Автоширина
-    for col in range(1, len(headers) + 1):
-        ws.column_dimensions[get_column_letter(col)].width = 12
-    
-    output = io_module.BytesIO()
-    wb.save(output)
-    output.seek(0)
-    return output.read()
+    return await asyncio.to_thread(_build_report_xlsx, rows, columns, headers)
 
 
 # ─── Финотчёт: выгрузка xlsx ──────────────────────────────────────

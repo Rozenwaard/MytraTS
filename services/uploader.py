@@ -1,3 +1,4 @@
+import asyncio
 import io
 
 from openpyxl import load_workbook
@@ -73,7 +74,7 @@ def _cell_to_str(value):
 
 async def load_xlsx_to_raw(db_session: AsyncSession, content: bytes) -> tuple[bool, str, int]:
     try:
-        rows = _read_excel_rows(content)
+        rows = await asyncio.to_thread(_read_excel_rows, content)
         if not rows:
             return False, "Файл пуст", 0
 

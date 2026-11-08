@@ -1,3 +1,4 @@
+import asyncio
 import json
 from collections import Counter
 from datetime import datetime
@@ -281,7 +282,7 @@ async def api_dashboard_errors_report(request: Request, db_session: AsyncSession
         if kept:
             rows.append((tn, join_errors(kept)))
 
-    output = generate_errors_xlsx(rows)
+    output = await asyncio.to_thread(generate_errors_xlsx, rows)
     filename = f"Отчёт_об_ошибках_{datetime.now().strftime('%Y-%m-%d_%H-%M-%S')}.xlsx"
     return Response(content=output, media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
                     headers={"Content-Disposition": f"attachment; filename*=UTF-8''{quote(filename)}"})
@@ -300,7 +301,7 @@ async def api_dashboard_balance_report(request: Request, db_session: AsyncSessio
         text(f"SELECT task_number, meter_type_2, meter_type_1, meter_type FROM main_afl WHERE {where} ORDER BY task_number"), params)
     rows = [(r[0], pick_pu_type(r[1], r[2], r[3])) for r in result]
 
-    output = generate_balance_xlsx(rows)
+    output = await asyncio.to_thread(generate_balance_xlsx, rows)
     filename = f"Балансовая_принадлежность_{datetime.now().strftime('%Y-%m-%d_%H-%M-%S')}.xlsx"
     return Response(content=output, media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
                     headers={"Content-Disposition": f"attachment; filename*=UTF-8''{quote(filename)}"})
@@ -319,7 +320,7 @@ async def api_dashboard_date_report(request: Request, db_session: AsyncSession, 
         text(f"SELECT task_number FROM main_afl WHERE {where} ORDER BY task_number"), params)
     rows = [r[0] for r in result]
 
-    output = generate_task_numbers_xlsx(rows)
+    output = await asyncio.to_thread(generate_task_numbers_xlsx, rows)
     filename = f"Дата_работ_{datetime.now().strftime('%Y-%m-%d_%H-%M-%S')}.xlsx"
     return Response(content=output, media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
                     headers={"Content-Disposition": f"attachment; filename*=UTF-8''{quote(filename)}"})
@@ -338,7 +339,7 @@ async def api_dashboard_verified_report(request: Request, db_session: AsyncSessi
         text(f"SELECT task_number FROM main_afl WHERE {where} ORDER BY task_number"), params)
     rows = [r[0] for r in result]
 
-    output = generate_task_numbers_plain_xlsx(rows)
+    output = await asyncio.to_thread(generate_task_numbers_plain_xlsx, rows)
     filename = f"Отметка_о_проверке_{datetime.now().strftime('%Y-%m-%d_%H-%M-%S')}.xlsx"
     return Response(content=output, media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
                     headers={"Content-Disposition": f"attachment; filename*=UTF-8''{quote(filename)}"})
@@ -398,7 +399,7 @@ async def api_dashboard_duplicates_report(request: Request, db_session: AsyncSes
             if r["id"] != keeper["id"] and r["task_number"]:
                 to_export.append(r["task_number"])
 
-    output = generate_task_numbers_plain_xlsx(sorted(set(to_export)))
+    output = await asyncio.to_thread(generate_task_numbers_plain_xlsx, sorted(set(to_export)))
     filename = f"Дубли_{datetime.now().strftime('%Y-%m-%d_%H-%M-%S')}.xlsx"
     return Response(content=output, media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
                     headers={"Content-Disposition": f"attachment; filename*=UTF-8''{quote(filename)}"})
@@ -434,7 +435,7 @@ async def api_dashboard_debt_report(request: Request, db_session: AsyncSession) 
              f"FROM main_afl WHERE {where} ORDER BY task_number"), debt_params)
     rows = [tuple(r) for r in result]
 
-    output = generate_debt_xlsx(rows)
+    output = await asyncio.to_thread(generate_debt_xlsx, rows)
     filename = f"Крупная_задолженность_{datetime.now().strftime('%Y-%m-%d_%H-%M-%S')}.xlsx"
     return Response(content=output, media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
                     headers={"Content-Disposition": f"attachment; filename*=UTF-8''{quote(filename)}"})
@@ -824,7 +825,7 @@ async def api_dashboard_in_work_unenriched_report(request: Request, db_session: 
         {"revoked_excl": REVOKED_EXECUTOR})
     rows = [r[0] for r in result]
 
-    output = generate_task_numbers_plain_xlsx(rows)
+    output = await asyncio.to_thread(generate_task_numbers_plain_xlsx, rows)
     filename = f"Не_обогащено_{datetime.now().strftime('%Y-%m-%d_%H-%M-%S')}.xlsx"
     return Response(content=output, media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
                     headers={"Content-Disposition": f"attachment; filename*=UTF-8''{quote(filename)}"})

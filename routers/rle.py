@@ -1,3 +1,4 @@
+import asyncio
 import json
 from datetime import date
 from urllib.parse import quote
@@ -75,7 +76,7 @@ async def api_rle_download(request: Request, db_session: AsyncSession) -> Respon
 
     periods = biweekly_periods()
     stats = [await compute_period_stats(db_session, d1, d2) for d1, d2 in periods]
-    output = generate_rle_xlsx_bytes(stats)
+    output = await asyncio.to_thread(generate_rle_xlsx_bytes, stats)
 
     start, end = periods[0][0], periods[-1][1]
     filename = f"РЛЭ {start.strftime('%d.%m')}-{end.strftime('%d.%m')}.xlsx"
@@ -106,7 +107,7 @@ async def api_rle_upload(
         return Response(content=json.dumps({"error": "Нужен файл .xlsx"}, ensure_ascii=False), media_type="application/json", status_code=400)
 
     content = await data.read()
-    file_rows = parse_rle_file(content)
+    file_rows = await asyncio.to_thread(parse_rle_file, content)
     if not file_rows:
         return Response(content=json.dumps({"error": "В файле нет строк заказчика «ЛЭ»"}, ensure_ascii=False), media_type="application/json", status_code=400)
 
@@ -117,7 +118,7 @@ async def api_rle_upload(
     ksp_stats = [await compute_merged_period_stats(db_session, d1, d2, file_rows, KSP_MAIN_TYPES, KSP_FILE_TITLES, file_minutes) for d1, d2 in periods]
     ip_stats = [await compute_merged_period_stats(db_session, d1, d2, file_rows, IP_MAIN_TYPES, IP_FILE_TITLES, file_minutes) for d1, d2 in periods]
 
-    output = generate_merged_rle_xlsx_bytes(ksp_stats, ip_stats)
+    output = await asyncio.to_thread(generate_merged_rle_xlsx_bytes, ksp_stats, ip_stats)
     start, end = periods[0][0], periods[-1][1]
     filename = f"РЛЭ {start.strftime('%d.%m')}-{end.strftime('%d.%m')}.xlsx"
     return Response(
@@ -137,7 +138,7 @@ async def api_rle_readings(request: Request, db_session: AsyncSession) -> Respon
     today = date.today()
     year_month = today.strftime("%Y-%m")
     rows = await fetch_readings_register_rows(db_session, year_month)
-    output = generate_readings_violations_xlsx(rows)
+    output = await asyncio.to_thread(generate_readings_violations_xlsx, rows)
 
     filename = f"Реестр показаний и нарушений {MONTH_NAMES[today.month]}.xlsx"
     return Response(

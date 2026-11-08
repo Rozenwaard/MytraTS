@@ -798,7 +798,7 @@ async def api_fin_report_recheck(
         )
     await db_session.commit()
 
-    output = generate_recheck_xlsx(report_rows, balance_rows, date_rows)
+    output = await asyncio.to_thread(generate_recheck_xlsx, report_rows, balance_rows, date_rows)
     filename = f"Повторная_проверка_{datetime.now().strftime('%Y-%m-%d_%H-%M-%S')}.xlsx"
     return Response(
         content=output,

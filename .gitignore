@@ -6,6 +6,9 @@ dist/
 wheels/
 *.egg-info
 *.db
+*.db-wal
+*.db-shm
+*.db-journal
 .venv/
 
 # Node / React
