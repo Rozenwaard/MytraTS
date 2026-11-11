@@ -56,6 +56,7 @@ class StoryAfl(StoryBase):
     task_type: Mapped[Optional[str]] = mapped_column(Text)
     work_type_in_task: Mapped[Optional[str]] = mapped_column(Text)
     created_at: Mapped[Optional[str]] = mapped_column(Text)
+    due_date: Mapped[Optional[str]] = mapped_column(Text)
     address: Mapped[Optional[str]] = mapped_column(Text)
     municipal_district: Mapped[Optional[str]] = mapped_column(Text)
     house_type: Mapped[Optional[str]] = mapped_column(Text)
