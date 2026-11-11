@@ -73,3 +73,47 @@ export async function fetchReadingsRegister(): Promise<{ blob: Blob; filename: s
 	const filename = m ? decodeURIComponent(m[1]) : 'Реестр показаний и нарушений.xlsx';
 	return { blob, filename };
 }
+
+export interface RlePeriod {
+	value: string;
+	has_rows: boolean;
+	is_current: boolean;
+	is_archived: boolean;
+	category: 'current' | 'previous' | 'old';
+	can_form: boolean;
+}
+
+export interface RlePeriods {
+	periods: RlePeriod[];
+	default: string;
+}
+
+/**
+ * Карусель месяцев для «Отчёта о выполнении» (те же периоды, что в Финотчёте).
+ */
+export async function fetchRlePeriods(): Promise<RlePeriods> {
+	return api<RlePeriods>('/api/rle/periods');
+}
+
+/**
+ * «Отчёт о выполнении»: xlsx со сводом и реестром по выбранным месяцам.
+ */
+export async function downloadExecutionReport(
+	periods: string[]
+): Promise<{ blob: Blob; filename: string }> {
+	const res = await fetch('/api/rle/report/download', {
+		method: 'POST',
+		credentials: 'include',
+		headers: { 'Content-Type': 'application/json' },
+		body: JSON.stringify({ periods })
+	});
+	if (!res.ok) {
+		const body = (await res.json().catch(() => ({}))) as { error?: string };
+		throw new Error(body.error ?? 'Ошибка выгрузки «Отчёт о выполнении»');
+	}
+	const blob = await res.blob();
+	const disposition = res.headers.get('Content-Disposition') ?? '';
+	const m = disposition.match(/filename\*=UTF-8''([^;]+)/);
+	const filename = m ? decodeURIComponent(m[1]) : 'Отчёт о выполнении РЛЭ.xlsx';
+	return { blob, filename };
+}

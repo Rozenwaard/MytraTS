@@ -102,8 +102,15 @@ def _split(start: date, end: date, days: int) -> list[tuple[date, date]]:
 
 
 def weekly_periods(today: date | None = None) -> list[tuple[date, date]]:
-    """Четыре недельных периода окна 28 дней (для страницы раздела)."""
-    start, end = _period_bounds(today)
+    """Три недельных периода окна 21 день (для страницы раздела).
+
+    На одну неделю короче окна 28 дней — чтобы таблица не разъезжалась в
+    горизонтальную прокрутку. Выгрузка xlsx по-прежнему использует
+    `biweekly_periods` (окно 28 дней).
+    """
+    today = today or date.today()
+    end = _last_sunday(today)
+    start = end - timedelta(days=3 * WEEK_DAYS - 1)
     return _split(start, end, WEEK_DAYS)
 
 
@@ -567,6 +574,129 @@ def generate_readings_violations_xlsx(rows: list[list]) -> bytes:
     ws.append(READINGS_HEADERS)
     for row in rows:
         ws.append(row)
+    output = io.BytesIO()
+    wb.save(output)
+    return output.getvalue()
+
+
+# ─── «Отчёт о выполнении» (РЛЭ: Свод + Реестр по выбранным месяцам) ───
+
+REESTR_HEADERS = [
+    "Номер задания", "Тип задания", "Поручение", "Основание",
+    "Филиал", "Дата задания", "Вид работ", "Дата работ",
+]
+REESTR_FIELD_ORDER = (
+    "task_number", "task_type", "work_type_in_task", "visit_reason",
+    "grid", "created_at", "task_report", "done_day",
+)
+_RLE_REPORT_FIELDS = REESTR_FIELD_ORDER + ("due_date",)
+
+SVOD_HEADERS = [
+    "Филиал", "Вид работ", "Заказано",
+    "Выполнено по заказу периода", "Выполнено по заказу предыдущих периодов",
+]
+
+
+def _txt(value) -> str:
+    return "" if value is None else str(value)
+
+
+async def fetch_rle_period_rows(db_session, story_session, year_month: str) -> list[dict]:
+    """Строки РЛЭ месяца (done_day LIKE 'ГГГГ-ММ-%') из main_afl + story_afl.
+
+    Принадлежность строки месяцу — по done_day (дандей = выполнение). due_date
+    (дьюдейт = заказ) нужен для Свода.
+    """
+    prefix = f"{year_month}-%"
+    select = ", ".join(_RLE_REPORT_FIELDS)
+    main_rows = (await db_session.execute(text(
+        f"SELECT {select} FROM main_afl WHERE customer = 'РЛЭ' AND done_day LIKE :p"
+    ), {"p": prefix})).fetchall()
+    story_rows = (await story_session.execute(text(
+        f"SELECT {select} FROM story_afl WHERE customer = 'РЛЭ' AND done_day LIKE :p"
+    ), {"p": prefix})).fetchall()
+
+    rows = []
+    for r in list(main_rows) + list(story_rows):
+        m = dict(r._mapping)
+        rows.append({k: _txt(m.get(k)) for k in _RLE_REPORT_FIELDS})
+    return rows
+
+
+def _svod_rows(rows: list[dict], year_month: str) -> list[dict]:
+    """Свод: (филиал, вид работ) → заказано / по заказу периода / по заказу предыдущих.
+
+    Заказано = сумма всех строк периода (по done_day); по заказу периода = due_date
+    в этом же месяце; по заказу предыдущих = due_date вне этого месяца.
+    """
+    prefix = f"{year_month}-"
+    agg: dict[tuple[str, str], dict[str, int]] = {}
+    for r in rows:
+        grid = r["grid"] or "—"
+        work_type = r["task_report"] or "—"
+        cell = agg.setdefault((grid, work_type), {"ordered": 0, "in_period": 0, "prev": 0})
+        cell["ordered"] += 1
+        if (r["due_date"] or "").startswith(prefix):
+            cell["in_period"] += 1
+        else:
+            cell["prev"] += 1
+
+    out = []
+    for (grid, work_type), cell in sorted(agg.items()):
+        out.append({
+            "grid": grid, "work_type": work_type,
+            "ordered": cell["ordered"], "in_period": cell["in_period"], "prev": cell["prev"],
+        })
+    return out
+
+
+def _style_report_sheet(ws, widths: list[int]) -> None:
+    thin = Side(style="thin")
+    border = Border(left=thin, right=thin, top=thin, bottom=thin)
+    header_fill = PatternFill("solid", fgColor="D9E1F2")
+    bold = Font(bold=True)
+    center = Alignment(horizontal="center", vertical="center", wrap_text=True)
+
+    for row in ws.iter_rows(min_row=1, max_row=ws.max_row, min_col=1, max_col=ws.max_column):
+        for cell in row:
+            cell.border = border
+            if cell.row == 1:
+                cell.font = bold
+                cell.fill = header_fill
+                cell.alignment = center
+    for i, w in enumerate(widths, start=1):
+        ws.column_dimensions[get_column_letter(i)].width = w
+    ws.freeze_panes = "A2"
+
+
+def _fill_svod_sheet(ws, year_month: str, rows: list[dict]) -> None:
+    ws.append(SVOD_HEADERS)
+    for r in _svod_rows(rows, year_month):
+        ws.append([r["grid"], r["work_type"], r["ordered"], r["in_period"], r["prev"]])
+    _style_report_sheet(ws, [14, 30, 12, 26, 32])
+
+
+def _fill_reestr_sheet(ws, rows: list[dict]) -> None:
+    ws.append(REESTR_HEADERS)
+    for r in rows:
+        ws.append([r[f] for f in REESTR_FIELD_ORDER])
+    _style_report_sheet(ws, [26, 14, 26, 18, 14, 16, 26, 14])
+
+
+def generate_execution_report_xlsx(period_rows: dict[str, list[dict]]) -> bytes:
+    """Xlsx «Отчёт о выполнении»: на каждый месяц — пара листов «Свод» + «Реестр»."""
+    wb = Workbook()
+    first = True
+    for year_month, rows in period_rows.items():
+        if first:
+            ws_svod = wb.active
+            ws_svod.title = f"Свод {year_month}"
+            first = False
+        else:
+            ws_svod = wb.create_sheet(f"Свод {year_month}")
+        _fill_svod_sheet(ws_svod, year_month, rows)
+        _fill_reestr_sheet(wb.create_sheet(f"Реестр {year_month}"), rows)
+
     output = io.BytesIO()
     wb.save(output)
     return output.getvalue()

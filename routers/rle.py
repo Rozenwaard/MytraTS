@@ -1,5 +1,6 @@
 import asyncio
 import json
+import re
 from datetime import date
 from urllib.parse import quote
 
@@ -12,7 +13,9 @@ from litestar.params import Body
 from litestar.response import Response
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from data.config import story_session_factory
 from deps import get_current_user, require_auth
+from services.periods import compute_report_periods
 from services.rle import (
     IP_FILE_TITLES,
     IP_MAIN_TYPES,
@@ -24,6 +27,8 @@ from services.rle import (
     compute_merged_period_stats,
     compute_period_stats,
     fetch_readings_register_rows,
+    fetch_rle_period_rows,
+    generate_execution_report_xlsx,
     generate_merged_rle_xlsx_bytes,
     generate_readings_violations_xlsx,
     generate_rle_xlsx_bytes,
@@ -148,4 +153,66 @@ async def api_rle_readings(request: Request, db_session: AsyncSession) -> Respon
     )
 
 
-rle_router = Router("/api", route_handlers=[api_rle, api_rle_download, api_rle_readings, api_rle_upload])
+_YM_RE = re.compile(r"^\d{4}-\d{2}$")
+
+
+@get("/rle/periods", guards=[require_auth])
+async def api_rle_periods(request: Request, db_session: AsyncSession) -> Response:
+    """Карусель месяцев для «Отчёта о выполнении» (те же периоды, что в Финотчёте)."""
+    user = await get_current_user(request, db_session)
+    if user.effective_role != "администратор":
+        return Response(content=json.dumps({"error": "Нет прав"}, ensure_ascii=False), media_type="application/json", status_code=403)
+
+    data = await compute_report_periods(db_session)
+    return Response(content=json.dumps(data, ensure_ascii=False), media_type="application/json")
+
+
+@post("/rle/report/download", guards=[require_auth])
+async def api_rle_report_download(
+    request: Request, db_session: AsyncSession,
+    data: dict = Body(media_type=RequestEncodingType.JSON),
+) -> Response:
+    """«Отчёт о выполнении»: для выбранных месяцев — пара листов «Свод» + «Реестр».
+
+    Строки — main_afl/story_afl с customer = 'РЛЭ', принадлежность месяцу — по done_day.
+    """
+    user = await get_current_user(request, db_session)
+    if user.effective_role != "администратор":
+        return Response(content=json.dumps({"error": "Нет прав"}, ensure_ascii=False), media_type="application/json", status_code=403)
+
+    raw = (data or {}).get("periods")
+    if not isinstance(raw, list):
+        return Response(content=json.dumps({"error": "Выберите период"}, ensure_ascii=False), media_type="application/json", status_code=400)
+
+    periods = sorted(
+        {str(p) for p in raw if isinstance(p, str) and _YM_RE.match(str(p))},
+        reverse=True,
+    )
+    if not periods:
+        return Response(content=json.dumps({"error": "Выберите период"}, ensure_ascii=False), media_type="application/json", status_code=400)
+
+    async with story_session_factory() as story_session:
+        period_rows: dict[str, list] = {}
+        for ym in periods:
+            period_rows[ym] = await fetch_rle_period_rows(db_session, story_session, ym)
+        output = await asyncio.to_thread(generate_execution_report_xlsx, period_rows)
+
+    filename = "Отчёт о выполнении РЛЭ.xlsx"
+    return Response(
+        content=output,
+        media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        headers={"Content-Disposition": f"attachment; filename*=UTF-8''{quote(filename)}"},
+    )
+
+
+rle_router = Router(
+    "/api",
+    route_handlers=[
+        api_rle,
+        api_rle_periods,
+        api_rle_download,
+        api_rle_report_download,
+        api_rle_readings,
+        api_rle_upload,
+    ],
+)
