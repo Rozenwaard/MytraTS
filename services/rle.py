@@ -608,6 +608,9 @@ ORDERED_WORK_MAP = {
 }
 _DOPUSK_WORKS = ("Допуск ПУ", "Установка / замена ПУ")
 
+# «Дубли»/«Ручная проверка» — не выполнение работ (общее правило, см. docs/БИЗНЕС-ЛОГИКА.md).
+_NON_EXECUTION_REPORTS = ("Дубли", "Ручная проверка")
+
 
 def _txt(value) -> str:
     return "" if value is None else str(value)
@@ -651,7 +654,7 @@ def _ordered_work(row: dict, phase: str | None) -> str:
             return "Допуск ПУ 3ф"
         if phase == "1ф":
             return "Допуск ПУ 1ф"
-        return "Допуск ПУ"  # фаза неизвестна
+        return "Допуск ПУ 3ф"  # фаза неизвестна — по умолчанию 3ф
     return ORDERED_WORK_MAP.get((tt, wit), wit or "—")
 
 
@@ -668,7 +671,14 @@ async def fetch_rle_period_rows(
         ref1, ref3 = await _load_phase_sets(db_session)
     prefix = f"{year_month}-%"
     select = ", ".join(_RLE_REPORT_FIELDS)
-    where = "customer = 'РЛЭ' AND (done_day LIKE :p OR due_date LIKE :p)"
+    # «Дубли»/«Ручная проверка» — невыполнение: по done_day в выборку не попадают
+    # (только по due_date, как «заказ»), чтобы реестр и свод бились.
+    non_exec = ", ".join(f"'{t}'" for t in _NON_EXECUTION_REPORTS)
+    where = (
+        "customer = 'РЛЭ' AND ("
+        f"(done_day LIKE :p AND (task_report IS NULL OR task_report NOT IN ({non_exec}))) "
+        "OR due_date LIKE :p)"
+    )
     main_rows = (await db_session.execute(text(
         f"SELECT {select} FROM main_afl WHERE {where}"
     ), {"p": prefix})).fetchall()
@@ -681,45 +691,49 @@ async def fetch_rle_period_rows(
         m = {k: _txt(v) for k, v in dict(r._mapping).items()}
         phase = _resolve_phase(m, ref1, ref3)
         m["_ordered"] = _ordered_work(m, phase)
-        m["_executed"] = (m.get("task_report") or "").strip() or m["_ordered"]
+        tr = (m.get("task_report") or "").strip()
+        m["_executed"] = "" if tr in _NON_EXECUTION_REPORTS else (tr or m["_ordered"])
         rows.append(m)
     return rows
 
 
 def _svod_rows(rows: list[dict], year_month: str) -> list[dict]:
-    """Свод (плоский): (филиал, вид работ) → Заказано / Выполнено по заказу.
+    """Свод (плоский) — свод реестра: каждая строка учитывается ровно один раз.
 
-    Заказано = строки с due_date в периоде (по «заказанной» работе).
-    Выполнено (по «выполненной» работе) делится на: «по заказу периода»
-    (done_day в периоде и due_date в периоде) и «по заказу предыдущих
-    периодов» (done_day в периоде, due_date вне периода).
+    Вселенная периода = done_day ИЛИ due_date в месяце (строки реестра).
+    Категории взаимоисключающие:
+      - «Выполнено по заказу периода» = done_day и due_date в месяце (по выполненной работе);
+      - «Выполнено по заказу предыдущих периодов» = done_day в месяце, due_date вне (по выполненной работе);
+      - «Заказано» = due_date в месяце, done_day вне (по заказанной работе).
     """
     prefix = f"{year_month}-"
-    ordered_agg: dict[tuple[str, str], int] = {}
-    executed_in_agg: dict[tuple[str, str], int] = {}
-    executed_prev_agg: dict[tuple[str, str], int] = {}
+    agg: dict[tuple[str, str], dict[str, int]] = {}
     for r in rows:
         grid = r["grid"] or "—"
-        dd = r["due_date"] or ""
-        dd_in = dd.startswith(prefix)
-        if dd_in:
-            key = (grid, r["_ordered"])
-            ordered_agg[key] = ordered_agg.get(key, 0) + 1
-        if (r["done_day"] or "").startswith(prefix):
-            key = (grid, r["_executed"])
+        dd_in = (r["due_date"] or "").startswith(prefix)
+        done_in = (r["done_day"] or "").startswith(prefix)
+        ex = r["_executed"]
+        if done_in and ex:
+            cell = agg.setdefault((grid, ex), {"ordered": 0, "executed_in": 0, "executed_prev": 0})
             if dd_in:
-                executed_in_agg[key] = executed_in_agg.get(key, 0) + 1
+                cell["executed_in"] += 1
             else:
-                executed_prev_agg[key] = executed_prev_agg.get(key, 0) + 1
+                cell["executed_prev"] += 1
+        elif dd_in:
+            work = r["_ordered"]
+            if not work:
+                continue
+            cell = agg.setdefault((grid, work), {"ordered": 0, "executed_in": 0, "executed_prev": 0})
+            cell["ordered"] += 1
 
-    all_keys = set(ordered_agg) | set(executed_in_agg) | set(executed_prev_agg)
     out = []
-    for (grid, work_type) in sorted(all_keys):
+    for (grid, work_type) in sorted(agg):
+        cell = agg[(grid, work_type)]
         out.append({
             "grid": grid, "work_type": work_type,
-            "ordered": ordered_agg.get((grid, work_type), 0),
-            "executed_in": executed_in_agg.get((grid, work_type), 0),
-            "executed_prev": executed_prev_agg.get((grid, work_type), 0),
+            "ordered": cell["ordered"],
+            "executed_in": cell["executed_in"],
+            "executed_prev": cell["executed_prev"],
         })
     return out
 
