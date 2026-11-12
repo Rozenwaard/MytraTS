@@ -584,11 +584,11 @@ def generate_readings_violations_xlsx(rows: list[list]) -> bytes:
 
 REESTR_HEADERS = [
     "Номер задания", "Тип задания", "Поручение", "Основание",
-    "Филиал", "Дата задания", "Вид работ", "Срок", "Дата работ",
+    "Филиал", "Дата задания", "Вид работ", "Дата работ",
 ]
 REESTR_FIELD_ORDER = (
     "task_number", "task_type", "work_type_in_task", "visit_reason",
-    "grid", "created_at", "task_report", "due_date", "done_day",
+    "grid", "created_at", "task_report", "done_day",
 )
 _RLE_REPORT_FIELDS = (
     "task_number", "task_type", "work_type_in_task", "visit_reason",
@@ -596,7 +596,10 @@ _RLE_REPORT_FIELDS = (
     "meter_model", "meter_model_1", "meter_model_2",
 )
 
-SVOD_HEADERS = ["Филиал", "Вид работ", "Заказано", "Выполнено"]
+SVOD_HEADERS = [
+    "Филиал", "Вид работ", "Заказано",
+    "Выполнено по заказу периода", "Выполнено по заказу предыдущих периодов",
+]
 
 # Маппинг «заказ» → work_catalog.short (наименование заказанной работы).
 ORDERED_WORK_MAP = {
@@ -684,29 +687,39 @@ async def fetch_rle_period_rows(
 
 
 def _svod_rows(rows: list[dict], year_month: str) -> list[dict]:
-    """Свод (плоский): (филиал, вид работ) → Заказано / Выполнено.
+    """Свод (плоский): (филиал, вид работ) → Заказано / Выполнено по заказу.
 
-    Заказано = строки с due_date в периоде (по «заказанной» работе);
-    Выполнено = строки с done_day в периоде (по «выполненной» работе).
+    Заказано = строки с due_date в периоде (по «заказанной» работе).
+    Выполнено (по «выполненной» работе) делится на: «по заказу периода»
+    (done_day в периоде и due_date в периоде) и «по заказу предыдущих
+    периодов» (done_day в периоде, due_date вне периода).
     """
     prefix = f"{year_month}-"
     ordered_agg: dict[tuple[str, str], int] = {}
-    executed_agg: dict[tuple[str, str], int] = {}
+    executed_in_agg: dict[tuple[str, str], int] = {}
+    executed_prev_agg: dict[tuple[str, str], int] = {}
     for r in rows:
         grid = r["grid"] or "—"
-        if (r["due_date"] or "").startswith(prefix):
+        dd = r["due_date"] or ""
+        dd_in = dd.startswith(prefix)
+        if dd_in:
             key = (grid, r["_ordered"])
             ordered_agg[key] = ordered_agg.get(key, 0) + 1
         if (r["done_day"] or "").startswith(prefix):
             key = (grid, r["_executed"])
-            executed_agg[key] = executed_agg.get(key, 0) + 1
+            if dd_in:
+                executed_in_agg[key] = executed_in_agg.get(key, 0) + 1
+            else:
+                executed_prev_agg[key] = executed_prev_agg.get(key, 0) + 1
 
+    all_keys = set(ordered_agg) | set(executed_in_agg) | set(executed_prev_agg)
     out = []
-    for (grid, work_type) in sorted(set(ordered_agg) | set(executed_agg)):
+    for (grid, work_type) in sorted(all_keys):
         out.append({
             "grid": grid, "work_type": work_type,
             "ordered": ordered_agg.get((grid, work_type), 0),
-            "executed": executed_agg.get((grid, work_type), 0),
+            "executed_in": executed_in_agg.get((grid, work_type), 0),
+            "executed_prev": executed_prev_agg.get((grid, work_type), 0),
         })
     return out
 
@@ -733,15 +746,15 @@ def _style_report_sheet(ws, widths: list[int]) -> None:
 def _fill_svod_sheet(ws, year_month: str, rows: list[dict]) -> None:
     ws.append(SVOD_HEADERS)
     for r in _svod_rows(rows, year_month):
-        ws.append([r["grid"], r["work_type"], r["ordered"], r["executed"]])
-    _style_report_sheet(ws, [14, 30, 12, 12])
+        ws.append([r["grid"], r["work_type"], r["ordered"], r["executed_in"], r["executed_prev"]])
+    _style_report_sheet(ws, [14, 30, 12, 26, 32])
 
 
 def _fill_reestr_sheet(ws, rows: list[dict]) -> None:
     ws.append(REESTR_HEADERS)
     for r in rows:
         ws.append([r[f] for f in REESTR_FIELD_ORDER])
-    _style_report_sheet(ws, [26, 14, 26, 18, 14, 16, 26, 14, 14])
+    _style_report_sheet(ws, [26, 14, 26, 18, 14, 16, 26, 14])
 
 
 async def build_execution_report_xlsx(db_session, story_session, periods: list[str]) -> bytes:
