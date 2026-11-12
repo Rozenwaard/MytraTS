@@ -584,11 +584,11 @@ def generate_readings_violations_xlsx(rows: list[list]) -> bytes:
 
 REESTR_HEADERS = [
     "Номер задания", "Тип задания", "Поручение", "Основание",
-    "Филиал", "Дата задания", "Вид работ", "Дата работ",
+    "Филиал", "Дата задания", "Вид работ", "Период", "Дата работ",
 ]
 REESTR_FIELD_ORDER = (
     "task_number", "task_type", "work_type_in_task", "visit_reason",
-    "grid", "created_at", "task_report", "done_day",
+    "grid", "created_at", "task_report", "_period", "done_day",
 )
 _RLE_REPORT_FIELDS = (
     "task_number", "task_type", "work_type_in_task", "visit_reason",
@@ -670,70 +670,80 @@ async def fetch_rle_period_rows(
     if ref1 is None or ref3 is None:
         ref1, ref3 = await _load_phase_sets(db_session)
     prefix = f"{year_month}-%"
+    # Начало следующего месяца: строки с done_day позже периода («выполнение в следующем
+    # месяце») не попадают в реестр/свод текущего периода.
+    y, m = int(year_month[:4]), int(year_month[5:7])
+    m += 1
+    if m > 12:
+        y += 1
+        m = 1
+    next_month = f"{y:04d}-{m:02d}-01"
     select = ", ".join(_RLE_REPORT_FIELDS)
     # «Дубли»/«Ручная проверка» — невыполнение: по done_day в выборку не попадают
-    # (только по due_date, как «заказ»), чтобы реестр и свод бились.
+    # (только по due_date, как «заказ»).
     non_exec = ", ".join(f"'{t}'" for t in _NON_EXECUTION_REPORTS)
     where = (
         "customer = 'РЛЭ' AND ("
         f"(done_day LIKE :p AND (task_report IS NULL OR task_report NOT IN ({non_exec}))) "
-        "OR due_date LIKE :p)"
+        "OR (due_date LIKE :p AND (done_day IS NULL OR done_day < :next_month)))"
     )
     main_rows = (await db_session.execute(text(
         f"SELECT {select} FROM main_afl WHERE {where}"
-    ), {"p": prefix})).fetchall()
+    ), {"p": prefix, "next_month": next_month})).fetchall()
     story_rows = (await story_session.execute(text(
         f"SELECT {select} FROM story_afl WHERE {where}"
-    ), {"p": prefix})).fetchall()
+    ), {"p": prefix, "next_month": next_month})).fetchall()
 
     rows = []
+    ym_prefix = f"{year_month}-"
     for r in list(main_rows) + list(story_rows):
         m = {k: _txt(v) for k, v in dict(r._mapping).items()}
         phase = _resolve_phase(m, ref1, ref3)
         m["_ordered"] = _ordered_work(m, phase)
         tr = (m.get("task_report") or "").strip()
-        m["_executed"] = "" if tr in _NON_EXECUTION_REPORTS else (tr or m["_ordered"])
+        # «Выполненная» работа = только заполненный task_report (без «Дубли»/«Ручная
+        # проверка»); пустой task_report — не выполнение (без фолбэка на «заказанную»).
+        m["_executed"] = "" if (not tr or tr in _NON_EXECUTION_REPORTS) else tr
+        m["_period"] = "текущий" if (m.get("due_date") or "").startswith(ym_prefix) else "иной"
         rows.append(m)
     return rows
 
 
 def _svod_rows(rows: list[dict], year_month: str) -> list[dict]:
-    """Свод (плоский) — свод реестра: каждая строка учитывается ровно один раз.
+    """Свод (плоский): «заказано» и «выполнено» считаются независимо (пересекаются).
 
-    Вселенная периода = done_day ИЛИ due_date в месяце (строки реестра).
-    Категории взаимоисключающие:
-      - «Выполнено по заказу периода» = done_day и due_date в месяце (по выполненной работе);
-      - «Выполнено по заказу предыдущих периодов» = done_day в месяце, due_date вне (по выполненной работе);
-      - «Заказано» = due_date в месяце, done_day вне (по заказанной работе).
+    Заказано = due_date в месяце (по заказанной работе; включает «выполнено по заказу
+    периода»); Выполнено по заказу периода = done_day и due_date в месяце (по выполненной
+    работе); Выполнено по заказу предыдущих периодов = done_day в месяце, due_date вне
+    (по выполненной работе).
     """
     prefix = f"{year_month}-"
-    agg: dict[tuple[str, str], dict[str, int]] = {}
+    ordered_agg: dict[tuple[str, str], int] = {}
+    executed_in_agg: dict[tuple[str, str], int] = {}
+    executed_prev_agg: dict[tuple[str, str], int] = {}
     for r in rows:
         grid = r["grid"] or "—"
         dd_in = (r["due_date"] or "").startswith(prefix)
         done_in = (r["done_day"] or "").startswith(prefix)
+        if dd_in:
+            work = r["_ordered"]
+            if work:
+                ordered_agg[(grid, work)] = ordered_agg.get((grid, work), 0) + 1
         ex = r["_executed"]
         if done_in and ex:
-            cell = agg.setdefault((grid, ex), {"ordered": 0, "executed_in": 0, "executed_prev": 0})
             if dd_in:
-                cell["executed_in"] += 1
+                executed_in_agg[(grid, ex)] = executed_in_agg.get((grid, ex), 0) + 1
             else:
-                cell["executed_prev"] += 1
-        elif dd_in:
-            work = r["_ordered"]
-            if not work:
-                continue
-            cell = agg.setdefault((grid, work), {"ordered": 0, "executed_in": 0, "executed_prev": 0})
-            cell["ordered"] += 1
+                executed_prev_agg[(grid, ex)] = executed_prev_agg.get((grid, ex), 0) + 1
 
+    all_keys = set(ordered_agg) | set(executed_in_agg) | set(executed_prev_agg)
     out = []
-    for (grid, work_type) in sorted(agg):
-        cell = agg[(grid, work_type)]
+    for (grid, work_type) in sorted(all_keys):
         out.append({
             "grid": grid, "work_type": work_type,
-            "ordered": cell["ordered"],
-            "executed_in": cell["executed_in"],
-            "executed_prev": cell["executed_prev"],
+            "ordered": ordered_agg.get((grid, work_type), 0),
+            "executed_in": executed_in_agg.get((grid, work_type), 0),
+            "executed_prev": executed_prev_agg.get((grid, work_type), 0),
         })
     return out
 
@@ -768,7 +778,7 @@ def _fill_reestr_sheet(ws, rows: list[dict]) -> None:
     ws.append(REESTR_HEADERS)
     for r in rows:
         ws.append([r[f] for f in REESTR_FIELD_ORDER])
-    _style_report_sheet(ws, [26, 14, 26, 18, 14, 16, 26, 14])
+    _style_report_sheet(ws, [26, 14, 26, 18, 14, 16, 26, 12, 14])
 
 
 async def build_execution_report_xlsx(db_session, story_session, periods: list[str]) -> bytes:
