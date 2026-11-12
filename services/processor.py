@@ -390,6 +390,15 @@ async def process_raw_afl(db_session: AsyncSession, upload_progress: dict, uploa
             "WHERE executor IN (SELECT executor FROM quarantine_status WHERE status = 'блок')"
         ))
 
+        # === Шаг 0: phase (1ф/3ф) по основному счётчику (meter_model) ===
+        # Блок «замена ПУ» (meter_model_2/meter_model_1) перепроверяется после Шага 5.
+        await db_session.execute(text(
+            f"UPDATE raw_afl SET phase = CASE "
+            f"WHEN meter_model IN {_REF_3F} THEN '3ф' "
+            f"WHEN meter_model IN {_REF_1F} THEN '1ф' "
+            f"ELSE NULL END"
+        ))
+
         # === Шаг 1: region из municipal_district ===
         await db_session.execute(text(
             "UPDATE raw_afl SET region = rtrim(SUBSTR(municipal_district, 1, 3))"
@@ -446,6 +455,16 @@ async def process_raw_afl(db_session: AsyncSession, upload_progress: dict, uploa
             "OR (task_detail = 'Отсутствует связь с ВПУ' AND customer = 'ПСК')"
         ))
 
+        # Перепроверка phase для строк с заполненным блоком «замена ПУ» (meter_model_2/meter_model_1):
+        # новый счётчик приоритетнее: meter_model_2 → meter_model_1 → meter_model.
+        await db_session.execute(text(
+            f"UPDATE raw_afl SET phase = CASE "
+            f"WHEN {PHASE_3} THEN '3ф' "
+            f"WHEN {PHASE_1} THEN '1ф' "
+            f"ELSE phase END "
+            f"WHERE (meter_model_2 IS NOT NULL AND meter_model_2 != '' AND meter_model_2 IN {_REF_ANY}) "
+            f"OR (meter_model_1 IS NOT NULL AND meter_model_1 != '' AND meter_model_1 IN {_REF_ANY})"
+        ))
 
         # === Шаг 6: task_report_id ===
         await db_session.execute(text(

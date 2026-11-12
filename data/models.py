@@ -137,6 +137,7 @@ class RawAfl(Base):
     task_report_id: Mapped[Optional[str]] = mapped_column(Text)
     done_day: Mapped[Optional[str]] = mapped_column(Text)
     done_day_type: Mapped[Optional[str]] = mapped_column(Text)
+    phase: Mapped[Optional[str]] = mapped_column(Text)  # 1ф/3ф (по meter_model_phase)
 
 
 class MainAfl(Base):
@@ -265,6 +266,7 @@ class MainAfl(Base):
     task_report_id: Mapped[Optional[str]] = mapped_column(Text)
     done_day: Mapped[Optional[str]] = mapped_column(Text)
     done_day_type: Mapped[Optional[str]] = mapped_column(Text)
+    phase: Mapped[Optional[str]] = mapped_column(Text)  # 1ф/3ф (по meter_model_phase)
     reestr_number: Mapped[Optional[str]] = mapped_column(Text)
     reestr_date: Mapped[Optional[str]] = mapped_column(Text)
     report: Mapped[Optional[str]] = mapped_column(Text)

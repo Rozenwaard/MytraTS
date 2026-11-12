@@ -606,7 +606,7 @@ PROD_REESTR_WIDTHS = [26, 14, 14, 26, 16, 26, 30, 26, 12, 14]
 _RLE_REPORT_FIELDS = (
     "task_number", "task_type", "work_type_in_task", "visit_reason",
     "grid", "created_at", "task_report", "due_date", "done_day",
-    "meter_model", "meter_model_1", "meter_model_2",
+    "phase",
     "customer", "task_output", "service_object_type", "meter_installation_place",
     "executor", "executor_organization",
 )
@@ -618,35 +618,6 @@ _DOPUSK_WORKS = ("Допуск ПУ", "Установка / замена ПУ")
 
 def _txt(value) -> str:
     return "" if value is None else str(value)
-
-
-async def _load_phase_sets(db_session) -> tuple[set[str], set[str]]:
-    """Множества моделей ПУ для 1ф и 3ф из meter_model_phase."""
-    ref1: set[str] = set()
-    ref3: set[str] = set()
-    result = await db_session.execute(text("SELECT meter_model, phase FROM meter_model_phase"))
-    for model, phase in result.fetchall():
-        if not model:
-            continue
-        if phase == "1ф":
-            ref1.add(model)
-        elif phase == "3ф":
-            ref3.add(model)
-    return ref1, ref3
-
-
-def _resolve_phase(row: dict, ref1: set[str], ref3: set[str]) -> str | None:
-    """Фаза ПУ (1ф/3ф) по слотам meter_model_2 → meter_model_1 → meter_model.
-
-    Пустые и неизвестные модели пропускаем (как в services.processor).
-    """
-    known = ref1 | ref3
-    for key in ("meter_model_2", "meter_model_1", "meter_model"):
-        model = (row.get(key) or "").strip()
-        if not model or model not in known:
-            continue
-        return "3ф" if model in ref3 else "1ф"
-    return None
 
 
 def _ordered_work(row: dict, phase: str | None) -> str:
@@ -694,7 +665,6 @@ def _ordered_work(row: dict, phase: str | None) -> str:
 
 async def fetch_period_rows(
     db_session, story_session, year_month: str,
-    ref1: set[str] | None = None, ref3: set[str] | None = None,
     customers: tuple[str, ...] | None = None,
 ) -> list[dict]:
     """Строки месяца (заказ due_date + выполнение done_day) из main_afl + story_afl.
@@ -702,8 +672,6 @@ async def fetch_period_rows(
     `customers=None` → все заказчики; иначе — кортеж заказчиков (например, («РЛЭ»,)).
     Каждая строка получает `_ordered`, `_executed`, `_period`, `_dept` (отделение).
     """
-    if ref1 is None or ref3 is None:
-        ref1, ref3 = await _load_phase_sets(db_session)
     prefix = f"{year_month}-%"
     # Начало следующего месяца: строки с done_day позже периода («выполнение в следующем
     # месяце») не попадают в реестр/свод текущего периода.
@@ -736,7 +704,7 @@ async def fetch_period_rows(
     for r in list(main_rows) + list(story_rows):
         m = {k: _txt(v) for k, v in dict(r._mapping).items()}
         m.setdefault("task_organization", "")  # story_afl не имеет этой колонки
-        phase = _resolve_phase(m, ref1, ref3)
+        phase = (m.get("phase") or "").strip() or None
         m["_ordered"] = _ordered_work(m, phase)
         tr = (m.get("task_report") or "").strip()
         # «Выполненная» работа = только заполненный task_report (без «Дубли»/«Ручная
@@ -848,10 +816,9 @@ def generate_report_xlsx(
 
 async def build_execution_report_xlsx(db_session, story_session, periods: list[str]) -> bytes:
     """Полный «Отчёт о выполнении» (РЛЭ): заказ + выполнение по филиалам."""
-    ref1, ref3 = await _load_phase_sets(db_session)
     period_rows = {}
     for ym in periods:
-        period_rows[ym] = await fetch_period_rows(db_session, story_session, ym, ref1, ref3, ("РЛЭ",))
+        period_rows[ym] = await fetch_period_rows(db_session, story_session, ym, ("РЛЭ",))
     return await asyncio.to_thread(
         generate_report_xlsx, period_rows, "grid", "Филиал",
         REESTR_HEADERS, REESTR_FIELD_ORDER, REESTR_WIDTHS,
@@ -860,10 +827,9 @@ async def build_execution_report_xlsx(db_session, story_session, periods: list[s
 
 async def build_productivity_report_xlsx(db_session, story_session, periods: list[str]) -> bytes:
     """«Общая производительность» (все заказчики): заказ + выполнение по отделениям."""
-    ref1, ref3 = await _load_phase_sets(db_session)
     period_rows = {}
     for ym in periods:
-        period_rows[ym] = await fetch_period_rows(db_session, story_session, ym, ref1, ref3, None)
+        period_rows[ym] = await fetch_period_rows(db_session, story_session, ym, None)
     return await asyncio.to_thread(
         generate_report_xlsx, period_rows, "_dept", "Отделение",
         PROD_REESTR_HEADERS, PROD_REESTR_FIELD_ORDER, PROD_REESTR_WIDTHS,

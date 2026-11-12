@@ -61,7 +61,7 @@ MAIN_AFL_COLUMNS = [
     'verified_at', 'verified_by',
     'status', 'work_result_1', 'status_changed_at', 'task_link',
     'customer', 'task_output', 'task_report', 'task_detail',
-    'region', 'grid', 'task_report_id', 'done_day', 'done_day_type',
+    'region', 'grid', 'task_report_id', 'done_day', 'done_day_type', 'phase',
 ]
 
 
