@@ -23,12 +23,11 @@ from services.rle import (
     KSP_MAIN_TYPES,
     MONTH_NAMES,
     biweekly_periods,
+    build_execution_report_xlsx,
     build_file_minutes,
     compute_merged_period_stats,
     compute_period_stats,
     fetch_readings_register_rows,
-    fetch_rle_period_rows,
-    generate_execution_report_xlsx,
     generate_merged_rle_xlsx_bytes,
     generate_readings_violations_xlsx,
     generate_rle_xlsx_bytes,
@@ -192,10 +191,7 @@ async def api_rle_report_download(
         return Response(content=json.dumps({"error": "Выберите период"}, ensure_ascii=False), media_type="application/json", status_code=400)
 
     async with story_session_factory() as story_session:
-        period_rows: dict[str, list] = {}
-        for ym in periods:
-            period_rows[ym] = await fetch_rle_period_rows(db_session, story_session, ym)
-        output = await asyncio.to_thread(generate_execution_report_xlsx, period_rows)
+        output = await build_execution_report_xlsx(db_session, story_session, periods)
 
     filename = "Отчёт о выполнении РЛЭ.xlsx"
     return Response(
