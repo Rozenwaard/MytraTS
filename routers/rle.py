@@ -25,6 +25,7 @@ from services.rle import (
     biweekly_periods,
     build_execution_report_xlsx,
     build_file_minutes,
+    build_productivity_report_xlsx,
     compute_merged_period_stats,
     compute_period_stats,
     fetch_readings_register_rows,
@@ -201,6 +202,38 @@ async def api_rle_report_download(
     )
 
 
+@post("/rle/productivity/download", guards=[require_auth])
+async def api_rle_productivity_download(
+    request: Request, db_session: AsyncSession,
+    data: dict = Body(media_type=RequestEncodingType.JSON),
+) -> Response:
+    """«Общая производительность»: все заказчики, свод по отделениям + реестр."""
+    user = await get_current_user(request, db_session)
+    if user.effective_role != "администратор":
+        return Response(content=json.dumps({"error": "Нет прав"}, ensure_ascii=False), media_type="application/json", status_code=403)
+
+    raw = (data or {}).get("periods")
+    if not isinstance(raw, list):
+        return Response(content=json.dumps({"error": "Выберите период"}, ensure_ascii=False), media_type="application/json", status_code=400)
+
+    periods = sorted(
+        {str(p) for p in raw if isinstance(p, str) and _YM_RE.match(str(p))},
+        reverse=True,
+    )
+    if not periods:
+        return Response(content=json.dumps({"error": "Выберите период"}, ensure_ascii=False), media_type="application/json", status_code=400)
+
+    async with story_session_factory() as story_session:
+        output = await build_productivity_report_xlsx(db_session, story_session, periods)
+
+    filename = "Общая производительность.xlsx"
+    return Response(
+        content=output,
+        media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        headers={"Content-Disposition": f"attachment; filename*=UTF-8''{quote(filename)}"},
+    )
+
+
 rle_router = Router(
     "/api",
     route_handlers=[
@@ -208,6 +241,7 @@ rle_router = Router(
         api_rle_periods,
         api_rle_download,
         api_rle_report_download,
+        api_rle_productivity_download,
         api_rle_readings,
         api_rle_upload,
     ],

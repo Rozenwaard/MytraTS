@@ -25,6 +25,7 @@ from python_calamine import CalamineWorkbook
 from sqlalchemy import text
 
 from sql import build_in_clause
+from services.processor import MKD_OBJECT_TYPES, PLAN_INDOOR_PLACES
 
 WINDOW_DAYS = 28
 WEEK_DAYS = 7
@@ -580,7 +581,7 @@ def generate_readings_violations_xlsx(rows: list[list]) -> bytes:
     return output.getvalue()
 
 
-# ─── «Отчёт о выполнении» (РЛЭ: Свод + Реестр по выбранным месяцам) ───
+# ─── Отчёты (Свод + Реестр по выбранным месяцам) ───
 
 REESTR_HEADERS = [
     "Номер задания", "Тип задания", "Поручение", "Основание",
@@ -590,26 +591,29 @@ REESTR_FIELD_ORDER = (
     "task_number", "task_type", "work_type_in_task", "visit_reason",
     "grid", "created_at", "task_report", "_period", "done_day",
 )
+REESTR_WIDTHS = [26, 14, 26, 18, 14, 16, 26, 12, 14]
+
+PROD_REESTR_HEADERS = [
+    "Номер задания", "Заказчик", "Тип задания", "Поручение", "Дата задания",
+    "Отделение", "Исполнитель", "Вид работ", "Период", "Дата работ",
+]
+PROD_REESTR_FIELD_ORDER = (
+    "task_number", "_customer", "task_type", "work_type_in_task", "created_at",
+    "_dept", "executor", "task_report", "_period", "done_day",
+)
+PROD_REESTR_WIDTHS = [26, 14, 14, 26, 16, 26, 30, 26, 12, 14]
+
 _RLE_REPORT_FIELDS = (
     "task_number", "task_type", "work_type_in_task", "visit_reason",
     "grid", "created_at", "task_report", "due_date", "done_day",
     "meter_model", "meter_model_1", "meter_model_2",
+    "customer", "task_output", "service_object_type", "meter_installation_place",
+    "executor", "executor_organization",
 )
-
-SVOD_HEADERS = [
-    "Филиал", "Вид работ", "Заказано",
-    "Выполнено по заказу периода", "Выполнено по заказу предыдущих периодов",
-]
-
-# Маппинг «заказ» → work_catalog.short (наименование заказанной работы).
-ORDERED_WORK_MAP = {
-    ("Плановый", "Проверка, осмотр ПУ"): "Массовое КСП",
-    ("Внеплановый", "Проверка, осмотр ПУ"): "Штучное КСП",
-}
-_DOPUSK_WORKS = ("Допуск ПУ", "Установка / замена ПУ")
 
 # «Дубли»/«Ручная проверка» — не выполнение работ (общее правило, см. docs/БИЗНЕС-ЛОГИКА.md).
 _NON_EXECUTION_REPORTS = ("Дубли", "Ручная проверка")
+_DOPUSK_WORKS = ("Допуск ПУ", "Установка / замена ПУ")
 
 
 def _txt(value) -> str:
@@ -646,26 +650,57 @@ def _resolve_phase(row: dict, ref1: set[str], ref3: set[str]) -> str | None:
 
 
 def _ordered_work(row: dict, phase: str | None) -> str:
-    """Наименование «заказанной» работы (map task_type + work_type_in_task → work_catalog.short)."""
+    """Наименование «заказанной» работы (повторяет правила процессора).
+
+    Маппинг task_type + work_type_in_task (+ тип объекта для ПСК) → work_catalog.short,
+    чтобы «заказ» и «выполнение» (task_report) шли по одним видам работ.
+    """
+    customer = (row.get("customer") or "").strip()
     tt = (row.get("task_type") or "").strip()
     wit = (row.get("work_type_in_task") or "").strip()
+    sot = (row.get("service_object_type") or "").strip()
+    mip = (row.get("meter_installation_place") or "").strip()
+
+    if customer == "РЛЭ":
+        if wit in _DOPUSK_WORKS:
+            return "Допуск ПУ 3ф" if phase == "3ф" else ("Допуск ПУ 1ф" if phase == "1ф" else "Допуск ПУ 3ф")
+        if wit == "Инструментальная проверка":
+            return "Инструментальная проверка 3ф" if phase == "3ф" else ("Инструментальная проверка 1ф" if phase == "1ф" else "Инструментальная проверка 3ф")
+        if wit == "Перепрограммирование ПУ":
+            return "Чтение архива РЛЭ"
+        if wit == "Проверка, осмотр ПУ":
+            return "Массовое КСП" if tt == "Плановый" else "Штучное КСП"
+        return wit or "—"
+
+    # ПСК
     if wit in _DOPUSK_WORKS:
-        if phase == "3ф":
-            return "Допуск ПУ 3ф"
-        if phase == "1ф":
-            return "Допуск ПУ 1ф"
-        return "Допуск ПУ 3ф"  # фаза неизвестна — по умолчанию 3ф
-    return ORDERED_WORK_MAP.get((tt, wit), wit or "—")
+        return "Допуск ПУ ФЛ"
+    if wit == "Инструментальная проверка":
+        return "ИП ФЛ"
+    if wit == "Перепрограммирование ПУ":
+        return "Перепрограммирование ПУ"
+    if wit in ("Контроль СП (старый)", "Контроль СП"):
+        return "Проверка РО ФЛ"
+    if wit in ("Отключение ЭЭ", "Отключение ЭЭ за СП"):
+        return "Отключение безучётной нагрузки"
+    if wit == "Проверка, осмотр ПУ":
+        if tt == "Плановый":
+            if sot in MKD_OBJECT_TYPES:
+                return "Плановое КСП квартира" if mip in PLAN_INDOOR_PLACES else "Плановое КСП лестница"
+            return "Штучный план"
+        return "Штучное КСП ФЛ"
+    return wit or "—"
 
 
-async def fetch_rle_period_rows(
+async def fetch_period_rows(
     db_session, story_session, year_month: str,
     ref1: set[str] | None = None, ref3: set[str] | None = None,
+    customers: tuple[str, ...] | None = None,
 ) -> list[dict]:
-    """Строки РЛЭ месяца (заказ due_date + выполнение done_day) из main_afl + story_afl.
+    """Строки месяца (заказ due_date + выполнение done_day) из main_afl + story_afl.
 
-    Каждая строка получает `_ordered` (заказанная работа) и `_executed`
-    (выполненная работа = task_report, иначе = заказанная).
+    `customers=None` → все заказчики; иначе — кортеж заказчиков (например, («РЛЭ»,)).
+    Каждая строка получает `_ordered`, `_executed`, `_period`, `_dept` (отделение).
     """
     if ref1 is None or ref3 is None:
         ref1, ref3 = await _load_phase_sets(db_session)
@@ -678,17 +713,19 @@ async def fetch_rle_period_rows(
         y += 1
         m = 1
     next_month = f"{y:04d}-{m:02d}-01"
-    select = ", ".join(_RLE_REPORT_FIELDS)
     # «Дубли»/«Ручная проверка» — невыполнение: по done_day в выборку не попадают
     # (только по due_date, как «заказ»).
     non_exec = ", ".join(f"'{t}'" for t in _NON_EXECUTION_REPORTS)
+    cust_clause = "1=1" if customers is None else f"customer IN ({', '.join(repr(c) for c in customers)})"
     where = (
-        "customer = 'РЛЭ' AND ("
+        f"{cust_clause} AND ("
         f"(done_day LIKE :p AND (task_report IS NULL OR task_report NOT IN ({non_exec}))) "
         "OR (due_date LIKE :p AND (done_day IS NULL OR done_day < :next_month)))"
     )
+
+    select = ", ".join(_RLE_REPORT_FIELDS)
     main_rows = (await db_session.execute(text(
-        f"SELECT {select} FROM main_afl WHERE {where}"
+        f"SELECT {select}, task_organization FROM main_afl WHERE {where}"
     ), {"p": prefix, "next_month": next_month})).fetchall()
     story_rows = (await story_session.execute(text(
         f"SELECT {select} FROM story_afl WHERE {where}"
@@ -698,6 +735,7 @@ async def fetch_rle_period_rows(
     ym_prefix = f"{year_month}-"
     for r in list(main_rows) + list(story_rows):
         m = {k: _txt(v) for k, v in dict(r._mapping).items()}
+        m.setdefault("task_organization", "")  # story_afl не имеет этой колонки
         phase = _resolve_phase(m, ref1, ref3)
         m["_ordered"] = _ordered_work(m, phase)
         tr = (m.get("task_report") or "").strip()
@@ -705,13 +743,16 @@ async def fetch_rle_period_rows(
         # проверка»); пустой task_report — не выполнение (без фолбэка на «заказанную»).
         m["_executed"] = "" if (not tr or tr in _NON_EXECUTION_REPORTS) else tr
         m["_period"] = "текущий" if (m.get("due_date") or "").startswith(ym_prefix) else "иной"
+        m["_dept"] = (m.get("executor_organization") or "").strip() or (m.get("task_organization") or "").strip() or "—"
+        m["_customer"] = "ПСК" if (m.get("customer") or "").strip() == "ПСК" else ((m.get("grid") or "").strip() or "—")
         rows.append(m)
     return rows
 
 
-def _svod_rows(rows: list[dict], year_month: str) -> list[dict]:
+def _svod_rows(rows: list[dict], year_month: str, block_key: str) -> list[dict]:
     """Свод (плоский): «заказано» и «выполнено» считаются независимо (пересекаются).
 
+    Блоки — по `block_key` («grid» для РЛЭ-отчёта, «_dept» для производительности).
     Заказано = due_date в месяце (по заказанной работе; включает «выполнено по заказу
     периода»); Выполнено по заказу периода = done_day и due_date в месяце (по выполненной
     работе); Выполнено по заказу предыдущих периодов = done_day в месяце, due_date вне
@@ -722,28 +763,28 @@ def _svod_rows(rows: list[dict], year_month: str) -> list[dict]:
     executed_in_agg: dict[tuple[str, str], int] = {}
     executed_prev_agg: dict[tuple[str, str], int] = {}
     for r in rows:
-        grid = r["grid"] or "—"
+        block = r.get(block_key) or "—"
         dd_in = (r["due_date"] or "").startswith(prefix)
         done_in = (r["done_day"] or "").startswith(prefix)
         if dd_in:
             work = r["_ordered"]
             if work:
-                ordered_agg[(grid, work)] = ordered_agg.get((grid, work), 0) + 1
+                ordered_agg[(block, work)] = ordered_agg.get((block, work), 0) + 1
         ex = r["_executed"]
         if done_in and ex:
             if dd_in:
-                executed_in_agg[(grid, ex)] = executed_in_agg.get((grid, ex), 0) + 1
+                executed_in_agg[(block, ex)] = executed_in_agg.get((block, ex), 0) + 1
             else:
-                executed_prev_agg[(grid, ex)] = executed_prev_agg.get((grid, ex), 0) + 1
+                executed_prev_agg[(block, ex)] = executed_prev_agg.get((block, ex), 0) + 1
 
     all_keys = set(ordered_agg) | set(executed_in_agg) | set(executed_prev_agg)
     out = []
-    for (grid, work_type) in sorted(all_keys):
+    for (block, work_type) in sorted(all_keys):
         out.append({
-            "grid": grid, "work_type": work_type,
-            "ordered": ordered_agg.get((grid, work_type), 0),
-            "executed_in": executed_in_agg.get((grid, work_type), 0),
-            "executed_prev": executed_prev_agg.get((grid, work_type), 0),
+            "block": block, "work_type": work_type,
+            "ordered": ordered_agg.get((block, work_type), 0),
+            "executed_in": executed_in_agg.get((block, work_type), 0),
+            "executed_prev": executed_prev_agg.get((block, work_type), 0),
         })
     return out
 
@@ -767,31 +808,27 @@ def _style_report_sheet(ws, widths: list[int]) -> None:
     ws.freeze_panes = "A2"
 
 
-def _fill_svod_sheet(ws, year_month: str, rows: list[dict]) -> None:
-    ws.append(SVOD_HEADERS)
-    for r in _svod_rows(rows, year_month):
-        ws.append([r["grid"], r["work_type"], r["ordered"], r["executed_in"], r["executed_prev"]])
-    _style_report_sheet(ws, [14, 30, 12, 26, 32])
+def _fill_svod_sheet(ws, year_month: str, rows: list[dict], block_key: str, block_header: str) -> None:
+    ws.append([block_header, "Вид работ", "Заказано",
+               "Выполнено по заказу периода", "Выполнено по заказу предыдущих периодов"])
+    for r in _svod_rows(rows, year_month, block_key):
+        ws.append([r["block"], r["work_type"], r["ordered"], r["executed_in"], r["executed_prev"]])
+    _style_report_sheet(ws, [26, 30, 12, 26, 32])
 
 
-def _fill_reestr_sheet(ws, rows: list[dict]) -> None:
-    ws.append(REESTR_HEADERS)
+def _fill_reestr_sheet(ws, rows: list[dict], headers: list[str], field_order: tuple, widths: list[int]) -> None:
+    ws.append(headers)
     for r in rows:
-        ws.append([r[f] for f in REESTR_FIELD_ORDER])
-    _style_report_sheet(ws, [26, 14, 26, 18, 14, 16, 26, 12, 14])
+        ws.append([r[f] for f in field_order])
+    _style_report_sheet(ws, widths)
 
 
-async def build_execution_report_xlsx(db_session, story_session, periods: list[str]) -> bytes:
-    """Полный «Отчёт о выполнении» для выбранных месяцев (заказ + выполнение)."""
-    ref1, ref3 = await _load_phase_sets(db_session)
-    period_rows = {}
-    for ym in periods:
-        period_rows[ym] = await fetch_rle_period_rows(db_session, story_session, ym, ref1, ref3)
-    return await asyncio.to_thread(generate_execution_report_xlsx, period_rows)
-
-
-def generate_execution_report_xlsx(period_rows: dict[str, list[dict]]) -> bytes:
-    """Xlsx «Отчёт о выполнении»: на каждый месяц — пара листов «Свод» + «Реестр»."""
+def generate_report_xlsx(
+    period_rows: dict[str, list[dict]],
+    block_key: str, block_header: str,
+    reestr_headers: list[str], reestr_field_order: tuple, reestr_widths: list[int],
+) -> bytes:
+    """Xlsx отчёта: на каждый месяц — пара листов «Свод» + «Реестр»."""
     wb = Workbook()
     first = True
     for year_month, rows in period_rows.items():
@@ -801,9 +838,33 @@ def generate_execution_report_xlsx(period_rows: dict[str, list[dict]]) -> bytes:
             first = False
         else:
             ws_svod = wb.create_sheet(f"Свод {year_month}")
-        _fill_svod_sheet(ws_svod, year_month, rows)
-        _fill_reestr_sheet(wb.create_sheet(f"Реестр {year_month}"), rows)
+        _fill_svod_sheet(ws_svod, year_month, rows, block_key, block_header)
+        _fill_reestr_sheet(wb.create_sheet(f"Реестр {year_month}"), rows, reestr_headers, reestr_field_order, reestr_widths)
 
     output = io.BytesIO()
     wb.save(output)
     return output.getvalue()
+
+
+async def build_execution_report_xlsx(db_session, story_session, periods: list[str]) -> bytes:
+    """Полный «Отчёт о выполнении» (РЛЭ): заказ + выполнение по филиалам."""
+    ref1, ref3 = await _load_phase_sets(db_session)
+    period_rows = {}
+    for ym in periods:
+        period_rows[ym] = await fetch_period_rows(db_session, story_session, ym, ref1, ref3, ("РЛЭ",))
+    return await asyncio.to_thread(
+        generate_report_xlsx, period_rows, "grid", "Филиал",
+        REESTR_HEADERS, REESTR_FIELD_ORDER, REESTR_WIDTHS,
+    )
+
+
+async def build_productivity_report_xlsx(db_session, story_session, periods: list[str]) -> bytes:
+    """«Общая производительность» (все заказчики): заказ + выполнение по отделениям."""
+    ref1, ref3 = await _load_phase_sets(db_session)
+    period_rows = {}
+    for ym in periods:
+        period_rows[ym] = await fetch_period_rows(db_session, story_session, ym, ref1, ref3, None)
+    return await asyncio.to_thread(
+        generate_report_xlsx, period_rows, "_dept", "Отделение",
+        PROD_REESTR_HEADERS, PROD_REESTR_FIELD_ORDER, PROD_REESTR_WIDTHS,
+    )

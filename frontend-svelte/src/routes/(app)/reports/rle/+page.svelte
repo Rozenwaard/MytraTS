@@ -7,6 +7,7 @@
 		uploadRle,
 		fetchRlePeriods,
 		downloadExecutionReport,
+		downloadProductivityReport,
 		type RleData,
 		type RlePeriod
 	} from '$lib/api/rle';
@@ -68,6 +69,8 @@
 	let downloadError = $state('');
 	let reporting = $state(false);
 	let reportError = $state('');
+	let productivity = $state(false);
+	let productivityError = $state('');
 	let fileInput = $state<HTMLInputElement | undefined>(undefined);
 
 	function openPicker() {
@@ -143,6 +146,26 @@
 		}
 	}
 
+	async function downloadProductivity() {
+		productivity = true;
+		productivityError = '';
+		try {
+			const { blob, filename } = await downloadProductivityReport([...selected]);
+			const url = URL.createObjectURL(blob);
+			const a = document.createElement('a');
+			a.href = url;
+			a.download = filename;
+			document.body.appendChild(a);
+			a.click();
+			a.remove();
+			URL.revokeObjectURL(url);
+		} catch (e) {
+			productivityError = e instanceof Error ? e.message : 'Ошибка выгрузки «Общая производительность»';
+		} finally {
+			productivity = false;
+		}
+	}
+
 	function togglePeriod(value: string) {
 		const next = new Set(selected);
 		if (next.has(value)) next.delete(value);
@@ -202,10 +225,17 @@
 					<Button size="sm" onclick={downloadReport} disabled={reporting || selected.size === 0}>
 						{reporting ? 'Формируем…' : 'Отчёт о выполнении'}
 					</Button>
+					<Button size="sm" onclick={downloadProductivity} disabled={productivity || selected.size === 0}>
+						{productivity ? 'Формируем…' : 'Общая производительность'}
+					</Button>
 				</div>
 
 				{#if reportError}
 					<div class="text-sm text-destructive">{reportError}</div>
+				{/if}
+
+				{#if productivityError}
+					<div class="text-sm text-destructive">{productivityError}</div>
 				{/if}
 
 				{#if downloadError}

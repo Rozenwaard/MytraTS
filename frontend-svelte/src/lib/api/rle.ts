@@ -117,3 +117,26 @@ export async function downloadExecutionReport(
 	const filename = m ? decodeURIComponent(m[1]) : 'Отчёт о выполнении РЛЭ.xlsx';
 	return { blob, filename };
 }
+
+/**
+ * «Общая производительность»: все заказчики, свод по отделениям + реестр.
+ */
+export async function downloadProductivityReport(
+	periods: string[]
+): Promise<{ blob: Blob; filename: string }> {
+	const res = await fetch('/api/rle/productivity/download', {
+		method: 'POST',
+		credentials: 'include',
+		headers: { 'Content-Type': 'application/json' },
+		body: JSON.stringify({ periods })
+	});
+	if (!res.ok) {
+		const body = (await res.json().catch(() => ({}))) as { error?: string };
+		throw new Error(body.error ?? 'Ошибка выгрузки «Общая производительность»');
+	}
+	const blob = await res.blob();
+	const disposition = res.headers.get('Content-Disposition') ?? '';
+	const m = disposition.match(/filename\*=UTF-8''([^;]+)/);
+	const filename = m ? decodeURIComponent(m[1]) : 'Общая производительность.xlsx';
+	return { blob, filename };
+}
