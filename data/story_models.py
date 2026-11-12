@@ -159,5 +159,6 @@ class StoryAfl(StoryBase):
     reestr_date: Mapped[Optional[str]] = mapped_column(Text)
     report: Mapped[Optional[str]] = mapped_column(Text)
     errors: Mapped[Optional[str]] = mapped_column(Text)
+    errors_seen: Mapped[Optional[str]] = mapped_column(Text)  # снимок последних вычисленных ошибок
     norm: Mapped[Optional[int]] = mapped_column(Integer)
     extra: Mapped[Optional[int]] = mapped_column(Integer)

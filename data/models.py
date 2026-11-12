@@ -271,6 +271,7 @@ class MainAfl(Base):
     reestr_date: Mapped[Optional[str]] = mapped_column(Text)
     report: Mapped[Optional[str]] = mapped_column(Text)
     errors: Mapped[Optional[str]] = mapped_column(Text)
+    errors_seen: Mapped[Optional[str]] = mapped_column(Text)  # снимок последних вычисленных ошибок
     norm: Mapped[Optional[int]] = mapped_column(Integer)  # база (основной вид работ)
     extra: Mapped[Optional[int]] = mapped_column(Integer)  # доп. («Код …», «+5 Алькор»)
 
