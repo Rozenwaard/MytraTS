@@ -8,8 +8,9 @@ export class MobileApiError extends Error {
 	}
 }
 
-// База для нативных запросов (Capacitor): в проде указать URL бэка. В dev — через proxy vite.
-const BASE = '';
+// База для запросов. Web-PWA: оставляем '' → относительные /api/* (Vite-proxy / same-origin).
+// Capacitor: собираем с PUBLIC_API_URL=https://домен.ru (абсолютный URL бэка).
+const BASE = import.meta.env.PUBLIC_API_URL ?? '';
 
 export async function mobileApi<T>(path: string, init?: RequestInit): Promise<T> {
 	const token = getToken();

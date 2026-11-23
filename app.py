@@ -35,7 +35,15 @@ from routers.users import users_router
 load_dotenv()
 session_config = CookieBackendConfig(secret=SECRET_KEY.encode())
 
-cors_config = CORSConfig(allow_origins=["http://localhost:5174"], allow_credentials=True)
+cors_config = CORSConfig(
+    allow_origins=[
+        "http://localhost:5174",   # dev (Vite)
+        "http://localhost",        # Capacitor Android (по умолчанию)
+        "https://localhost",       # Capacitor Android (androidScheme: 'https')
+        "capacitor://localhost",   # Capacitor iOS
+    ],
+    allow_credentials=True,
+)
 
 app = Litestar(
     route_handlers=[

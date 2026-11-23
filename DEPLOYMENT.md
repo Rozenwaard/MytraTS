@@ -154,16 +154,17 @@ sudo a2enmod proxy proxy_http rewrite
     ProxyPassReverse /api http://127.0.0.1:8000/api
 
     # Svelte-приложение — статика (SPA). DocumentRoot на build/.
-    # SPA-fallback: не-файловые пути отдаём через index.html (клиентский роутинг).
     DocumentRoot /opt/mytra/frontend-svelte/build
     <Directory /opt/mytra/frontend-svelte/build>
         Options -Indexes
-        RewriteEngine On
-        RewriteBase /
-        RewriteCond %{REQUEST_FILENAME} !-f
-        RewriteCond %{REQUEST_FILENAME} !-d
-        RewriteRule ^ index.html [L]
     </Directory>
+
+    # SPA-fallback: не-файловые пути → index.html, но НЕ /api и НЕ существующие файлы (_app/*).
+    RewriteEngine On
+    RewriteCond %{REQUEST_URI} !^/api
+    RewriteCond %{REQUEST_FILENAME} !-f
+    RewriteCond %{REQUEST_FILENAME} !-d
+    RewriteRule ^ /index.html [L]
 </VirtualHost>
 ```
 ```bash
