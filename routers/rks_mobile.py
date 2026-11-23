@@ -22,7 +22,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from data.config import sand_session_factory
 from deps import get_current_user, require_auth
 from services.rks import (ALCOR_TITLE, DICT_KINDS, PHOTOS_DIR, STATUS_ASSIGNED,
-                          STATUS_CREATED, STATUS_DONE, STATUS_IN_WORK, STATUS_MP)
+                          STATUS_CREATED, STATUS_DONE, STATUS_IN_WORK, STATUS_MP,
+                          resolve_short)
 
 ADMIN_ROLES = ("администратор", "специалист")
 
@@ -208,7 +209,7 @@ async def api_m_sync(request: Request, db_session: AsyncSession) -> Response:
         "meter_serial": r["meter_serial"], "meter_model": r["meter_model"],
         "contract_number": r["contract_number"], "fl_yul": r["fl_yul"],
         "letter_number": r["letter_number"], "note": r["note"],
-        "norm": base_by_short.get(r["work_type"], 0),
+        "norm": base_by_short.get(resolve_short(r["work_type"], r["task_type"], r["phase"]), 0),
     } for r in rows]
 
     return Response(content=json.dumps(
