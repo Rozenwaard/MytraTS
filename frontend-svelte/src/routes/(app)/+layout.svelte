@@ -22,6 +22,7 @@
 			if (item.href === '/reports') return user?.role === 'администратор';
 			if (item.href === '/admin') return user?.role === 'администратор';
 			if (item.href === '/ulr') return user?.role === 'администратор' || user?.role === 'специалист';
+			if (item.href === '/rks') return user?.role === 'администратор' || user?.role === 'специалист';
 			return true;
 		})
 	);

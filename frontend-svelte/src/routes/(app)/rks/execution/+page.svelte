@@ -1,0 +1,683 @@
+<script lang="ts">
+	import { createQuery } from '@tanstack/svelte-query';
+	import { toStore, fromStore } from 'svelte/store';
+	import { queryClient } from '$lib/query';
+	import { fetchRksExecution, updateRksExecution, createRksReestr, resetRksReestr, changeRksTaskReport, changeRksDueDate, fetchRksOptions, fetchObjectPoints, addPoint, removeControl, assignmentLabel, type RksTask, type RksOptions, type ObjectPoint } from '$lib/api/rks';
+	import {
+		Table,
+		TableBody,
+		TableCell,
+		TableHead,
+		TableHeader,
+		TableRow
+	} from '$lib/components/ui/table';
+	import { Skeleton } from '$lib/components/ui/skeleton';
+	import { Button } from '$lib/components/ui/button';
+	import { Input } from '$lib/components/ui/input';
+	import { toast } from '$lib/store/toast.svelte';
+	import { auth } from '$lib/store/auth.svelte';
+	import { copyText } from '$lib/clipboard';
+	import Coins from '@lucide/svelte/icons/coins';
+	import ListChecks from '@lucide/svelte/icons/list-checks';
+	import Trash2 from '@lucide/svelte/icons/trash-2';
+	import CalendarDays from '@lucide/svelte/icons/calendar-days';
+	import ChevronLeft from '@lucide/svelte/icons/chevron-left';
+	import ChevronRight from '@lucide/svelte/icons/chevron-right';
+	import ChevronsLeft from '@lucide/svelte/icons/chevrons-left';
+	import ChevronsRight from '@lucide/svelte/icons/chevrons-right';
+	import Search from '@lucide/svelte/icons/search';
+	import Plus from '@lucide/svelte/icons/plus';
+	import Ban from '@lucide/svelte/icons/ban';
+	import type { Component } from 'svelte';
+
+	const HEADER_ICONS: Partial<Record<keyof RksTask, Component>> = {
+		reestr_number: ListChecks,
+		norm: Coins
+	};
+
+	const COLUMNS: { key: keyof RksTask; header: string; width: string }[] = [
+		{ key: 'customer', header: 'Заказчик', width: 'w-16' },
+		{ key: 'work_type_in_task', header: 'Поручение', width: 'w-48' },
+		{ key: 'due_date', header: 'Завершить', width: 'w-24' },
+		{ key: 'subscriber_name', header: 'Потребитель', width: 'w-56' },
+		{ key: 'address', header: 'Адрес', width: 'w-80' },
+		{ key: 'status', header: 'Статус задания', width: 'w-28' },
+		{ key: 'reestr_number', header: 'Реестр', width: 'w-10' },
+		{ key: 'norm', header: 'Норматив', width: 'w-12' }
+	];
+
+	type FieldDef = {
+		key: keyof RksTask;
+		label: string;
+		edit?: 'executor' | 'work' | 'date' | 'co' | 'checkbox';
+		value?: (row: RksTask) => string | null;
+	};
+
+	const GROUPS: { title: string; fields: FieldDef[] }[] = [
+		{
+			title: 'Задание',
+			fields: [
+				{ key: 'task_number', label: 'Номер задания' },
+				{ key: 'created_at', label: 'Создано' },
+				{ key: 'visit_reason', label: 'Основание' },
+				{ key: 'task_type', label: 'Вид задания' },
+				{ key: 'grid', label: 'Сеть' }
+			]
+		},
+		{
+			title: 'Потребитель',
+			fields: [
+				{ key: 'subscriber_type', label: 'Тип потребителя' },
+				{ key: 'contract_status', label: 'Тариф' },
+				{ key: 'service_object_type', label: 'Объект' },
+				{ key: 'personal_account', label: 'Номер ЭО', value: (row) => (row.personal_account ? row.personal_account.slice(0, -3) : null) },
+				{ key: 'meter_status', label: 'Номер ТУ' }
+			]
+		},
+		{
+			title: 'ПУ',
+			fields: [
+				{ key: 'meter_installation_place', label: 'Место ПУ' },
+				{ key: 'meter_model', label: 'Модель ПУ' },
+				{ key: 'meter_serial_number', label: 'Номер ПУ' },
+				{ key: 'meter_type', label: 'Тип ПУ' },
+				{ key: 'has_current_transformer', label: 'Подключение ПУ' }
+			]
+		},
+		{
+			title: 'Исполнение',
+			fields: [
+				{ key: 'done_day', label: 'Дата работ', edit: 'date' },
+				{ key: 'task_report', label: 'Вид работ', edit: 'work' },
+				{ key: 'violations', label: 'Составлен акт БУ', edit: 'checkbox' },
+				{ key: 'executor', label: 'Исполнитель', edit: 'executor' },
+				{ key: 'co_executor', label: 'Соисполнитель', edit: 'co' }
+			]
+		}
+	];
+
+	const query = createQuery<{ rows: RksTask[] }>(
+		toStore(() => ({
+			queryKey: ['rks-execution'],
+			queryFn: () => fetchRksExecution()
+		}))
+	);
+	const result = fromStore(query);
+	const rows = $derived(result.current.data?.rows ?? []);
+	const loading = $derived(result.current.isPending);
+
+	let sortKey = $state<keyof RksTask | null>(null);
+	let sortDesc = $state(false);
+
+	function setSort(key: keyof RksTask) {
+		if (sortKey === key) {
+			if (sortDesc) {
+				sortKey = null;
+				sortDesc = false;
+			} else {
+				sortDesc = true;
+			}
+		} else {
+			sortKey = key;
+			sortDesc = false;
+		}
+	}
+
+	function sortIndicator(key: keyof RksTask) {
+		if (sortKey !== key) return '';
+		return sortDesc ? ' ↓' : ' ↑';
+	}
+
+	function taskNumberValue(v: unknown): number {
+		if (v == null) return 0;
+		const n = parseInt(String(v).split('-')[0], 10);
+		return Number.isNaN(n) ? 0 : n;
+	}
+
+	let searchQuery = $state('');
+
+	const filteredRows = $derived.by(() => {
+		const q = searchQuery.trim().toLowerCase();
+		if (!q) return rows;
+		return rows.filter((r) => {
+			const reason = (r.visit_reason ?? '').toLowerCase();
+			const name = (r.subscriber_name ?? '').toLowerCase();
+			const address = (r.address ?? '').toLowerCase();
+			const eo = (r.personal_account ?? '').slice(0, -3).toLowerCase();
+			return reason.includes(q) || name.includes(q) || address.includes(q) || eo.includes(q);
+		});
+	});
+
+	const sortedRows = $derived.by(() => {
+		if (!sortKey) return filteredRows;
+		const key = sortKey;
+		const desc = sortDesc;
+		return [...filteredRows].sort((a, b) => {
+			const av = a[key];
+			const bv = b[key];
+			if (av == null && bv == null) return 0;
+			if (av == null) return 1;
+			if (bv == null) return -1;
+			const c = key === 'task_number'
+				? taskNumberValue(av) - taskNumberValue(bv)
+				: (typeof av === 'number' && typeof bv === 'number' ? av - bv : String(av).localeCompare(String(bv), 'ru'));
+			return desc ? -c : c;
+		});
+	});
+
+	const perPage = 50;
+	let page = $state(1);
+
+	const total = $derived(filteredRows.length);
+	const totalPages = $derived(Math.max(1, Math.ceil(total / perPage)));
+	const paginatedRows = $derived.by(() => {
+		const start = (page - 1) * perPage;
+		return sortedRows.slice(start, start + perPage);
+	});
+
+	$effect(() => {
+		if (page > totalPages) page = totalPages;
+	});
+
+	$effect(() => {
+		// при изменении поиска возвращаемся на первую страницу
+		void searchQuery;
+		page = 1;
+	});
+
+	function goToPage(p: number) {
+		if (p >= 1 && p <= totalPages) page = p;
+	}
+
+	function pageItems(current: number, total: number): (number | '…')[] {
+		if (total <= 1) return [1];
+		const neighbors = new Set<number>([1, total]);
+		for (let i = current - 2; i <= current + 2; i++) {
+			if (i >= 1 && i <= total) neighbors.add(i);
+		}
+		const sorted = [...neighbors].sort((a, b) => a - b);
+		const result: (number | '…')[] = [];
+		let prev = 0;
+		for (const n of sorted) {
+			if (n - prev > 1) result.push('…');
+			result.push(n);
+			prev = n;
+		}
+		return result;
+	}
+
+	const optionsQuery = createQuery<RksOptions>(
+		toStore(() => ({
+			queryKey: ['rks-options'],
+			queryFn: () => fetchRksOptions()
+		}))
+	);
+	const optionsResult = fromStore(optionsQuery);
+	const workTypes = $derived(optionsResult.current.data?.work_types ?? []);
+
+	const today = (() => {
+		const d = new Date();
+		return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+	})();
+
+	const tomorrow = (() => {
+		const d = new Date();
+		d.setDate(d.getDate() + 1);
+		return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+	})();
+
+	let expanded = $state<Set<string>>(new Set());
+	let selected = $state<Set<string>>(new Set());
+
+	const allSelected = $derived(rows.length > 0 && rows.every((r) => selected.has(r.task_number ?? '')));
+
+	function toggleExpanded(id: string) {
+		const next = new Set(expanded);
+		if (next.has(id)) next.delete(id);
+		else next.add(id);
+		expanded = next;
+	}
+
+	function toggleSelected(id: string) {
+		const next = new Set(selected);
+		if (next.has(id)) next.delete(id);
+		else next.add(id);
+		selected = next;
+	}
+
+	function toggleAll() {
+		if (allSelected) selected = new Set();
+		else selected = new Set(rows.map((r) => r.task_number ?? '').filter(Boolean));
+	}
+
+	const isLocked = (row: RksTask) => !!row.reestr_number;
+
+	async function save(
+		row: RksTask,
+		patch: Partial<Pick<RksTask, 'executor' | 'co_executor' | 'task_report' | 'done_day' | 'violations'>>
+	) {
+		try {
+			await updateRksExecution({
+				task_number: row.task_number ?? '',
+				executor: patch.executor !== undefined ? patch.executor : row.executor,
+				co_executor: patch.co_executor !== undefined ? patch.co_executor : row.co_executor,
+				task_report: patch.task_report !== undefined ? patch.task_report : row.task_report,
+				done_day: patch.done_day !== undefined ? patch.done_day : row.done_day,
+				violations: patch.violations !== undefined ? patch.violations : row.violations
+			});
+			await queryClient.invalidateQueries({ queryKey: ['rks-execution'] });
+		} catch (e) {
+			toast(e instanceof Error ? e.message : 'Ошибка сохранения');
+		}
+	}
+
+	async function createReestrs() {
+		const tns = rows.filter((r) => selected.has(r.task_number ?? '')).map((r) => r.task_number ?? '');
+		if (tns.length === 0) return;
+		try {
+			const res = await createRksReestr(tns);
+			toast(`В реестр добавлено: ${res.reestrs.length} групп${res.skipped ? ` (пропущено ${res.skipped})` : ''}`);
+			selected = new Set();
+			await queryClient.invalidateQueries({ queryKey: ['rks-execution'] });
+		} catch (e) {
+			toast(e instanceof Error ? e.message : 'Ошибка создания реестра');
+		}
+	}
+
+	let reportChoice = $state<Record<string, string>>({});
+	const isAdmin = $derived(auth.user?.role === 'администратор');
+
+	function workTypesForCustomer(customer: string | null) {
+		return workTypes.filter((w) => w.customer === customer).map((w) => w.short);
+	}
+
+	function cellTitle(row: RksTask, key: keyof RksTask): string {
+		if (key === 'work_type_in_task') return assignmentLabel(row.work_type_in_task);
+		const v = row[key];
+		return v == null ? '' : String(v);
+	}
+
+	async function resetReestr(row: RksTask) {
+		try {
+			await resetRksReestr([row.task_number ?? '']);
+			await queryClient.invalidateQueries({ queryKey: ['rks-execution'] });
+		} catch (e) {
+			toast(e instanceof Error ? e.message : 'Ошибка удаления из реестра');
+		}
+	}
+
+	async function changeReport(row: RksTask) {
+		const value = reportChoice[row.task_number ?? ''] ?? '';
+		if (!value) return;
+		try {
+			await changeRksTaskReport(row.task_number ?? '', value);
+			reportChoice[row.task_number ?? ''] = '';
+			await queryClient.invalidateQueries({ queryKey: ['rks-execution'] });
+		} catch (e) {
+			toast(e instanceof Error ? e.message : 'Ошибка замены вида работ');
+		}
+	}
+
+	let dueDateDialogOpen = $state(false);
+	let dueDateValue = $state('');
+	let dueDateBusy = $state(false);
+
+	function openDueDateDialog() {
+		dueDateValue = '';
+		dueDateDialogOpen = true;
+	}
+
+	async function submitDueDate() {
+		if (!dueDateValue) return;
+		if (dueDateValue < tomorrow) {
+			toast('Дата должна быть в будущем');
+			return;
+		}
+		const tns = rows.filter((r) => selected.has(r.task_number ?? '')).map((r) => r.task_number ?? '');
+		if (tns.length === 0) return;
+		dueDateBusy = true;
+		try {
+			await changeRksDueDate(tns, dueDateValue);
+			toast(`Плановая дата обновлена для ${tns.length} строк`);
+			selected = new Set();
+			dueDateDialogOpen = false;
+			await queryClient.invalidateQueries({ queryKey: ['rks-execution'] });
+		} catch (e) {
+			toast(e instanceof Error ? e.message : 'Ошибка изменения даты');
+		} finally {
+			dueDateBusy = false;
+		}
+	}
+
+	let addPointOpen = $state(false);
+	let addPointTask = $state('');
+	let addPointOptions = $state<ObjectPoint[]>([]);
+	let addPointSelected = $state('');
+	let addPointLoading = $state(false);
+	let addPointBusy = $state(false);
+
+	const addPointHasSelectable = $derived(addPointOptions.some((p) => !p.active_task));
+
+	async function openAddPoint(row: RksTask) {
+		addPointTask = row.task_number ?? '';
+		addPointOptions = [];
+		addPointSelected = '';
+		addPointOpen = true;
+		addPointLoading = true;
+		try {
+			const res = await fetchObjectPoints(addPointTask);
+			addPointOptions = res.points;
+		} catch (e) {
+			toast(e instanceof Error ? e.message : 'Ошибка загрузки точек');
+			addPointOpen = false;
+		} finally {
+			addPointLoading = false;
+		}
+	}
+
+	function closeAddPoint() {
+		addPointOpen = false;
+		addPointTask = '';
+		addPointOptions = [];
+		addPointSelected = '';
+	}
+
+	async function submitAddPoint() {
+		if (!addPointSelected) return;
+		addPointBusy = true;
+		try {
+			await addPoint(addPointTask, addPointSelected);
+			toast('Точка добавлена');
+			addPointOpen = false;
+			addPointTask = '';
+			addPointOptions = [];
+			addPointSelected = '';
+			sortKey = 'task_number';
+			sortDesc = true;
+			await queryClient.invalidateQueries({ queryKey: ['rks-execution'] });
+		} catch (e) {
+			toast(e instanceof Error ? e.message : 'Ошибка добавления точки');
+		} finally {
+			addPointBusy = false;
+		}
+	}
+
+	async function handleRemoveControl(row: RksTask) {
+		try {
+			await removeControl(row.task_number ?? '');
+			toast('Снято с контроля');
+			await queryClient.invalidateQueries({ queryKey: ['rks-execution'] });
+		} catch (e) {
+			toast(e instanceof Error ? e.message : 'Ошибка снятия с контроля');
+		}
+	}
+</script>
+
+<div class="flex h-full flex-col p-4">
+	<div class="mb-3 flex items-center justify-between gap-3">
+		<div class="flex items-center gap-2">
+			<div class="relative w-[300px]">
+				<Search class="pointer-events-none absolute left-2.5 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
+				<Input bind:value={searchQuery} placeholder="Основание, Потребитель, Адрес, №ЭО" class="bg-background pl-8" />
+			</div>
+			<Button variant="outline" size="sm" disabled={!searchQuery} onclick={() => (searchQuery = '')}>
+				Сбросить
+			</Button>
+		</div>
+		<div class="flex items-center gap-2">
+			<Button variant="outline" size="sm" disabled={selected.size === 0} onclick={openDueDateDialog}>
+				<CalendarDays class="size-4" />
+				Изменить плановую дату
+			</Button>
+			<Button variant="default" size="sm" disabled={selected.size === 0} onclick={createReestrs}>
+				<ListChecks class="size-4" />
+				В реестр
+			</Button>
+		</div>
+	</div>
+	<div class="flex min-h-0 flex-1 flex-col overflow-hidden rounded-md border bg-card">
+		<Table class="table-fixed" containerClass="min-h-0 flex-1 overflow-auto">
+			<TableHeader>
+				<TableRow class="hover:bg-transparent">
+					<TableHead class="sticky top-0 z-10 w-8 bg-muted text-center">
+						<input type="checkbox" class="size-4 cursor-pointer accent-primary" checked={allSelected} onchange={toggleAll} />
+					</TableHead>
+					{#each COLUMNS as col (col.key)}
+						{@const Icon = HEADER_ICONS[col.key]}
+						<TableHead class="sticky top-0 z-10 cursor-pointer select-none truncate bg-muted text-center {col.width}" onclick={() => setSort(col.key)}>
+							{#if Icon}
+								<span class="inline-flex items-center justify-center" title={col.header}><Icon class="size-4" /></span>
+							{:else}
+								{col.header}
+							{/if}
+							{sortIndicator(col.key)}
+						</TableHead>
+					{/each}
+				</TableRow>
+			</TableHeader>
+			<TableBody>
+				{#if loading}
+					{#each Array(6) as _}
+						<TableRow>
+							<TableCell><Skeleton class="h-4 w-4" /></TableCell>
+							{#each COLUMNS as _}
+								<TableCell><Skeleton class="h-4 w-full" /></TableCell>
+							{/each}
+						</TableRow>
+					{/each}
+				{:else if rows.length === 0}
+					<TableRow>
+						<TableCell colspan={COLUMNS.length + 1} class="h-24 text-center text-muted-foreground">
+							Нет данных
+						</TableCell>
+					</TableRow>
+				{:else}
+					{#each paginatedRows as row (row.task_number)}
+						{@const id = row.task_number ?? ''}
+						<TableRow
+							class="cursor-pointer"
+							title="ПКМ — скопировать номер задания"
+							onclick={() => toggleExpanded(id)}
+							oncontextmenu={(e) => {
+								e.preventDefault();
+								copyText(id);
+							}}
+						>
+							<TableCell class="w-8 text-center" onclick={(e) => e.stopPropagation()}>
+								<input type="checkbox" class="size-4 cursor-pointer accent-primary" checked={selected.has(id)} onchange={() => toggleSelected(id)} />
+							</TableCell>
+							{#each COLUMNS as col (col.key)}
+								<TableCell class={`truncate text-sm ${col.width}${col.key === 'norm' ? ' text-center' : ''}`} title={cellTitle(row, col.key)}>
+									{#if col.key === 'reestr_number'}
+										{#if row.reestr_number === 'Отклонён'}
+											<span class="font-bold text-brand-reestr-rejected">Р</span>
+										{:else if row.reestr_number}
+											<span class="font-bold text-brand-brown">Р</span>
+										{:else}
+											-
+										{/if}
+									{:else if col.key === 'work_type_in_task'}
+										{assignmentLabel(row.work_type_in_task)}
+									{:else}
+										{row[col.key] ?? ''}
+									{/if}
+								</TableCell>
+							{/each}
+						</TableRow>
+						{#if expanded.has(id)}
+							<TableRow class="bg-muted hover:bg-muted">
+								<TableCell colspan={COLUMNS.length + 1}>
+									<div class="grid grid-cols-1 gap-x-6 gap-y-4 py-2 sm:grid-cols-2 lg:grid-cols-4">
+										{#each GROUPS as group (group.title)}
+											<div class="space-y-2">
+												{#each group.fields as f (f.label)}
+													<div class="text-sm">
+														{#if f.edit === 'checkbox'}
+															<label class="flex items-center gap-1.5">
+																<input type="checkbox" class="size-4 cursor-pointer accent-primary" checked={row.violations === 'Да'} disabled={isLocked(row)} onchange={(e) => save(row, { violations: (e.currentTarget as HTMLInputElement).checked ? 'Да' : 'Нет' })} />
+																<span class="text-muted-foreground">{f.label}</span>
+															</label>
+														{:else if f.edit === 'executor'}
+															<span class="text-muted-foreground">{f.label}:</span>{' '}
+															<select class="h-8 min-w-44 rounded-md border border-input bg-transparent px-2 text-sm outline-none focus-visible:border-ring" disabled={isLocked(row)} value={row.executor ?? ''} onchange={(e) => save(row, { executor: (e.currentTarget as HTMLSelectElement).value || null })}>
+																<option value="">—</option>
+																{#each row.executor_options ?? [] as n (n)}
+																	<option value={n}>{n}</option>
+																{/each}
+															</select>
+														{:else if f.edit === 'work'}
+															<span class="text-muted-foreground">{f.label}:</span>{' '}
+															<select class="h-8 min-w-44 rounded-md border border-input bg-transparent px-2 text-sm outline-none focus-visible:border-ring" disabled={isLocked(row)} value={row.task_report ?? ''} onchange={(e) => save(row, { task_report: (e.currentTarget as HTMLSelectElement).value || null })}>
+																<option value="">—</option>
+																{#each row.work_type_options ?? [] as o (o.short)}
+																	<option value={o.short ?? ''}>{o.short}</option>
+																{/each}
+															</select>
+														{:else if f.edit === 'date'}
+															<span class="text-muted-foreground">{f.label}:</span>{' '}
+															<input type="date" max={today} class="h-8 rounded-md border border-input bg-transparent px-2 text-sm outline-none focus-visible:border-ring" value={row.done_day ?? ''} disabled={isLocked(row) || row.task_report === 'Без исполнения'} onchange={(e) => save(row, { done_day: (e.currentTarget as HTMLInputElement).value || null })} />
+														{:else if f.edit === 'co'}
+															{#if row.co_executor_required}
+																<span class="text-muted-foreground">{f.label}:</span>{' '}
+																<select class="h-8 min-w-44 rounded-md border border-input bg-transparent px-2 text-sm outline-none focus-visible:border-ring" disabled={isLocked(row)} value={row.co_executor ?? ''} onchange={(e) => save(row, { co_executor: (e.currentTarget as HTMLSelectElement).value || null })}>
+																	<option value="">—</option>
+																	{#each (row.executor_options ?? []).filter((n) => n !== row.executor) as n (n)}
+																		<option value={n}>{n}</option>
+																	{/each}
+																</select>
+															{/if}
+														{:else}
+															<span class="text-muted-foreground">{f.label}:</span>{' '}
+															<span>{f.value ? f.value(row) : (row[f.key] || '-')}</span>
+														{/if}
+													</div>
+												{/each}
+											</div>
+										{/each}
+									</div>
+									<div class="mt-3 flex flex-wrap items-center gap-2 border-t pt-3">
+										{#if row.reestr_number && row.reestr_number !== 'Отклонён'}
+											<Button size="sm" variant="destructive" onclick={() => resetReestr(row)}>
+												<Trash2 class="size-4" />
+												Удалить из реестра
+											</Button>
+										{/if}
+										{#if isAdmin}
+											<select
+												class="h-8 rounded-md border border-input bg-transparent px-2 text-sm outline-none focus-visible:border-ring"
+												value={reportChoice[id] ?? ''}
+												onchange={(e) => (reportChoice[id] = (e.currentTarget as HTMLSelectElement).value)}
+											>
+												<option value="" disabled>Заменить вид работ</option>
+												{#each workTypesForCustomer(row.customer) as w (w)}
+													<option value={w}>{w}</option>
+												{/each}
+											</select>
+											<Button size="sm" variant="default" disabled={!reportChoice[id]} onclick={() => changeReport(row)}>
+												Заменить
+											</Button>
+										{/if}
+									<Button variant="outline" size="sm" onclick={() => openAddPoint(row)}>
+										<Plus class="size-4" />
+										Добавить точку
+									</Button>
+									{#if row.work_type_in_task === 'КРО'}
+										<Button size="sm" class="bg-brand-brown text-white hover:bg-brand-brown/80" onclick={() => handleRemoveControl(row)}>
+											<Ban class="size-4" />
+											Снять с контроля
+										</Button>
+									{/if}
+									</div>
+								</TableCell>
+							</TableRow>
+						{/if}
+					{/each}
+				{/if}
+			</TableBody>
+		</Table>
+	</div>
+
+	<div class="flex items-center justify-between gap-3 pt-3">
+		<span class="text-sm text-muted-foreground">
+			Всего: {total.toLocaleString('ru-RU')}
+			{#if selected.size > 0}
+				· Выбрано: {selected.size}
+			{/if}
+		</span>
+		<div class="flex flex-wrap items-center gap-1">
+			<Button variant="outline" size="sm" disabled={page <= 1} onclick={() => goToPage(1)} aria-label="Первая страница">
+				<ChevronsLeft class="size-4" />
+			</Button>
+			<Button variant="outline" size="sm" disabled={page <= 1} onclick={() => goToPage(page - 1)} aria-label="Назад">
+				<ChevronLeft class="size-4" />
+			</Button>
+			{#each pageItems(page, totalPages) as item, i (i)}
+				{#if item === '…'}
+					<span class="px-1 text-sm text-muted-foreground">…</span>
+				{:else}
+					<Button variant={item === page ? 'default' : 'outline'} size="sm" onclick={() => goToPage(item)}>
+						{item}
+					</Button>
+				{/if}
+			{/each}
+			<Button variant="outline" size="sm" disabled={page >= totalPages} onclick={() => goToPage(page + 1)} aria-label="Вперёд">
+				<ChevronRight class="size-4" />
+			</Button>
+			<Button variant="outline" size="sm" disabled={page >= totalPages} onclick={() => goToPage(totalPages)} aria-label="Последняя страница">
+				<ChevronsRight class="size-4" />
+			</Button>
+		</div>
+	</div>
+</div>
+
+{#if dueDateDialogOpen}
+	<button type="button" class="fixed inset-0 z-40 bg-black/50" aria-label="Закрыть" onclick={() => (dueDateDialogOpen = false)}></button>
+	<div class="pointer-events-none fixed inset-0 z-50 flex items-center justify-center p-4">
+		<div class="pointer-events-auto w-full max-w-md rounded-lg border bg-card p-6 shadow-lg" role="dialog" aria-modal="true" tabindex="-1">
+			<h2 class="text-lg font-semibold">Изменить плановую дату</h2>
+			<p class="mt-2 text-sm text-muted-foreground">
+				Новая плановая дата будет установлена для выбранных строк ({selected.size}).
+			</p>
+			<div class="mt-4">
+				<label class="text-sm font-medium" for="ulr-due-date-change">Дата</label>
+				<Input id="ulr-due-date-change" type="date" min={tomorrow} bind:value={dueDateValue} class="mt-1" />
+			</div>
+			<div class="mt-6 flex justify-end gap-4">
+				<Button variant="outline" size="sm" onclick={() => (dueDateDialogOpen = false)} disabled={dueDateBusy}>Отмена</Button>
+				<Button size="sm" onclick={submitDueDate} disabled={dueDateBusy || !dueDateValue}>{dueDateBusy ? 'Сохраняем…' : 'Сохранить'}</Button>
+			</div>
+		</div>
+	</div>
+{/if}
+
+{#if addPointOpen}
+	<button type="button" class="fixed inset-0 z-40 bg-black/50" aria-label="Закрыть" onclick={closeAddPoint}></button>
+	<div class="pointer-events-none fixed inset-0 z-50 flex items-center justify-center p-4">
+		<div class="pointer-events-auto w-full max-w-md rounded-lg border bg-card p-6 shadow-lg" role="dialog" aria-modal="true" tabindex="-1">
+			<h2 class="text-lg font-semibold">Добавить точку</h2>
+			{#if addPointLoading}
+				<p class="mt-2 text-sm text-muted-foreground">Загрузка…</p>
+			{:else}
+				{#if addPointOptions.length > 0}
+					<select class="mt-3 h-9 w-full rounded-md border border-input bg-background px-2 text-sm outline-none focus-visible:border-ring" bind:value={addPointSelected}>
+						<option value="" disabled>— выберите точку —</option>
+						{#each addPointOptions as p (p.tu_id)}
+							<option value={p.tu_id} disabled={!!p.active_task}>
+								{p.tu_number}{p.active_task ? ` (задание ${p.active_task})` : ''}
+							</option>
+						{/each}
+					</select>
+				{/if}
+				{#if !addPointHasSelectable}
+					<p class="mt-3 text-sm text-muted-foreground">Нет доступных точек</p>
+				{/if}
+			{/if}
+			<div class="mt-6 flex justify-end gap-4">
+				<Button variant="outline" size="sm" onclick={closeAddPoint} disabled={addPointBusy}>Отмена</Button>
+				<Button size="sm" onclick={submitAddPoint} disabled={addPointBusy || !addPointSelected}>
+					{addPointBusy ? 'Добавляем…' : 'Добавить'}
+				</Button>
+			</div>
+		</div>
+	</div>
+{/if}
