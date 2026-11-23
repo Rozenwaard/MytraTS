@@ -8,12 +8,14 @@
 		report,
 		dicts,
 		workType = '',
+		onPhoto = () => {},
 		onClose = () => {}
 	}: {
 		panel: string | null;
 		report: Record<string, any>;
 		dicts: MobileDicts | null;
 		workType?: string;
+		onPhoto?: () => void;
 		onClose?: () => void;
 	} = $props();
 
@@ -77,6 +79,7 @@
 						<input type="checkbox" checked={report.additional_works.includes('Допуск ПУ')} onchange={() => toggleWork('Допуск ПУ')} />
 						Допуск нового ПУ
 					</label>
+					<Button variant="outline" class="w-full" onclick={onPhoto}>📷 Фото счётчика</Button>
 				</div>
 			{:else if panel === 'seals'}
 				<h2 class="mb-2 text-sm font-semibold">Пломбы</h2>
@@ -91,6 +94,7 @@
 						<input type="checkbox" checked={report.seal_installed === 'да'} onchange={() => (report.seal_installed = report.seal_installed === 'да' ? '' : 'да')} />
 						Пломба установлена при проверке
 					</label>
+					<Button variant="outline" class="w-full" onclick={onPhoto}>📷 Фото пломбы</Button>
 				</div>
 			{:else if panel === 'contract'}
 				<h2 class="mb-2 text-sm font-semibold">Соответствие ПУ и ТУ</h2>
@@ -108,6 +112,7 @@
 					<div><label class="text-xs">T2</label><Input bind:value={report.t2} /></div>
 					<div><label class="text-xs">T3</label><Input bind:value={report.t3} /></div>
 				</div>
+				<Button variant="outline" class="mt-2 w-full" onclick={onPhoto}>📷 Фото показаний</Button>
 			{:else if panel === 'status'}
 				<h2 class="mb-2 text-sm font-semibold">Статус учёта</h2>
 				<div class="mb-2 flex gap-2">

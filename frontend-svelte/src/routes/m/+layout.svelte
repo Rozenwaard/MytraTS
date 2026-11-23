@@ -3,12 +3,14 @@
 	import { browser } from '$app/environment';
 	import { page } from '$app/state';
 	import { clearMobileAuth, loadMobileAuth, mobileAuth } from '$lib/mobile/auth.svelte';
+	import { setupAutoFlush } from '$lib/mobile/queue';
 
 	let { children } = $props();
 	const isLogin = $derived(page.url.pathname === '/m/login');
 
 	$effect(() => {
 		if (!browser) return;
+		setupAutoFlush();
 		loadMobileAuth();
 		if (!mobileAuth.token && !isLogin) goto('/m/login');
 		else if (mobileAuth.token && isLogin) goto('/m/tasks');

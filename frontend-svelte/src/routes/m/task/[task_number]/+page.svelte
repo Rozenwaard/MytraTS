@@ -7,8 +7,11 @@
 	import type { MobileDicts, MobileTask, SyncResponse } from '$lib/mobile/types';
 	import Tile from '$lib/components/mobile/tile.svelte';
 	import Panels from '$lib/components/mobile/panels.svelte';
+	import { takePhoto, type TakenPhoto } from '$lib/mobile/photo';
+	import { getPosition } from '$lib/mobile/geo';
+	import { enqueueReport } from '$lib/mobile/queue';
 
-	const taskNumber = $derived(page.params.task_number);
+	const taskNumber = $derived(page.params.task_number ?? '');
 
 	let task = $state<MobileTask | null>(null);
 	let dicts = $state<MobileDicts | null>(null);
@@ -17,6 +20,8 @@
 	let panel = $state<string | null>(null);
 	let error = $state('');
 	let submitting = $state(false);
+	let clientOpId = $state('');
+	let photos = $state<TakenPhoto[]>([]);
 
 	const report = $state<Record<string, any>>({
 		object_detected: 'да', object_present: 'да', object_in_operation: 'да',
@@ -48,6 +53,7 @@
 			return;
 		}
 		loadMobileAuth();
+		clientOpId = crypto.randomUUID();
 		try {
 			applySync(await mobileApi<SyncResponse>('/api/m/1/sync'));
 		} catch {
@@ -73,6 +79,15 @@
 	}
 	function removeWork(code: string) {
 		report.additional_works = report.additional_works.filter((c: string) => c !== code);
+	}
+
+	async function addPhoto() {
+		try {
+			const p = await takePhoto(clientOpId, taskNumber);
+			if (p) photos = [...photos, p];
+		} catch (err) {
+			error = err instanceof Error ? err.message : 'Ошибка фото';
+		}
 	}
 
 	function resolveResult(): string {
@@ -103,25 +118,33 @@
 	async function submit() {
 		submitting = true;
 		error = '';
+		const result = resolveResult();
+		const geo = await getPosition();
+		const payload = {
+			...report,
+			...(geo ? { lat: geo.lat, lng: geo.lng, satellites: geo.satellites, is_mock: geo.is_mock } : {}),
+			additional_works: JSON.stringify(report.additional_works),
+			result,
+			acts: resolveAct(),
+			status: result === 'успешно' ? 'выполнено' : 'в работе',
+			task_report: workType,
+			done_day: new Date().toISOString().slice(0, 10),
+			client_op_id: clientOpId,
+			task_number: taskNumber
+		};
 		try {
-			const result = resolveResult();
-			const payload = {
-				...report,
-				additional_works: JSON.stringify(report.additional_works),
-				result,
-				acts: resolveAct(),
-				status: result === 'успешно' ? 'выполнено' : 'в работе',
-				task_report: workType,
-				done_day: new Date().toISOString().slice(0, 10),
-				client_op_id: crypto.randomUUID(),
-				task_number: taskNumber
-			};
 			await mobileApi('/api/m/1/reports', { method: 'POST', body: JSON.stringify(payload) });
 			await goto('/m/tasks');
 		} catch (err) {
-			error = err instanceof MobileApiError ? err.message : 'Ошибка отправки';
-		} finally {
-			submitting = false;
+			if (err instanceof MobileApiError) {
+				error = err.message;
+				submitting = false;
+			} else {
+				// сетевая ошибка — сохраняем в офлайн-очередь
+				await enqueueReport(payload);
+				submitting = false;
+				await goto('/m/tasks');
+			}
 		}
 	}
 </script>
@@ -185,6 +208,22 @@
 			</div>
 
 			<div class="mb-3">
+				<div class="mb-1 flex items-center justify-between">
+					<span class="text-sm font-semibold">Фото ({photos.length})</span>
+					<button onclick={addPhoto} class="text-sm text-primary">+ Добавить</button>
+				</div>
+				{#if photos.length}
+					<div class="grid grid-cols-3 gap-2">
+						{#each photos as p (p.sha256)}
+							<img src={p.url} alt="фото" class="h-20 w-full rounded-md object-cover" />
+						{/each}
+					</div>
+				{:else}
+					<p class="text-xs text-muted-foreground">Фото не добавлены</p>
+				{/if}
+			</div>
+
+			<div class="mb-3">
 				<label class="text-sm font-medium" for="comment">Комментарий</label>
 				<textarea id="comment" bind:value={report.comment} class="mt-1 w-full rounded-md border p-2 text-sm"></textarea>
 			</div>
@@ -197,4 +236,4 @@
 	{/if}
 {/if}
 
-<Panels {panel} {report} {dicts} {workType} onClose={() => (panel = null)} />
+<Panels {panel} {report} {dicts} {workType} onPhoto={addPhoto} onClose={() => (panel = null)} />

@@ -3,6 +3,7 @@
 	import { onMount } from 'svelte';
 	import { getToken } from '$lib/mobile/auth.svelte';
 	import { mobileApi, MobileApiError } from '$lib/mobile/client';
+	import { flushQueue } from '$lib/mobile/queue';
 	import type { MobileTask, SyncResponse } from '$lib/mobile/types';
 
 	let tasks = $state<MobileTask[]>([]);
@@ -37,6 +38,7 @@
 			return;
 		}
 		load();
+		void flushQueue().then(() => load(false));
 	});
 
 	async function returnObjectNotFound(tn: string) {
