@@ -10,6 +10,7 @@
 	import { takePhoto, type TakenPhoto } from '$lib/mobile/photo';
 	import { getPosition } from '$lib/mobile/geo';
 	import { enqueueReport } from '$lib/mobile/queue';
+	import { resolveShort } from '$lib/mobile/norm';
 
 	const taskNumber = $derived(page.params.task_number ?? '');
 
@@ -22,12 +23,14 @@
 	let submitting = $state(false);
 	let clientOpId = $state('');
 	let photos = $state<TakenPhoto[]>([]);
+	let baseWorks = $state<{ short: string; norm: number }[]>([]);
+	let models = $state<{ model: string; phase: string }[]>([]);
 
 	const report = $state<Record<string, any>>({
 		object_detected: 'да', object_present: 'да', object_in_operation: 'да',
 		object_purpose: 'Бытовое', is_connected: 'да', connected_to_mkd: 'нет',
 		inspection_admitted: 'да', network_object_type: '', network_object_name: '',
-		final_meter_status: '', meter_model: '', meter_type: '', meter_ownership: '',
+		final_meter_status: '', meter_model: '', meter_type: '', meter_ownership: '', phase: '',
 		meter_installation_place: '', meter_inspection_results: '', last_verification_date: '',
 		seals: '', seal_place: '', seal_type: '', seal_number: '', seal_installed: '',
 		new_vpu_installed: 'нет', t1: '', t2: '', t3: '', violations: '', violation_type: '',
@@ -39,7 +42,8 @@
 	const workType = $derived(task?.work_type ?? '');
 	const isRo = $derived(/проверк\s*ро/i.test(workType));
 	const isNotify = $derived(/уведомл/i.test(workType));
-	const baseNorm = $derived(task?.norm ?? 0);
+	const resolvedShort = $derived(resolveShort(task?.work_type ?? '', task?.task_type, report.phase));
+	const baseNorm = $derived(baseWorks.find((b) => b.short === resolvedShort)?.norm ?? 0);
 	const extraNorm = $derived(
 		(dicts?.additional_work ?? [])
 			.filter((w) => report.additional_works.includes(w.code) && w.kind !== 'replacement')
@@ -66,6 +70,8 @@
 	function applySync(data: SyncResponse) {
 		dicts = data.dicts;
 		alcor = data.alcor;
+		baseWorks = data.base_works;
+		models = data.models;
 		task = data.tasks.find((t) => t.task_number === taskNumber) ?? null;
 		if (!task) error = 'Задание не найдено';
 	}
@@ -236,4 +242,4 @@
 	{/if}
 {/if}
 
-<Panels {panel} {report} {dicts} {workType} onPhoto={addPhoto} onClose={() => (panel = null)} />
+<Panels {panel} {report} {dicts} {models} {workType} onPhoto={addPhoto} onClose={() => (panel = null)} />

@@ -7,6 +7,7 @@
 		panel,
 		report,
 		dicts,
+		models = [],
 		workType = '',
 		onPhoto = () => {},
 		onClose = () => {}
@@ -14,6 +15,7 @@
 		panel: string | null;
 		report: Record<string, any>;
 		dicts: MobileDicts | null;
+		models?: { model: string; phase: string }[];
 		workType?: string;
 		onPhoto?: () => void;
 		onClose?: () => void;
@@ -30,6 +32,21 @@
 	function toggleWork(code: string) {
 		if (report.additional_works.includes(code)) removeWork(code);
 		else addWork(code);
+	}
+
+	let modelQuery = $state('');
+	let showModels = $state(false);
+	const filteredModels = $derived(
+		modelQuery.length >= 2
+			? models.filter((m) => m.model.toLowerCase().includes(modelQuery.toLowerCase())).slice(0, 30)
+			: []
+	);
+
+	function selectModel(m: { model: string; phase: string }) {
+		report.meter_model = m.model;
+		report.phase = m.phase;
+		modelQuery = m.model;
+		showModels = false;
 	}
 
 	function close() {
@@ -62,7 +79,29 @@
 				<h2 class="mb-2 text-sm font-semibold">Прибор учёта</h2>
 				<div class="space-y-2">
 					<label class="text-xs font-medium">Модель</label>
-					<Input bind:value={report.meter_model} />
+					<Input
+						value={modelQuery}
+						oninput={(e) => {
+							modelQuery = (e.currentTarget as HTMLInputElement).value;
+							report.meter_model = modelQuery;
+							showModels = true;
+						}}
+						onfocus={() => (showModels = true)}
+						placeholder="Введите 2+ символа"
+					/>
+					{#if showModels && filteredModels.length}
+						<div class="max-h-40 overflow-y-auto rounded-md border">
+							{#each filteredModels as m (m.model)}
+								<button
+									type="button"
+									class="block w-full px-2 py-1 text-left text-sm hover:bg-accent"
+									onclick={() => selectModel(m)}
+								>
+									{m.model} <span class="text-xs text-muted-foreground">{m.phase}</span>
+								</button>
+							{/each}
+						</div>
+					{/if}
 					<label class="text-xs font-medium">Тип</label>
 					<Input bind:value={report.meter_type} />
 					<label class="text-xs font-medium">Балансовая принадлежность</label>

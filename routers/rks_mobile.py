@@ -201,6 +201,9 @@ async def api_m_sync(request: Request, db_session: AsyncSession) -> Response:
         item["norm"] = (row["norm"] or 0) if row else 0
         item["kind"] = row["kind"] if row else None
 
+    models = [{"model": r["meter_model"], "phase": r["phase"]} for r in (await db_session.execute(text(
+        "SELECT meter_model, phase FROM meter_model_phase ORDER BY meter_model"))).mappings().all()]
+
     tasks = [{
         "task_number": r["task_number"], "work_type": r["work_type"],
         "task_type": r["task_type"], "phase": r["phase"],
@@ -213,7 +216,10 @@ async def api_m_sync(request: Request, db_session: AsyncSession) -> Response:
     } for r in rows]
 
     return Response(content=json.dumps(
-        {"tasks": tasks, "dicts": dicts, "alcor": alcor}, ensure_ascii=False),
+        {"tasks": tasks, "dicts": dicts, "alcor": alcor,
+         "models": models,
+         "base_works": [{"short": k, "norm": v} for k, v in base_by_short.items()]},
+        ensure_ascii=False),
         media_type="application/json")
 
 

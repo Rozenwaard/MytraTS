@@ -17,6 +17,8 @@ export interface MobileDicts {
 export interface MobileTask {
 	task_number: string;
 	work_type: string;
+	task_type: string | null;
+	phase: string | null;
 	due_date: string | null;
 	status: string;
 	subscriber_name: string | null;
@@ -34,6 +36,8 @@ export interface SyncResponse {
 	tasks: MobileTask[];
 	dicts: MobileDicts;
 	alcor: number;
+	models: { model: string; phase: string }[];
+	base_works: { short: string; norm: number }[];
 }
 
 export interface EnrollResponse {
