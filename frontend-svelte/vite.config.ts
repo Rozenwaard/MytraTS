@@ -1,5 +1,5 @@
 import tailwindcss from '@tailwindcss/vite';
-import adapter from '@sveltejs/adapter-node';
+import adapter from '@sveltejs/adapter-static';
 import { sveltekit } from '@sveltejs/kit/vite';
 import { defineConfig } from 'vite';
 
@@ -12,10 +12,9 @@ export default defineConfig({
 				runes: ({ filename }) => filename.split(/[/\\]/).includes('node_modules') ? undefined : true
 			},
 
-			// Прод-сборка — Node-сервер (adapter-node): bun run build → build/index.js.
-			// adapter-auto не использован: на голом Debian/Ubuntu он не определяет среду
-			// (ищет Vercel/Netlify/Cloudflare) и пишет результат в .svelte-kit/output вместо build/.
-			adapter: adapter()
+			// SPA (ssr=false в корневом +layout.ts) → статический build/index.html.
+			// Нужен для Capacitor (нативный shell грузит статику) и раздачи статикой (Apache/nginx).
+			adapter: adapter({ fallback: 'index.html' })
 		})
 	],
 	server: {

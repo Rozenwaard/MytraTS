@@ -122,7 +122,7 @@
 		const geo = await getPosition();
 		const payload = {
 			...report,
-			...(geo ? { lat: geo.lat, lng: geo.lng, satellites: geo.satellites, is_mock: geo.is_mock } : {}),
+			...(geo ? { lat: geo.lat, lng: geo.lng, h3_res12: geo.h3_res12, satellites: geo.satellites, is_mock: geo.is_mock } : {}),
 			additional_works: JSON.stringify(report.additional_works),
 			result,
 			acts: resolveAct(),

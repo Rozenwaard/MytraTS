@@ -10,7 +10,11 @@ const config = {
 	appName: 'РКС',
 	webDir: 'build',
 	// server: { url: 'http://192.168.1.10:5174', cleartext: true },
-	plugins: {}
+	plugins: {
+		CapacitorGeolocation: {},
+		CapacitorCamera: {},
+		CapacitorPreferences: {}
+	}
 };
 
 export default config;

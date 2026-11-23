@@ -3,7 +3,7 @@
 ## Итоговая схема
 ```
 Браузер ──:80──▶ Apache2
-                   ├── /        → Node-сервер SvelteKit 127.0.0.1:3000 (frontend-svelte/build)
+                   ├── /        → статика SvelteKit (Apache раздаёт frontend-svelte/build)
                    └── /api/*   → uvicorn 127.0.0.1:8000 (бэкенд Litestar)
 ```
 - Бэкенд слушает только `127.0.0.1:8000`; наружу смотрит только Apache.
@@ -72,11 +72,11 @@ echo "SECRET_KEY=$(openssl rand -base64 24)" > .env
 - **Сборка — только свежим `bun`** (не yarn/npm). Свежий bun несёт собственный lightningcss,
   который понимает синтаксис Tailwind v4 (`--spacing()` и т.д.). На старом bun/Node сборка
   падает с `lightningcss … --spacing()` / «unsupported syntax».
-- **Прод-режим — это Node-сервер SvelteKit, а не статика.** В проекте явно подключён
-  `@sveltejs/adapter-node`: `bun run build` даёт `build/index.js`, который сам отдаёт
-  статику и роутинг (SSR). `adapter-auto` не использован — на голом Debian/Ubuntu он не
-  определяет среду (ищет Vercel/Netlify/Cloudflare) и пишет результат в `.svelte-kit/output/`
-  вместо `build/`. Apache должен проксировать `/` на этот сервер (не отдавать статикой).
+- **Прод-режим — статика (SPA), не Node-сервер.** Приложение и так SPA (`ssr = false`
+  в корневом `+layout.ts`), поэтому подключён `@sveltejs/adapter-static` с
+  `fallback: 'index.html'`: `bun run build` даёт статический `build/index.html` + ассеты.
+  Apache раздаёт их напрямую (DocumentRoot + SPA-fallback через `RewriteRule`), отдельный
+  Node-сервер не нужен. Это же нужно для Capacitor (нативный shell грузит статику).
 
 ### Требования
 
@@ -101,17 +101,10 @@ cd /opt/mytra/frontend-svelte && bun install && bun run dev
 
 ```bash
 cd /opt/mytra/frontend-svelte && bun install && bun run build
-# → build/ с build/index.js (Node-сервер SvelteKit)
+# → build/ со статическим index.html + ассетами (SPA)
 ```
 
-Запуск prod-сервера (порт по умолчанию 3000, переопределяется `PORT`):
-
-```bash
-cd /opt/mytra/frontend-svelte && PORT=3000 bun build/index.js
-# или: node build/index.js
-```
-
-В Apache проксируйте `/` на `127.0.0.1:3000`, а `/api` — на `127.0.0.1:8000` (готовый конфиг — §6).
+Node-сервер не нужен: Apache раздаёт `build/` как статику (§6), `/api` проксирует на `127.0.0.1:8000`.
 
 
 ## 5. systemd-сервис бэкенда
@@ -136,7 +129,7 @@ WantedBy=multi-user.target
 ```bash
 sudo useradd --system --home /opt/mytra --shell /usr/sbin/nologin mytra
 sudo chown -R mytra:mytra /opt/mytra
-sudo chmod -R o+rX /opt/mytra      # чтобы Node-сервер и Apache могли читать файлы
+sudo chmod -R o+rX /opt/mytra      # чтобы Apache мог читать файлы
 sudo systemctl daemon-reload
 sudo systemctl enable --now mytra
 sudo systemctl status mytra        # active (running)
@@ -144,7 +137,7 @@ sudo systemctl status mytra        # active (running)
 
 ## 6. Apache2
 ```bash
-sudo a2enmod proxy proxy_http
+sudo a2enmod proxy proxy_http rewrite
 ```
 Файл `/etc/apache2/sites-available/mytra.conf` (боевой конфиг, работает в локалке):
 ```apache
@@ -160,10 +153,17 @@ sudo a2enmod proxy proxy_http
     ProxyPass /api http://127.0.0.1:8000/api
     ProxyPassReverse /api http://127.0.0.1:8000/api
 
-    # Svelte-приложение (adapter-node) на 127.0.0.1:3000.
-    # Слеш на конце цели обязателен — иначе Apache срежет ведущий "/" пути.
-    ProxyPass / http://127.0.0.1:3000/
-    ProxyPassReverse / http://127.0.0.1:3000/
+    # Svelte-приложение — статика (SPA). DocumentRoot на build/.
+    # SPA-fallback: не-файловые пути отдаём через index.html (клиентский роутинг).
+    DocumentRoot /opt/mytra/frontend-svelte/build
+    <Directory /opt/mytra/frontend-svelte/build>
+        Options -Indexes
+        RewriteEngine On
+        RewriteBase /
+        RewriteCond %{REQUEST_FILENAME} !-f
+        RewriteCond %{REQUEST_FILENAME} !-d
+        RewriteRule ^ index.html [L]
+    </Directory>
 </VirtualHost>
 ```
 ```bash
@@ -198,14 +198,11 @@ sudo systemctl reload apache2
 - CORS в прод-режиме не участвует: фронт и API на одном origin. `CORSConfig` в `app.py`
   прописан только под dev-origin `http://localhost:5174`.
 
-### Svelte-фронт: Node-сервер
+### Svelte-фронт: статика (SPA)
 
-Сам Node-сервер запускается отдельно (dev — `bun run dev`, prod — `node build/index.js`).
-Запуск прод-сервера через `node` — каноничный рантайм `adapter-node` и самый надёжный: он
-собран под базовый x86-64 и не зависит от SSE4.2/AVX (которые маскировал «Common KVM processor»).
-`bun build/index.js` на host-CPU тоже работает, но `node` безопаснее. systemd-сервис по аналогии
-с `mytra.service` (§5): `WorkingDirectory=/opt/mytra/frontend-svelte`,
-`ExecStart=$(which node) build/index.js`, `Environment=PORT=3000`.
+Отдельного сервиса для фронта нет: Apache раздаёт `frontend-svelte/build/` как статику
+(dev — `bun run dev`). SPA-fallback через `RewriteRule` → `index.html` (см. §6), поэтому
+клиентский роутинг (`/dashboard`, `/main-afl`, …) работает без Node.
 
 ## 7. Файрвол и проверка
 ```bash
@@ -242,12 +239,12 @@ x86-64 и работают. Научные пакеты (`pyarrow`, `scipy`, `nu
 - Бинарники под AVX-512/x86-64-v4 не запустятся — не подключать без проверки.
 - Крах `CPU lacks AVX support`/`Illegal instruction` был из-за эмуляции «Common KVM processor»
   (маскирует SSE4.2/AVX), а не железа. **ВМ обязана работать на host-CPU** (или `host-passthrough`/`Haswell`).
-- `node build/index.js` не зависит от этих инструкций — прод-фронт безопаснее держать на `node`.
+- Прод-фронт — статика (Apache), Node-рантайм для него не нужен.
 
 ## Обновление
 Рекомендуемая команда обновления с GitHub (бэкенд + Svelte-фронт, оба сервиса):
 ```bash
-sudo systemctl stop mytra mytra-frontend && \
+sudo systemctl stop mytra && \
 sudo chown -R "$USER:" /opt/mytra && \
 cd /opt/mytra && git reset --hard origin/master && git pull && \
 uv sync --python-preference only-system && \
@@ -257,11 +254,11 @@ sudo chmod 750 /opt/mytra && \
 sudo chmod 600 /opt/mytra/.env && \
 sudo chmod 640 /opt/mytra/mytra.db /opt/mytra/story.db /opt/mytra/tickets.db /opt/mytra/sand.db && \
 sudo chmod -R o+rX /opt/mytra/frontend-svelte/build && \
-sudo systemctl start mytra mytra-frontend
+sudo systemctl start mytra
 ```
-- `git reset --hard origin/master` — сброс локальных правок на сервере (adapter-node уже в репо — `bun add`/`sed` больше не нужны).
+- `git reset --hard origin/master` — сброс локальных правок на сервере (adapter-static уже в репо — `bun add`/`sed` больше не нужны).
 - `uv sync --python-preference only-system` — бэкенд на системном Python 3.11.
-- `bun install && bun run build` — собирает `frontend-svelte/build/index.js` (Node-сервер SvelteKit).
+- `bun install && bun run build` — собирает `frontend-svelte/build` (статический SPA).
 
 ## Бэкап БД (все 4 базы)
 ```bash
@@ -317,7 +314,7 @@ Cron (root), 23:59 серверного времени:
 на сервер не нужен — там `sqlite3` CLI).
 
 ## Частые проблемы
-- **404 на `/dashboard`, `/main-afl`** — не запущен Node-сервер SvelteKit или не настроен прокси `/` → `127.0.0.1:3000`.
+- **404 на `/dashboard`, `/main-afl`** — не настроена раздача статики (DocumentRoot на `build/` + `RewriteRule` SPA-fallback, см. §6).
 - **`/api` 404 / Connection refused** — не запущен uvicorn, не включены модули `proxy proxy_http`,
   либо в `ProxyPass`/`ProxyPassReverse` пропущен `/api` в целевом URL (тогда Apache срезает
   префикс и бэкенд не находит маршрут — см. §6).

@@ -15,9 +15,11 @@
 		"check:watch": "svelte-kit sync && svelte-check --tsconfig ./tsconfig.json --watch"
 	},
 	"devDependencies": {
+		"@capacitor/android": "^8.6.2",
 		"@internationalized/date": "^3.12.0",
 		"@lucide/svelte": "^1.41.0",
 		"@sveltejs/adapter-node": "^5.5.7",
+		"@sveltejs/adapter-static": "^4.0.1",
 		"@sveltejs/kit": "^2.63.0",
 		"@sveltejs/vite-plugin-svelte": "^7.1.2",
 		"@tailwindcss/vite": "^4.3.0",
@@ -28,12 +30,18 @@
 		"vite": "^8.0.16"
 	},
 	"dependencies": {
+		"@capacitor/camera": "^8.2.6",
+		"@capacitor/cli": "^8.6.2",
+		"@capacitor/core": "^8.6.2",
+		"@capacitor/geolocation": "^8.2.5",
+		"@capacitor/preferences": "^8.0.1",
 		"@tanstack/svelte-query": "^5",
 		"@tanstack/svelte-table": "^8",
 		"@tanstack/table-core": "^8",
 		"bits-ui": "^2.19.0",
 		"class-variance-authority": "^0.7.1",
 		"clsx": "^2.1.1",
+		"h3-js": "^4.5.0",
 		"lucide-svelte": "^1.0.1",
 		"mode-watcher": "^1.1.0",
 		"tailwind-merge": "^3.6.0",
