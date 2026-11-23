@@ -238,3 +238,19 @@ export async function removeControl(taskNumber: string): Promise<{ success: bool
 	}
 	return res.json();
 }
+
+export type EnrollCodeResult = { code: string; expires_at: string; full_name: string };
+
+export async function enrollCode(userId: number): Promise<EnrollCodeResult> {
+	const res = await fetch('/api/rks/enroll-code', {
+		method: 'POST',
+		credentials: 'include',
+		headers: { 'Content-Type': 'application/json' },
+		body: JSON.stringify({ user_id: userId })
+	});
+	if (!res.ok) {
+		const body = (await res.json().catch(() => ({}))) as { error?: string };
+		throw new Error(body.error ?? 'Ошибка генерации кода');
+	}
+	return res.json();
+}
