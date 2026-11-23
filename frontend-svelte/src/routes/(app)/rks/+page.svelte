@@ -1,65 +1,109 @@
 <script lang="ts">
-	import { onMount } from 'svelte';
 	import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '$lib/components/ui/card';
+	import { Button } from '$lib/components/ui/button';
+	import { Input } from '$lib/components/ui/input';
 	import { toast } from '$lib/store/toast.svelte';
-	import { fetchRksConsumers, type RksConsumer } from '$lib/api/rks';
+	import { uploadRks, type RksUploadResult } from '$lib/api/rks';
 
-	let consumers = $state<RksConsumer[]>([]);
-	let total = $state(0);
-	let loading = $state(true);
+	let taskType = $state('');
+	let file = $state<File | null>(null);
+	let ulrFile = $state<File | null>(null);
+	let uploading = $state(false);
+	let result = $state<RksUploadResult | null>(null);
 
-	onMount(async () => {
+	function onFileChange(e: Event) {
+		const input = e.currentTarget as HTMLInputElement;
+		file = input.files?.[0] ?? null;
+	}
+
+	function onUlrFileChange(e: Event) {
+		const input = e.currentTarget as HTMLInputElement;
+		ulrFile = input.files?.[0] ?? null;
+	}
+
+	async function submit() {
+		if (!file || !taskType) return;
+		uploading = true;
+		result = null;
 		try {
-			const res = await fetchRksConsumers(5000, 0);
-			consumers = res.items;
-			total = res.total;
+			result = await uploadRks(file, ulrFile, taskType);
+			toast(`Загружено: ${result.stats.tasks} заданий, ${result.stats.consumers} потребителей`);
+			file = null;
+			ulrFile = null;
 		} catch (e) {
 			toast(e instanceof Error ? e.message : 'Ошибка загрузки');
 		} finally {
-			loading = false;
+			uploading = false;
 		}
-	});
+	}
 </script>
 
 <div class="h-full overflow-auto p-4">
-	<div class="mx-auto max-w-5xl">
+	<div class="mx-auto max-w-2xl space-y-4">
 		<Card>
 			<CardHeader>
-				<CardTitle>Потребители РКС</CardTitle>
-				<CardDescription>Всего: {total}</CardDescription>
+				<CardTitle>Регистрация РКС</CardTitle>
+				<CardDescription>
+					Загрузка файла заданий РКС.xlsx (+ опционально РКС УЛР.xlsx для сопоставления дат). Тип поручения — из формы.
+				</CardDescription>
 			</CardHeader>
-			<CardContent>
-				{#if loading}
-					<p class="text-sm text-muted-foreground">Загрузка…</p>
-				{:else}
-					<table class="w-full text-sm">
-						<thead>
-							<tr class="border-b text-left text-muted-foreground">
-								<th class="py-2 pr-2">#</th>
-								<th class="py-2 pr-2">Договор</th>
-								<th class="py-2 pr-2">ФЛ/ЮЛ</th>
-								<th class="py-2 pr-2">Отделение</th>
-								<th class="py-2 pr-2">Наименование</th>
-								<th class="py-2 pr-2">Телефон</th>
-								<th class="py-2">Точек</th>
-							</tr>
-						</thead>
-						<tbody>
-							{#each consumers as c (c.id)}
-								<tr class="border-b">
-									<td class="py-1.5 pr-2">{c.id}</td>
-									<td class="py-1.5 pr-2">{c.contract_number ?? '—'}</td>
-									<td class="py-1.5 pr-2">{c.fl_yul ?? '—'}</td>
-									<td class="py-1.5 pr-2">{c.department ?? '—'}</td>
-									<td class="py-1.5 pr-2">{c.consumer_name ?? '—'}</td>
-									<td class="py-1.5 pr-2">{c.phone ?? '—'}</td>
-									<td class="py-1.5">{c.points_count}</td>
-								</tr>
-							{/each}
-						</tbody>
-					</table>
-				{/if}
+			<CardContent class="space-y-4">
+				<div class="space-y-1.5">
+					<span class="text-sm font-medium">Тип поручения</span>
+					<div class="flex items-center gap-4 pt-1">
+						<label class="flex items-center gap-1.5 text-sm">
+							<input
+								type="checkbox"
+								class="size-4 cursor-pointer accent-primary"
+								checked={taskType === 'Плановый'}
+								onchange={() => (taskType = taskType === 'Плановый' ? '' : 'Плановый')}
+							/>
+							Плановый
+						</label>
+						<label class="flex items-center gap-1.5 text-sm">
+							<input
+								type="checkbox"
+								class="size-4 cursor-pointer accent-primary"
+								checked={taskType === 'Внеплановый'}
+								onchange={() => (taskType = taskType === 'Внеплановый' ? '' : 'Внеплановый')}
+							/>
+							Внеплановый
+						</label>
+					</div>
+				</div>
+
+				<div class="space-y-1.5">
+					<label class="text-sm font-medium" for="rks-file">Файл РКС (.xlsx)</label>
+					<Input id="rks-file" type="file" accept=".xlsx" disabled={uploading} onchange={onFileChange} />
+				</div>
+
+				<div class="space-y-1.5">
+					<label class="text-sm font-medium" for="rks-ulr-file">Файл РКС УЛР (.xlsx, опционально)</label>
+					<Input id="rks-ulr-file" type="file" accept=".xlsx" disabled={uploading} onchange={onUlrFileChange} />
+				</div>
+
+				<Button onclick={submit} disabled={uploading || !file || !taskType}>
+					{uploading ? 'Загружаем…' : 'Загрузить'}
+				</Button>
 			</CardContent>
 		</Card>
+
+		{#if result}
+			<Card>
+				<CardHeader>
+					<CardTitle>Результат</CardTitle>
+					<CardDescription>
+						Заданий: {result.stats.tasks}, потребителей: {result.stats.consumers}, точек: {result.stats.points}
+					</CardDescription>
+				</CardHeader>
+				<CardContent>
+					<ul class="space-y-1 text-sm">
+						<li>Сопоставлено по коду: {result.stats.matched_code}</li>
+						<li>Сопоставлено по адресу: {result.stats.matched_address}</li>
+						<li>Не сопоставлено: {result.stats.unmatched}</li>
+					</ul>
+				</CardContent>
+			</Card>
+		{/if}
 	</div>
 </div>

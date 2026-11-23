@@ -82,10 +82,11 @@ export function assignmentLabel(value: string | null | undefined): string {
 	return ASSIGNMENT_LABELS[value] ?? value;
 }
 
-export async function uploadRks(file: File, ulrFile: File | null): Promise<RksUploadResult> {
+export async function uploadRks(file: File, ulrFile: File | null, taskType: string): Promise<RksUploadResult> {
 	const form = new FormData();
 	form.append('file', file);
 	if (ulrFile) form.append('ulr_file', ulrFile);
+	if (taskType) form.append('task_type', taskType);
 	const res = await fetch('/api/rks/upload', { method: 'POST', credentials: 'include', body: form });
 	if (!res.ok) {
 		const body = (await res.json().catch(() => ({}))) as { error?: string };

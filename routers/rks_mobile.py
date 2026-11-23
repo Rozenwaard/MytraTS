@@ -154,7 +154,7 @@ async def api_m_sync(request: Request, db_session: AsyncSession) -> Response:
         full_name = auth["user"]["full_name"]
 
         rows = (await sand_session.execute(text(
-            "SELECT t.*, p.meter_serial, p.address, p.meter_model, "
+            "SELECT t.*, p.meter_serial, p.address, p.meter_model, p.phase, "
             "c.consumer_name, c.contract_number, c.fl_yul "
             "FROM rks_task t "
             "JOIN rks_consumer_point p ON p.id = t.point_id "
@@ -202,6 +202,7 @@ async def api_m_sync(request: Request, db_session: AsyncSession) -> Response:
 
     tasks = [{
         "task_number": r["task_number"], "work_type": r["work_type"],
+        "task_type": r["task_type"], "phase": r["phase"],
         "due_date": r["due_date"], "status": r["status"],
         "subscriber_name": r["consumer_name"], "address": r["address"],
         "meter_serial": r["meter_serial"], "meter_model": r["meter_model"],

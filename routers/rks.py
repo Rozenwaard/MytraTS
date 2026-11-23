@@ -33,6 +33,7 @@ async def api_rks_upload(request: Request, db_session: AsyncSession) -> Response
     form = await request.form()
     file = form.get("file")
     ulr_file = form.get("ulr_file")
+    task_type = (str(form.get("task_type") or "")).strip() or None
 
     filename = getattr(file, "filename", "") or ""
     if not filename.lower().endswith(".xlsx"):
@@ -51,7 +52,7 @@ async def api_rks_upload(request: Request, db_session: AsyncSession) -> Response
 
     now = datetime.now()
     async with sand_session_factory() as sand_session:
-        stats = await ingest_rks(sand_session, rows, ulr_rows, filename, now)
+        stats = await ingest_rks(sand_session, rows, ulr_rows, filename, now, task_type)
 
         # Маппинг РКС УЛР перезаписываем при каждой загрузке (актуальный срез).
         if ulr_rows:
@@ -149,7 +150,7 @@ async def api_rks_execution(request: Request, db_session: AsyncSession) -> Respo
         rows = []
         for r in result.mappings():
             rows.append({
-                "task_number": r["task_number"], "task_source": "rks", "task_type": None,
+                "task_number": r["task_number"], "task_source": "rks", "task_type": r["task_type"],
                 "work_type_in_task": r["work_type"], "created_at": r["created_at"],
                 "due_date": r["due_date"], "customer": None,
                 "visit_reason": r["letter_number"], "subscriber_type": r["fl_yul"],

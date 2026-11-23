@@ -204,8 +204,11 @@ def match_work_date(contract_number, address, by_code, by_addr):
     return None, None
 
 
-async def ingest_rks(sand_session, rks_rows, ulr_rows, source_file, now) -> dict:
-    """Накопление потребителей/точек/заданий. Возвращает статистику."""
+async def ingest_rks(sand_session, rks_rows, ulr_rows, source_file, now, task_type=None) -> dict:
+    """Накопление потребителей/точек/заданий. Возвращает статистику.
+
+    task_type — «Плановый»/«Внеплановый» (тип поручения из формы регистрации).
+    """
     by_code, by_addr = build_ulr_index(ulr_rows)
     year_suffix = now.strftime("%y")
     created = now.strftime("%Y-%m-%d %H:%M:%S")
@@ -279,9 +282,11 @@ async def ingest_rks(sand_session, rks_rows, ulr_rows, source_file, now) -> dict
         task_number = f"{seq}-{year_suffix}"
         await sand_session.execute(text(
             "INSERT INTO rks_task (point_id, task_number, month, work_type, work_type_raw, "
-            "note, letter_number, work_date, match_source, status, created_at, source_file, source_row) "
+            "note, letter_number, work_date, match_source, status, task_type, "
+            "created_at, source_file, source_row) "
             "VALUES (:point_id, :task_number, :month, :work_type, :work_type_raw, :note, "
-            ":letter_number, :work_date, :match_source, :status, :created_at, :source_file, :source_row)"),
+            ":letter_number, :work_date, :match_source, :status, :task_type, "
+            ":created_at, :source_file, :source_row)"),
             {"point_id": point_id, "task_number": task_number,
              "month": normalize_month(row.get("month")),
              "work_type": normalize_work_type(row.get("work_type")),
@@ -289,7 +294,8 @@ async def ingest_rks(sand_session, rks_rows, ulr_rows, source_file, now) -> dict
              "note": _cell_to_str(row.get("note")),
              "letter_number": _cell_to_str(row.get("letter_number")),
              "work_date": work_date, "match_source": match_source,
-             "status": STATUS_CREATED, "created_at": created,
+             "status": STATUS_CREATED, "task_type": task_type,
+             "created_at": created,
              "source_file": source_file, "source_row": i})
         stats["tasks"] += 1
         if match_source == "code":

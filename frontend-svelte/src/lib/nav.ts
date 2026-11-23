@@ -35,7 +35,7 @@ export const SUB_NAV: Record<string, SubTab[]> = {
 		{ href: '/ulr/execution', label: 'Выполнение' }
 	],
 	'/rks': [
-		{ href: '/rks', label: 'Потребители' },
+		{ href: '/rks', label: 'Регистрация' },
 		{ href: '/rks/execution', label: 'Выполнение' }
 	],
 	'/reports': [
