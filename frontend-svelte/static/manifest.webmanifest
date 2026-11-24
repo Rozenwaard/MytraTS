@@ -1,6 +1,6 @@
 {
-	"name": "MYTRA РКС",
-	"short_name": "РКС",
+	"name": "MytraGo",
+	"short_name": "MytraGo",
 	"description": "Мобильное приложение РКС (обход ПУ)",
 	"start_url": "/m/tasks",
 	"display": "standalone",

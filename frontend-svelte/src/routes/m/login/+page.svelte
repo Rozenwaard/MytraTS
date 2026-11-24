@@ -6,10 +6,8 @@
 	import { mobileApi, MobileApiError } from '$lib/mobile/client';
 	import type { EnrollResponse } from '$lib/mobile/types';
 	import { Button } from '$lib/components/ui/button';
-	import { Input } from '$lib/components/ui/input';
 	import Logo from '$lib/components/logo.svelte';
 
-	let code = $state('');
 	let deviceId = $state('');
 	let error = $state('');
 	let loading = $state(false);
@@ -21,10 +19,6 @@
 	});
 
 	async function doEnroll(codeValue: string) {
-		if (!codeValue.trim()) {
-			error = 'Введите код привязки';
-			return;
-		}
 		loading = true;
 		error = '';
 		try {
@@ -45,17 +39,12 @@
 		}
 	}
 
-	function onSubmit(e: SubmitEvent) {
-		e.preventDefault();
-		void doEnroll(code);
-	}
-
 	async function startScan() {
 		scanning = true;
 		error = '';
 		await tick();
-		scanner = new Html5Qrcode('qr-reader');
 		try {
+			scanner = new Html5Qrcode('qr-reader');
 			await scanner.start(
 				{ facingMode: 'environment' },
 				{ fps: 10, qrbox: { width: 250, height: 250 } },
@@ -64,17 +53,23 @@
 				},
 				() => {}
 			);
-		} catch {
-			error = 'Не удалось открыть камеру. Проверьте доступ к камере.';
-			stopScan();
+		} catch (e) {
+			error = 'Не удалось открыть камеру: ' + (e instanceof Error ? e.message : String(e));
+			await stopScan();
 		}
 	}
 
 	async function onScan(qrText: string) {
-		const c = qrText.trim().toUpperCase();
+		let c = qrText.trim();
+		try {
+			const u = new URL(c);
+			const p = u.searchParams.get('code');
+			if (p) c = p;
+		} catch {
+			/* не URL — значит просто код */
+		}
 		await stopScan();
-		code = c;
-		await doEnroll(c);
+		await doEnroll(c.toUpperCase());
 	}
 
 	async function stopScan() {
@@ -91,42 +86,27 @@
 	}
 </script>
 
-<div class="flex min-h-screen flex-col justify-center p-6">
-	<div class="mb-8 flex items-center justify-center gap-2">
+<div class="flex min-h-screen flex-col items-center justify-center p-6">
+	<div class="mb-12 flex items-center gap-3">
 		<Logo />
-		<span class="text-lg font-semibold">РКС · мобильный</span>
+		<span class="text-3xl font-semibold tracking-tight">MytraGo</span>
 	</div>
 
-	<form onsubmit={onSubmit} class="space-y-4">
-		<div class="space-y-1.5">
-			<label class="text-sm font-medium" for="code">Код привязки</label>
-			<Input
-				id="code"
-				placeholder="Например, A1B2C3"
-				bind:value={code}
-				autocomplete="off"
-			/>
-		</div>
+	<Button class="w-full max-w-sm py-6 text-lg" onclick={startScan} disabled={scanning || loading}>
+		{loading ? 'Привязка…' : 'Сканировать QR-код'}
+	</Button>
 
-		<p class="text-xs text-muted-foreground">Устройство: {deviceId}</p>
+	<p class="mt-4 text-xs text-muted-foreground">Наведите камеру на QR-код, выданный в бэкофисе</p>
 
-		{#if error}
-			<p class="text-sm text-destructive">{error}</p>
-		{/if}
-
-		<Button type="submit" class="w-full" disabled={loading}>
-			{loading ? 'Привязка…' : 'Привязать устройство'}
-		</Button>
-		<Button type="button" variant="outline" class="w-full" onclick={startScan} disabled={loading}>
-			Сканировать QR
-		</Button>
-	</form>
+	{#if error}
+		<p class="mt-4 max-w-sm text-center text-sm text-destructive">{error}</p>
+	{/if}
 </div>
 
 {#if scanning}
-	<div class="fixed inset-0 z-50 flex items-center justify-center bg-black/80 p-4">
+	<div class="fixed inset-0 z-50 flex items-center justify-center bg-black/90 p-4">
 		<div class="w-full max-w-sm">
-			<div id="qr-reader" class="overflow-hidden rounded-lg"></div>
+			<div id="qr-reader" class="overflow-hidden rounded-lg" style="min-height: 320px"></div>
 			<Button variant="outline" class="mt-3 w-full" onclick={stopScan}>Отмена</Button>
 		</div>
 	</div>

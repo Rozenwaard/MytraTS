@@ -7,13 +7,14 @@
 
 	let { children } = $props();
 	const isLogin = $derived(page.url.pathname === '/m/login');
+	const isEnroll = $derived(page.url.pathname === '/m/enroll');
 
 	$effect(() => {
 		if (!browser) return;
 		setupAutoFlush();
 		loadMobileAuth();
-		if (!mobileAuth.token && !isLogin) goto('/m/login');
-		else if (mobileAuth.token && isLogin) goto('/m/tasks');
+		if (!mobileAuth.token && !isLogin && !isEnroll) goto('/m/login');
+		else if (mobileAuth.token && (isLogin || isEnroll)) goto('/m/tasks');
 	});
 
 	function logout() {
@@ -26,7 +27,7 @@
 	<div class="relative w-full max-w-md bg-background shadow-sm">
 		{#if mobileAuth.token && !isLogin}
 			<header class="flex items-center justify-between border-b px-4 py-3">
-				<span class="text-sm font-semibold">РКС · {mobileAuth.fullName ?? 'мобильный'}</span>
+				<span class="text-sm font-semibold">MytraGo · {mobileAuth.fullName ?? ''}</span>
 				<button onclick={logout} class="text-sm text-muted-foreground hover:text-foreground">Выйти</button>
 			</header>
 		{/if}

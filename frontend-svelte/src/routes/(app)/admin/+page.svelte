@@ -57,7 +57,7 @@
 	let tempPassword = $state('');
 	let tempPasswordUser = $state('');
 
-	let enroll = $state<{ code: string; expires_at: string; full_name: string; qr: string } | null>(null);
+	let enroll = $state<{ code: string; expires_at: string; full_name: string; qr: string; url: string } | null>(null);
 
 	const filteredUsers = $derived(
 		search.trim()
@@ -128,8 +128,9 @@
 	async function handleEnroll(u: AdminUser) {
 		try {
 			const res = await enrollCode(u.id);
-			const qr = await QRCode.toDataURL(res.code, { width: 240, margin: 1 });
-			enroll = { ...res, qr };
+			const url = `${window.location.origin}/m/enroll?code=${res.code}`;
+			const qr = await QRCode.toDataURL(url, { width: 240, margin: 1 });
+			enroll = { ...res, qr, url };
 		} catch (e) {
 			toast(e instanceof Error ? e.message : 'Ошибка генерации кода');
 		}
@@ -460,7 +461,7 @@
 				{/if}
 				<div class="rounded bg-muted px-4 py-2 text-center font-mono text-2xl tracking-widest">{enroll.code}</div>
 				<p class="text-center text-xs text-muted-foreground">
-					Действует до {enroll.expires_at?.slice(11, 16) ?? '—'}. Сканируйте QR или введите код в мобильном приложении.
+					Действует до {enroll.expires_at?.slice(11, 16) ?? '—'}. Отсканируйте камерой телефона — откроется ссылка, устройство привяжется автоматически.
 				</p>
 			</div>
 			<div class="mt-4 flex justify-end">
