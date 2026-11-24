@@ -1,12 +1,10 @@
 import tailwindcss from '@tailwindcss/vite';
-import basicSsl from '@vitejs/plugin-basic-ssl';
 import adapter from '@sveltejs/adapter-static';
 import { sveltekit } from '@sveltejs/kit/vite';
 import { defineConfig } from 'vite';
 
 export default defineConfig({
 	plugins: [
-		basicSsl(),
 		tailwindcss(),
 		sveltekit({
 			compilerOptions: {
@@ -21,6 +19,7 @@ export default defineConfig({
 	],
 	server: {
 		host: true,
+		allowedHosts: true,
 		port: 5174,
 		proxy: {
 			'/api': 'http://localhost:8000'
