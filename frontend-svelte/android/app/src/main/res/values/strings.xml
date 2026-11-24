@@ -1,7 +1,7 @@
 <?xml version='1.0' encoding='utf-8'?>
 <resources>
-    <string name="app_name">РКС</string>
-    <string name="title_activity_main">РКС</string>
+    <string name="app_name">MytraGo</string>
+    <string name="title_activity_main">MytraGo</string>
     <string name="package_name">ru.mytra.rks</string>
     <string name="custom_url_scheme">ru.mytra.rks</string>
 </resources>

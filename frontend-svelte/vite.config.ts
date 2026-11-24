@@ -24,5 +24,10 @@ export default defineConfig({
 		proxy: {
 			'/api': 'http://localhost:8000'
 		}
+	},
+	preview: {
+		host: true,
+		allowedHosts: true,
+		port: 5174
 	}
 });
