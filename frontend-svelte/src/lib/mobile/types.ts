@@ -28,6 +28,8 @@ export interface MobileTask {
 	contract_number: string | null;
 	fl_yul: string | null;
 	phone: string | null;
+	last_result: string | null;
+	nedopusk_count: number;
 	letter_number: string | null;
 	note: string | null;
 	norm: number;

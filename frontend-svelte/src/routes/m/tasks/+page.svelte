@@ -99,6 +99,9 @@
 					</div>
 					<div class="mt-1 text-sm">{t.subscriber_name || '—'}</div>
 					<div class="text-xs text-muted-foreground">{t.address || '—'}</div>
+					{#if t.nedopusk_count > 0}
+						<div class="mt-1 text-xs text-amber-600">Уже был(и) {t.nedopusk_count} раз, недопуск</div>
+					{/if}
 					{#if t.phone}
 						<a
 							href={`tel:${t.phone.split(/[;,\s]+/)[0].replace(/[^\d+]/g, '')}`}

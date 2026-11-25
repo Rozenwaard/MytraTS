@@ -137,12 +137,12 @@ export async function updateRksExecution(fields: {
 	return res.json();
 }
 
-export async function bulkAssign(taskNumbers: string[], executor: string): Promise<{ success: boolean; updated: number }> {
+export async function bulkAssign(taskNumbers: string[], executors: string[]): Promise<{ success: boolean; updated: number }> {
 	const res = await fetch('/api/rks/execution/assign', {
 		method: 'POST',
 		credentials: 'include',
 		headers: { 'Content-Type': 'application/json' },
-		body: JSON.stringify({ task_numbers: taskNumbers, executor })
+		body: JSON.stringify({ task_numbers: taskNumbers, executors })
 	});
 	if (!res.ok) {
 		const body = (await res.json().catch(() => ({}))) as { error?: string };

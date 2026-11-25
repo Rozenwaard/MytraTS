@@ -143,7 +143,7 @@
 	let nearbyZoom = $state(2);
 	let nearbyRef = $state<string | null>(null);
 	let assignOpen = $state(false);
-	let assignExecutor = $state('');
+	let assignExecutors = $state<string[]>([]);
 	let assignBusy = $state(false);
 
 	const workTypeOptions = $derived(
@@ -187,15 +187,21 @@
 
 	const executorList = $derived(rows[0]?.executor_options ?? []);
 
+	function toggleAssignExecutor(name: string) {
+		assignExecutors = assignExecutors.includes(name)
+			? assignExecutors.filter((e) => e !== name)
+			: [...assignExecutors, name];
+	}
+
 	async function submitAssign() {
-		if (!assignExecutor || selected.size === 0) return;
+		if (assignExecutors.length === 0 || selected.size === 0) return;
 		assignBusy = true;
 		try {
-			await bulkAssign([...selected], assignExecutor);
+			await bulkAssign([...selected], assignExecutors);
 			toast('Назначено');
 			selected = new Set();
 			assignOpen = false;
-			assignExecutor = '';
+			assignExecutors = [];
 			await queryClient.invalidateQueries({ queryKey: ['rks-execution'] });
 		} catch (e) {
 			toast(e instanceof Error ? e.message : 'Ошибка назначения');
@@ -569,19 +575,23 @@
 	{#if assignOpen}
 		<div class="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
 			<div class="w-full max-w-sm rounded-lg border bg-card p-4 shadow-lg">
-				<div class="mb-3 text-sm font-semibold">Назначить исполнителя ({selected.size})</div>
-				<select
-					bind:value={assignExecutor}
-					class="mb-3 h-9 w-full rounded-md border border-input bg-background px-2 text-sm"
-				>
-					<option value="">Выберите исполнителя</option>
+				<div class="mb-3 text-sm font-semibold">Назначить исполнителей ({selected.size})</div>
+				<div class="mb-3 max-h-64 space-y-1 overflow-auto">
 					{#each executorList as e}
-						<option value={e}>{e}</option>
+						<label class="flex items-center gap-2 py-1 text-sm">
+							<input
+								type="checkbox"
+								class="size-4 cursor-pointer accent-primary"
+								checked={assignExecutors.includes(e)}
+								onchange={() => toggleAssignExecutor(e)}
+							/>
+							<span>{e}</span>
+						</label>
 					{/each}
-				</select>
+				</div>
 				<div class="flex justify-end gap-2">
 					<Button variant="outline" size="sm" onclick={() => (assignOpen = false)}>Отмена</Button>
-					<Button size="sm" disabled={!assignExecutor || assignBusy} onclick={submitAssign}>
+					<Button size="sm" disabled={assignExecutors.length === 0 || assignBusy} onclick={submitAssign}>
 						{assignBusy ? 'Назначение…' : 'Назначить'}
 					</Button>
 				</div>

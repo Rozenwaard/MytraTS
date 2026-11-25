@@ -156,11 +156,16 @@ async def api_m_sync(request: Request, db_session: AsyncSession) -> Response:
 
         rows = (await sand_session.execute(text(
             "SELECT t.*, p.meter_serial, p.address, p.meter_model, p.phase, "
-            "c.consumer_name, c.contract_number, c.fl_yul, c.phone "
+            "c.consumer_name, c.contract_number, c.fl_yul, c.phone, "
+            "(SELECT r.result FROM rks_mobile_reports r WHERE r.task_number = t.task_number "
+            " ORDER BY r.id DESC LIMIT 1) AS last_result, "
+            "(SELECT COUNT(*) FROM rks_mobile_reports r WHERE r.task_number = t.task_number "
+            " AND r.result = 'недопуск') AS nedopusk_count "
             "FROM rks_task t "
             "JOIN rks_consumer_point p ON p.id = t.point_id "
             "JOIN rks_consumer c ON c.id = p.consumer_id "
-            "WHERE t.assignee = :fn AND t.status IN (:st1, :st2, :st3) ORDER BY t.id"),
+            "WHERE t.task_number IN (SELECT task_number FROM rks_task_assignees WHERE assignee = :fn) "
+            "AND t.status IN (:st1, :st2, :st3) ORDER BY t.id"),
             {"fn": full_name, "st1": STATUS_ASSIGNED, "st2": STATUS_MP, "st3": STATUS_IN_WORK})).mappings().all()
 
         assigned_tns = [r["task_number"] for r in rows if r["status"] == STATUS_ASSIGNED]
@@ -211,6 +216,7 @@ async def api_m_sync(request: Request, db_session: AsyncSession) -> Response:
         "subscriber_name": r["consumer_name"], "address": r["address"],
         "meter_serial": r["meter_serial"], "meter_model": r["meter_model"],
         "contract_number": r["contract_number"], "fl_yul": r["fl_yul"], "phone": r["phone"],
+        "last_result": r["last_result"], "nedopusk_count": r["nedopusk_count"],
         "letter_number": r["letter_number"], "note": r["note"],
         "norm": base_by_short.get(resolve_short(r["work_type"], r["task_type"], r["phase"]), 0),
     } for r in rows]
@@ -240,7 +246,7 @@ async def api_m_reports(request: Request, db_session: AsyncSession,
 
         # Guard: не даём поздним/чужим отчётам закрывать или откатывать задание.
         task_row = (await sand_session.execute(text(
-            "SELECT status, assignee FROM rks_task WHERE task_number = :tn"),
+            "SELECT status FROM rks_task WHERE task_number = :tn"),
             {"tn": task_number})).mappings().first()
         if task_row is None:
             return Response(content=json.dumps({"error": "Задание не найдено", "closed": True}, ensure_ascii=False),
@@ -248,8 +254,11 @@ async def api_m_reports(request: Request, db_session: AsyncSession,
         if task_row["status"] in (STATUS_DONE, STATUS_SENT):
             return Response(content=json.dumps({"error": "Задание уже выполнено или отправлено", "closed": True}, ensure_ascii=False),
                             media_type="application/json", status_code=409)
-        # Один исполнитель на задание; при мульти-назначении заменим на проверку по assignees.
-        if task_row["assignee"] and task_row["assignee"] != auth["user"]["full_name"]:
+        # Работник должен быть в наборе исполнителей задания.
+        is_assigned = (await sand_session.execute(text(
+            "SELECT 1 FROM rks_task_assignees WHERE task_number = :tn AND assignee = :fn"),
+            {"tn": task_number, "fn": auth["user"]["full_name"]})).scalar()
+        if not is_assigned:
             return Response(content=json.dumps({"error": "Задание передано другому исполнителю", "closed": True}, ensure_ascii=False),
                             media_type="application/json", status_code=409)
 

@@ -138,6 +138,21 @@ def _compute_status(executor, done_day, work_type, co_executor, co_required, ree
     return STATUS_CREATED
 
 
+async def _set_assignees(sand_session, task_number: str, executors: list[str]) -> None:
+    """Переписывает набор исполнителей задания; assignee = первый (для совместимости)."""
+    await sand_session.execute(text(
+        "DELETE FROM rks_task_assignees WHERE task_number = :tn"), {"tn": task_number})
+    now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    for e in executors:
+        await sand_session.execute(text(
+            "INSERT OR IGNORE INTO rks_task_assignees (task_number, assignee, assigned_at) "
+            "VALUES (:tn, :e, :ts)"), {"tn": task_number, "e": e, "ts": now})
+    primary = executors[0] if executors else None
+    await sand_session.execute(text(
+        "UPDATE rks_task SET assignee = :e WHERE task_number = :tn"),
+        {"e": primary, "tn": task_number})
+
+
 @get("/rks/execution", guards=[require_auth])
 async def api_rks_execution(request: Request, db_session: AsyncSession) -> Response:
     await _require_admin(request, db_session)
@@ -217,6 +232,11 @@ async def api_rks_update_execution(
             "WHERE task_number = :tn"),
             {"executor": executor, "co_executor": co_executor, "work_type": work_type,
              "done_day": done_day, "violations": violations, "status": status, "tn": task_number})
+
+        # Синхронизируем набор исполнителей (одиночное назначение через дропдаун).
+        if data.get("executor") is not None:
+            await _set_assignees(sand_session, task_number, [executor] if executor else [])
+
         await sand_session.commit()
 
     return Response(content=json.dumps({"success": True, "status": status}, ensure_ascii=False),
@@ -458,9 +478,13 @@ async def api_rks_bulk_assign(
     await _require_admin(request, db_session)
 
     task_numbers = [str(t).strip() for t in data.get("task_numbers", []) if t]
-    executor = (data.get("executor") or "").strip()
-    if not task_numbers or not executor:
-        return Response(content=json.dumps({"error": "Не выбраны строки или исполнитель"}, ensure_ascii=False),
+    executors = [str(e).strip() for e in data.get("executors", []) if e]
+    if not executors:
+        single = (data.get("executor") or "").strip()
+        if single:
+            executors = [single]
+    if not task_numbers or not executors:
+        return Response(content=json.dumps({"error": "Не выбраны строки или исполнители"}, ensure_ascii=False),
                         media_type="application/json", status_code=400)
 
     updated = 0
@@ -471,11 +495,12 @@ async def api_rks_bulk_assign(
                 {"tn": tn})).mappings().first()
             if cur is None:
                 continue
-            status = _compute_status(executor, cur["done_day"], cur["work_type"],
+            status = _compute_status(executors[0], cur["done_day"], cur["work_type"],
                                      cur["co_executor"], False, cur["reestr_number"])
+            await _set_assignees(sand_session, tn, executors)
             await sand_session.execute(text(
-                "UPDATE rks_task SET assignee = :e, status = :s WHERE task_number = :tn"),
-                {"e": executor, "s": status, "tn": tn})
+                "UPDATE rks_task SET status = :s WHERE task_number = :tn"),
+                {"s": status, "tn": tn})
             updated += 1
         await sand_session.commit()
 
