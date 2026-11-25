@@ -18,12 +18,20 @@ from services.rks import (STATUS_ASSIGNED, STATUS_CREATED, STATUS_DONE, STATUS_S
                           WORK_TYPES, ingest_rks, parse_rks, parse_rks_ulr)
 
 ADMIN_ROLES = ("администратор", "специалист")
+# Работники (оператор/работник) этих отделений тоже видят раздел РКС.
+RKS_WORKER_DEPTS = ("Всеволожское отделение", "Сертоловское отделение")
 
 
 async def _require_admin(request: Request, db_session: AsyncSession) -> None:
     user = await get_current_user(request, db_session)
-    if not user or user.effective_role not in ADMIN_ROLES:
+    if not user:
         raise NotAuthorizedException()
+    if user.effective_role in ADMIN_ROLES:
+        return
+    # Работники (оператор/работник) Всеволожского и Сертоловского отделений.
+    if user.effective_role in ("оператор", "работник") and user.dept in RKS_WORKER_DEPTS:
+        return
+    raise NotAuthorizedException()
 
 
 @post("/rks/upload", guards=[require_auth])

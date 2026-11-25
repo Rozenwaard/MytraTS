@@ -5,7 +5,7 @@
 	import { toast } from '$lib/store/toast.svelte';
 	import { uploadRks, type RksUploadResult } from '$lib/api/rks';
 
-	let taskType = $state('');
+	let taskType = $state('Внеплановый');
 	let file = $state<File | null>(null);
 	let ulrFile = $state<File | null>(null);
 	let uploading = $state(false);
