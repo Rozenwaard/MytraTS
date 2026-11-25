@@ -151,7 +151,7 @@ async def api_rks_execution(request: Request, db_session: AsyncSession) -> Respo
 
     async with sand_session_factory() as sand_session:
         result = await sand_session.execute(text(
-            "SELECT t.*, p.address, p.meter_serial, p.meter_model, "
+            "SELECT t.*, p.address, p.meter_serial, p.meter_model, p.h3_res12, p.lat, p.lng, "
             "c.contract_number, c.energy_object_code, c.consumer_name, c.fl_yul, c.department "
             "FROM rks_task t "
             "JOIN rks_consumer_point p ON p.id = t.point_id "
@@ -165,7 +165,8 @@ async def api_rks_execution(request: Request, db_session: AsyncSession) -> Respo
                 "visit_reason": r["letter_number"], "subscriber_type": r["fl_yul"],
                 "grid": None, "personal_account": r["energy_object_code"] or r["contract_number"],
                 "service_object_type": None, "subscriber_name": r["consumer_name"],
-                "address": r["address"], "meter_model": r["meter_model"],
+                "address": r["address"], "h3_res12": r["h3_res12"], "lat": r["lat"], "lng": r["lng"],
+                "meter_model": r["meter_model"],
                 "meter_installation_place": None, "meter_serial_number": r["meter_serial"],
                 "violations": r["violations"], "meter_type": None,
                 "has_current_transformer": None, "meter_status": None,

@@ -29,6 +29,7 @@
 	import Plus from '@lucide/svelte/icons/plus';
 	import Ban from '@lucide/svelte/icons/ban';
 	import type { Component } from 'svelte';
+	import { gridDisk } from 'h3-js';
 
 	const HEADER_ICONS: Partial<Record<keyof RksTask, Component>> = {
 		reestr_number: ListChecks,
@@ -138,6 +139,9 @@
 	let workTypeFilter = $state('');
 	let statusFilter = $state('');
 	let executorFilter = $state('');
+	let nearbyOpen = $state(false);
+	let nearbyZoom = $state(2);
+	let nearbyRef = $state<string | null>(null);
 
 	const workTypeOptions = $derived(
 		[...new Set(rows.map((r) => r.work_type_in_task).filter((v): v is string => !!v))].sort((a, b) =>
@@ -154,6 +158,22 @@
 			a.localeCompare(b, 'ru')
 		)
 	);
+
+	function openNearby() {
+		nearbyRef = [...selected][0] ?? null;
+		nearbyOpen = nearbyRef != null;
+	}
+
+	const nearbyH3 = $derived.by(() => {
+		if (!nearbyRef) return new Set<string>();
+		const row = rows.find((r) => r.task_number === nearbyRef);
+		return row?.h3_res12 ? new Set(gridDisk(row.h3_res12, nearbyZoom)) : new Set<string>();
+	});
+
+	const nearbyRows = $derived.by(() => {
+		if (!nearbyOpen) return [];
+		return rows.filter((r) => r.h3_res12 && nearbyH3.has(r.h3_res12) && r.task_number !== nearbyRef);
+	});
 
 	const filteredRows = $derived.by(() => {
 		const q = searchQuery.trim().toLowerCase();
@@ -471,6 +491,9 @@
 			</select>
 		</div>
 		<div class="flex items-center gap-2">
+			<Button variant="outline" size="sm" disabled={selected.size === 0} onclick={openNearby}>
+				Задания рядом
+			</Button>
 			<Button variant="outline" size="sm" disabled={selected.size === 0} onclick={openDueDateDialog}>
 				<CalendarDays class="size-4" />
 				Изменить плановую дату
@@ -481,6 +504,36 @@
 			</Button>
 		</div>
 	</div>
+	{#if nearbyOpen}
+		<div class="mb-3 rounded-md border bg-card p-3">
+			<div class="flex items-center justify-between gap-2">
+				<span class="text-sm font-semibold">Задания рядом ({nearbyRows.length})</span>
+				<div class="flex items-center gap-2">
+					<span class="text-xs text-muted-foreground">Зум</span>
+					<Button variant="outline" size="sm" disabled={nearbyZoom <= 1} onclick={() => (nearbyZoom--)}>−</Button>
+					<span class="w-6 text-center text-sm">{nearbyZoom}</span>
+					<Button variant="outline" size="sm" disabled={nearbyZoom >= 5} onclick={() => (nearbyZoom++)}>+</Button>
+					<Button variant="ghost" size="sm" onclick={() => (nearbyOpen = false)}>Закрыть</Button>
+				</div>
+			</div>
+			<div class="mt-2 max-h-64 space-y-1 overflow-auto">
+				{#each nearbyRows as r (r.task_number)}
+					<label class="flex items-center gap-2 py-1 text-sm">
+						<input
+							type="checkbox"
+							class="size-4 cursor-pointer accent-primary"
+							checked={selected.has(r.task_number ?? '')}
+							onchange={() => toggleSelected(r.task_number ?? '')}
+						/>
+						<span class="text-xs text-muted-foreground">{r.task_number}</span>
+						<span class="truncate">{r.subscriber_name ?? ''}</span>
+						<span class="truncate text-xs text-muted-foreground">{r.address ?? ''}</span>
+					</label>
+				{/each}
+			</div>
+		</div>
+	{/if}
+
 	<div class="flex min-h-0 flex-1 flex-col overflow-hidden rounded-md border bg-card">
 		<Table class="table-fixed" containerClass="min-h-0 flex-1 overflow-auto">
 			<TableHeader>
