@@ -145,6 +145,10 @@
 			if (err instanceof MobileApiError) {
 				error = err.message;
 				submitting = false;
+				if (err.closed) {
+					// Задание закрыто/передано другому — возвращаемся к списку.
+					setTimeout(() => goto('/m/tasks'), 1500);
+				}
 			} else {
 				// сетевая ошибка — сохраняем в офлайн-очередь
 				await enqueueReport(payload);

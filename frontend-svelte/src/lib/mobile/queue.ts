@@ -1,4 +1,5 @@
 import { getToken } from './auth.svelte';
+import { mobileApi, MobileApiError } from './client';
 
 // Офлайн-очередь (IndexedDB): неотправленные отчёты и фото, повтор при reconnect.
 
@@ -110,17 +111,14 @@ export async function flushQueue(): Promise<{ reports: number; photos: number }>
 	for (const r of reports) {
 		if (r.id == null) continue;
 		try {
-			const res = await fetch('/api/m/1/reports', {
-				method: 'POST',
-				headers: { 'Content-Type': 'application/json', ...(await authHeaders()) },
-				body: JSON.stringify(r.payload)
-			});
-			if (res.ok) {
+			await mobileApi('/api/m/1/reports', { method: 'POST', body: JSON.stringify(r.payload) });
+			await txDelete('reports', r.id);
+			rs++;
+		} catch (e) {
+			// Закрытое/переданное задание — дропаем; сетевая ошибка — оставляем на повтор.
+			if (e instanceof MobileApiError && e.closed) {
 				await txDelete('reports', r.id);
-				rs++;
 			}
-		} catch {
-			/* офлайн — оставляем */
 		}
 	}
 

@@ -23,7 +23,7 @@ from data.config import sand_session_factory
 from deps import get_current_user, require_auth
 from services.rks import (ALCOR_TITLE, DICT_KINDS, PHOTOS_DIR, STATUS_ASSIGNED,
                           STATUS_CREATED, STATUS_DONE, STATUS_IN_WORK, STATUS_MP,
-                          resolve_short)
+                          STATUS_SENT, resolve_short)
 
 ADMIN_ROLES = ("администратор", "специалист")
 
@@ -237,6 +237,21 @@ async def api_m_reports(request: Request, db_session: AsyncSession,
         if auth is None:
             return Response(content=json.dumps({"error": "Не авторизовано"}, ensure_ascii=False),
                             media_type="application/json", status_code=401)
+
+        # Guard: не даём поздним/чужим отчётам закрывать или откатывать задание.
+        task_row = (await sand_session.execute(text(
+            "SELECT status, assignee FROM rks_task WHERE task_number = :tn"),
+            {"tn": task_number})).mappings().first()
+        if task_row is None:
+            return Response(content=json.dumps({"error": "Задание не найдено", "closed": True}, ensure_ascii=False),
+                            media_type="application/json", status_code=404)
+        if task_row["status"] in (STATUS_DONE, STATUS_SENT):
+            return Response(content=json.dumps({"error": "Задание уже выполнено или отправлено", "closed": True}, ensure_ascii=False),
+                            media_type="application/json", status_code=409)
+        # Один исполнитель на задание; при мульти-назначении заменим на проверку по assignees.
+        if task_row["assignee"] and task_row["assignee"] != auth["user"]["full_name"]:
+            return Response(content=json.dumps({"error": "Задание передано другому исполнителю", "closed": True}, ensure_ascii=False),
+                            media_type="application/json", status_code=409)
 
         dup = (await sand_session.execute(text(
             "SELECT client_op_id FROM rks_mobile_reports WHERE client_op_id = :cid"),

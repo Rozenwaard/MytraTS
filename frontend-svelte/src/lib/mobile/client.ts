@@ -3,9 +3,11 @@ import { getToken } from './auth.svelte';
 
 export class MobileApiError extends Error {
 	status: number;
-	constructor(status: number, message: string) {
+	closed: boolean;
+	constructor(status: number, message: string, closed = false) {
 		super(message);
 		this.status = status;
+		this.closed = closed;
 	}
 }
 
@@ -57,13 +59,15 @@ export async function mobileApi<T>(path: string, init?: RequestInit): Promise<T>
 
 	if (status >= 400) {
 		let message = `HTTP ${status}`;
+		let closed = false;
 		try {
 			const j = JSON.parse(text);
 			if (j?.error) message = j.error;
+			if (j?.closed) closed = true;
 		} catch {
 			/* не JSON */
 		}
-		throw new MobileApiError(status, `${message} (url=${url})`);
+		throw new MobileApiError(status, message, closed);
 	}
 	if (status === 204) return undefined as T;
 	try {
