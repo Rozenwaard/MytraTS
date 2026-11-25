@@ -450,9 +450,42 @@ async def api_rks_remove_control(
                     media_type="application/json")
 
 
+@post("/rks/execution/assign", guards=[require_auth])
+async def api_rks_bulk_assign(
+    request: Request, db_session: AsyncSession,
+    data: dict = Body(media_type=RequestEncodingType.JSON),
+) -> Response:
+    await _require_admin(request, db_session)
+
+    task_numbers = [str(t).strip() for t in data.get("task_numbers", []) if t]
+    executor = (data.get("executor") or "").strip()
+    if not task_numbers or not executor:
+        return Response(content=json.dumps({"error": "Не выбраны строки или исполнитель"}, ensure_ascii=False),
+                        media_type="application/json", status_code=400)
+
+    updated = 0
+    async with sand_session_factory() as sand_session:
+        for tn in task_numbers:
+            cur = (await sand_session.execute(text(
+                "SELECT done_day, work_type, co_executor, reestr_number FROM rks_task WHERE task_number = :tn"),
+                {"tn": tn})).mappings().first()
+            if cur is None:
+                continue
+            status = _compute_status(executor, cur["done_day"], cur["work_type"],
+                                     cur["co_executor"], False, cur["reestr_number"])
+            await sand_session.execute(text(
+                "UPDATE rks_task SET assignee = :e, status = :s WHERE task_number = :tn"),
+                {"e": executor, "s": status, "tn": tn})
+            updated += 1
+        await sand_session.commit()
+
+    return Response(content=json.dumps({"success": True, "updated": updated}, ensure_ascii=False),
+                    media_type="application/json")
+
+
 rks_router = Router("/api", route_handlers=[
     api_rks_upload, api_rks_summary, api_rks_consumers, api_rks_tasks,
-    api_rks_execution, api_rks_update_execution, api_rks_options,
+    api_rks_execution, api_rks_update_execution, api_rks_bulk_assign, api_rks_options,
     api_rks_reestr, api_rks_reestr_reset, api_rks_task_report,
     api_rks_change_due_date, api_rks_object_points, api_rks_add_point,
     api_rks_remove_control,

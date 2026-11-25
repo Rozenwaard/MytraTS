@@ -2,7 +2,7 @@
 	import { createQuery } from '@tanstack/svelte-query';
 	import { toStore, fromStore } from 'svelte/store';
 	import { queryClient } from '$lib/query';
-	import { fetchRksExecution, updateRksExecution, createRksReestr, resetRksReestr, changeRksTaskReport, changeRksDueDate, fetchRksOptions, fetchObjectPoints, addPoint, removeControl, assignmentLabel, type RksTask, type RksOptions, type ObjectPoint } from '$lib/api/rks';
+	import { fetchRksExecution, updateRksExecution, bulkAssign, createRksReestr, resetRksReestr, changeRksTaskReport, changeRksDueDate, fetchRksOptions, fetchObjectPoints, addPoint, removeControl, assignmentLabel, type RksTask, type RksOptions, type ObjectPoint } from '$lib/api/rks';
 	import {
 		Table,
 		TableBody,
@@ -142,6 +142,9 @@
 	let nearbyOpen = $state(false);
 	let nearbyZoom = $state(2);
 	let nearbyRef = $state<string | null>(null);
+	let assignOpen = $state(false);
+	let assignExecutor = $state('');
+	let assignBusy = $state(false);
 
 	const workTypeOptions = $derived(
 		[...new Set(rows.map((r) => r.work_type_in_task).filter((v): v is string => !!v))].sort((a, b) =>
@@ -181,6 +184,25 @@
 				r.status !== 'Отправлено'
 		);
 	});
+
+	const executorList = $derived(rows[0]?.executor_options ?? []);
+
+	async function submitAssign() {
+		if (!assignExecutor || selected.size === 0) return;
+		assignBusy = true;
+		try {
+			await bulkAssign([...selected], assignExecutor);
+			toast('Назначено');
+			selected = new Set();
+			assignOpen = false;
+			assignExecutor = '';
+			await queryClient.invalidateQueries({ queryKey: ['rks-execution'] });
+		} catch (e) {
+			toast(e instanceof Error ? e.message : 'Ошибка назначения');
+		} finally {
+			assignBusy = false;
+		}
+	}
 
 	const filteredRows = $derived.by(() => {
 		const q = searchQuery.trim().toLowerCase();
@@ -501,6 +523,9 @@
 			<Button variant="outline" size="sm" disabled={selected.size === 0} onclick={openNearby}>
 				Задания рядом
 			</Button>
+			<Button variant="default" size="sm" disabled={selected.size === 0} onclick={() => (assignOpen = true)}>
+				Назначить
+			</Button>
 			<Button variant="outline" size="sm" disabled={selected.size === 0} onclick={openDueDateDialog}>
 				<CalendarDays class="size-4" />
 				Изменить плановую дату
@@ -537,6 +562,29 @@
 						<span class="truncate text-xs text-muted-foreground">{r.address ?? ''}</span>
 					</label>
 				{/each}
+			</div>
+		</div>
+	{/if}
+
+	{#if assignOpen}
+		<div class="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
+			<div class="w-full max-w-sm rounded-lg border bg-card p-4 shadow-lg">
+				<div class="mb-3 text-sm font-semibold">Назначить исполнителя ({selected.size})</div>
+				<select
+					bind:value={assignExecutor}
+					class="mb-3 h-9 w-full rounded-md border border-input bg-background px-2 text-sm"
+				>
+					<option value="">Выберите исполнителя</option>
+					{#each executorList as e}
+						<option value={e}>{e}</option>
+					{/each}
+				</select>
+				<div class="flex justify-end gap-2">
+					<Button variant="outline" size="sm" onclick={() => (assignOpen = false)}>Отмена</Button>
+					<Button size="sm" disabled={!assignExecutor || assignBusy} onclick={submitAssign}>
+						{assignBusy ? 'Назначение…' : 'Назначить'}
+					</Button>
+				</div>
 			</div>
 		</div>
 	{/if}

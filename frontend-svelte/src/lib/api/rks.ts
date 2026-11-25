@@ -137,6 +137,20 @@ export async function updateRksExecution(fields: {
 	return res.json();
 }
 
+export async function bulkAssign(taskNumbers: string[], executor: string): Promise<{ success: boolean; updated: number }> {
+	const res = await fetch('/api/rks/execution/assign', {
+		method: 'POST',
+		credentials: 'include',
+		headers: { 'Content-Type': 'application/json' },
+		body: JSON.stringify({ task_numbers: taskNumbers, executor })
+	});
+	if (!res.ok) {
+		const body = (await res.json().catch(() => ({}))) as { error?: string };
+		throw new Error(body.error ?? 'Ошибка назначения');
+	}
+	return res.json();
+}
+
 export type RksReestrResult = {
 	success: boolean;
 	reestrs: { name: string; reestr_number: string; count: number }[];
