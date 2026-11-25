@@ -172,7 +172,14 @@
 
 	const nearbyRows = $derived.by(() => {
 		if (!nearbyOpen) return [];
-		return rows.filter((r) => r.h3_res12 && nearbyH3.has(r.h3_res12) && r.task_number !== nearbyRef);
+		return rows.filter(
+			(r) =>
+				r.h3_res12 &&
+				nearbyH3.has(r.h3_res12) &&
+				r.task_number !== nearbyRef &&
+				r.status !== 'Выполнено' &&
+				r.status !== 'Отправлено'
+		);
 	});
 
 	const filteredRows = $derived.by(() => {
@@ -512,7 +519,7 @@
 					<span class="text-xs text-muted-foreground">Зум</span>
 					<Button variant="outline" size="sm" disabled={nearbyZoom <= 1} onclick={() => (nearbyZoom--)}>−</Button>
 					<span class="w-6 text-center text-sm">{nearbyZoom}</span>
-					<Button variant="outline" size="sm" disabled={nearbyZoom >= 5} onclick={() => (nearbyZoom++)}>+</Button>
+					<Button variant="outline" size="sm" disabled={nearbyZoom >= 9} onclick={() => (nearbyZoom++)}>+</Button>
 					<Button variant="ghost" size="sm" onclick={() => (nearbyOpen = false)}>Закрыть</Button>
 				</div>
 			</div>
