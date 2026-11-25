@@ -62,6 +62,7 @@
 
 	function isActive(item: NavItem): boolean {
 		const path = page.url.pathname;
+		if (item.href === '/rks/execution') return path === '/rks' || path.startsWith('/rks/');
 		return path === item.href || path.startsWith(`${item.href}/`);
 	}
 
