@@ -239,7 +239,7 @@ async def ingest_rks(sand_session, rks_rows, ulr_rows, source_file, now, task_ty
                     "SELECT id FROM rks_consumer WHERE contract_number = :c"),
                     {"c": contract})).scalar()
             if consumer_id is None:
-                eoc = contract if contract and len(contract) == 10 else None
+                eoc = contract
                 result = await sand_session.execute(text(
                     "INSERT INTO rks_consumer (contract_number, energy_object_code, fl_yul, "
                     "department, consumer_name, phone, created_at, updated_at, source_file, source_row) "

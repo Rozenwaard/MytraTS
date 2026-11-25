@@ -70,7 +70,7 @@
 				{ key: 'subscriber_type', label: 'Тип потребителя' },
 				{ key: 'contract_status', label: 'Тариф' },
 				{ key: 'service_object_type', label: 'Объект' },
-				{ key: 'personal_account', label: 'Номер ЭО', value: (row) => (row.personal_account ? row.personal_account.slice(0, -3) : null) },
+				{ key: 'personal_account', label: 'Номер ЭО' },
 				{ key: 'meter_status', label: 'Номер ТУ' }
 			]
 		},
@@ -135,15 +135,32 @@
 	}
 
 	let searchQuery = $state('');
+	let workTypeFilter = $state('');
+	let statusFilter = $state('');
+
+	const workTypeOptions = $derived(
+		[...new Set(rows.map((r) => r.work_type_in_task).filter((v): v is string => !!v))].sort((a, b) =>
+			a.localeCompare(b, 'ru')
+		)
+	);
+	const statusOptions = $derived(
+		[...new Set(rows.map((r) => r.status).filter((v): v is string => !!v))].sort((a, b) =>
+			a.localeCompare(b, 'ru')
+		)
+	);
 
 	const filteredRows = $derived.by(() => {
 		const q = searchQuery.trim().toLowerCase();
-		if (!q) return rows;
+		const wf = workTypeFilter;
+		const sf = statusFilter;
 		return rows.filter((r) => {
+			if (wf && r.work_type_in_task !== wf) return false;
+			if (sf && r.status !== sf) return false;
+			if (!q) return true;
 			const reason = (r.visit_reason ?? '').toLowerCase();
 			const name = (r.subscriber_name ?? '').toLowerCase();
 			const address = (r.address ?? '').toLowerCase();
-			const eo = (r.personal_account ?? '').slice(0, -3).toLowerCase();
+			const eo = (r.personal_account ?? '').toLowerCase();
 			return reason.includes(q) || name.includes(q) || address.includes(q) || eo.includes(q);
 		});
 	});
@@ -180,8 +197,10 @@
 	});
 
 	$effect(() => {
-		// при изменении поиска возвращаемся на первую страницу
+		// при изменении фильтров возвращаемся на первую страницу
 		void searchQuery;
+		void workTypeFilter;
+		void statusFilter;
 		page = 1;
 	});
 
@@ -415,7 +434,7 @@
 
 <div class="flex h-full flex-col p-4">
 	<div class="mb-3 flex items-center justify-between gap-3">
-		<div class="flex items-center gap-2">
+		<div class="flex flex-wrap items-center gap-2">
 			<div class="relative w-[300px]">
 				<Search class="pointer-events-none absolute left-2.5 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
 				<Input bind:value={searchQuery} placeholder="Основание, Потребитель, Адрес, №ЭО" class="bg-background pl-8" />
@@ -423,6 +442,18 @@
 			<Button variant="outline" size="sm" disabled={!searchQuery} onclick={() => (searchQuery = '')}>
 				Сбросить
 			</Button>
+			<select bind:value={workTypeFilter} class="h-8 rounded-md border border-input bg-background px-2 text-sm">
+				<option value="">Все поручения</option>
+				{#each workTypeOptions as w}
+					<option value={w}>{w}</option>
+				{/each}
+			</select>
+			<select bind:value={statusFilter} class="h-8 rounded-md border border-input bg-background px-2 text-sm">
+				<option value="">Все статусы</option>
+				{#each statusOptions as s}
+					<option value={s}>{s}</option>
+				{/each}
+			</select>
 		</div>
 		<div class="flex items-center gap-2">
 			<Button variant="outline" size="sm" disabled={selected.size === 0} onclick={openDueDateDialog}>

@@ -28,8 +28,8 @@ async def _require_admin(request: Request, db_session: AsyncSession) -> None:
         raise NotAuthorizedException()
     if user.effective_role in ADMIN_ROLES:
         return
-    # Работники (оператор/работник) Всеволожского и Сертоловского отделений.
-    if user.effective_role in ("оператор", "работник") and user.dept in RKS_WORKER_DEPTS:
+    # Работники (оператор/работник/менеджер) Всеволожского и Сертоловского отделений.
+    if user.effective_role in ("оператор", "работник", "менеджер") and user.dept in RKS_WORKER_DEPTS:
         return
     raise NotAuthorizedException()
 
@@ -144,14 +144,15 @@ async def api_rks_execution(request: Request, db_session: AsyncSession) -> Respo
 
     exec_rows = await db_session.execute(text(
         "SELECT full_name FROM users WHERE position IN "
-        "('Инженер 1 категории','Инженер 2 категории','Контролёр') ORDER BY full_name"))
+        "('Инженер 1 категории','Инженер 2 категории','Контролёр') "
+        "AND dept IN ('Всеволожское отделение', 'Сертоловское отделение') ORDER BY full_name"))
     executor_options = [r[0] for r in exec_rows]
     work_type_options = [{"id": None, "short": w, "needs_co": False} for w in WORK_TYPES]
 
     async with sand_session_factory() as sand_session:
         result = await sand_session.execute(text(
             "SELECT t.*, p.address, p.meter_serial, p.meter_model, "
-            "c.contract_number, c.consumer_name, c.fl_yul, c.department "
+            "c.contract_number, c.energy_object_code, c.consumer_name, c.fl_yul, c.department "
             "FROM rks_task t "
             "JOIN rks_consumer_point p ON p.id = t.point_id "
             "JOIN rks_consumer c ON c.id = p.consumer_id ORDER BY t.id"))
@@ -162,7 +163,7 @@ async def api_rks_execution(request: Request, db_session: AsyncSession) -> Respo
                 "work_type_in_task": r["work_type"], "created_at": r["created_at"],
                 "due_date": r["due_date"], "customer": None,
                 "visit_reason": r["letter_number"], "subscriber_type": r["fl_yul"],
-                "grid": None, "personal_account": r["contract_number"],
+                "grid": None, "personal_account": r["energy_object_code"] or r["contract_number"],
                 "service_object_type": None, "subscriber_name": r["consumer_name"],
                 "address": r["address"], "meter_model": r["meter_model"],
                 "meter_installation_place": None, "meter_serial_number": r["meter_serial"],
