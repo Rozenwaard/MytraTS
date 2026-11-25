@@ -6,6 +6,7 @@ requires-python = ">=3.11"
 dependencies = [
     "advanced-alchemy>=1.9.3",
     "aiosqlite>=0.22.1",
+    "h3>=4.5.1",
     "litestar[cryptography,standard]>=2.21.1",
     "openpyxl>=3.1.5",
     "python-calamine>=0.8.2",
