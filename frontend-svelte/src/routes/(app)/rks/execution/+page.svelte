@@ -137,6 +137,7 @@
 	let searchQuery = $state('');
 	let workTypeFilter = $state('');
 	let statusFilter = $state('');
+	let executorFilter = $state('');
 
 	const workTypeOptions = $derived(
 		[...new Set(rows.map((r) => r.work_type_in_task).filter((v): v is string => !!v))].sort((a, b) =>
@@ -148,14 +149,21 @@
 			a.localeCompare(b, 'ru')
 		)
 	);
+	const executorOptions = $derived(
+		[...new Set(rows.map((r) => r.executor).filter((v): v is string => !!v))].sort((a, b) =>
+			a.localeCompare(b, 'ru')
+		)
+	);
 
 	const filteredRows = $derived.by(() => {
 		const q = searchQuery.trim().toLowerCase();
 		const wf = workTypeFilter;
 		const sf = statusFilter;
+		const ef = executorFilter;
 		return rows.filter((r) => {
 			if (wf && r.work_type_in_task !== wf) return false;
 			if (sf && r.status !== sf) return false;
+			if (ef && r.executor !== ef) return false;
 			if (!q) return true;
 			const reason = (r.visit_reason ?? '').toLowerCase();
 			const name = (r.subscriber_name ?? '').toLowerCase();
@@ -201,6 +209,7 @@
 		void searchQuery;
 		void workTypeFilter;
 		void statusFilter;
+		void executorFilter;
 		page = 1;
 	});
 
@@ -452,6 +461,12 @@
 				<option value="">Все статусы</option>
 				{#each statusOptions as s}
 					<option value={s}>{s}</option>
+				{/each}
+			</select>
+			<select bind:value={executorFilter} class="h-8 rounded-md border border-input bg-background px-2 text-sm">
+				<option value="">Все исполнители</option>
+				{#each executorOptions as e}
+					<option value={e}>{e}</option>
 				{/each}
 			</select>
 		</div>

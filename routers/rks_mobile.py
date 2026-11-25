@@ -156,7 +156,7 @@ async def api_m_sync(request: Request, db_session: AsyncSession) -> Response:
 
         rows = (await sand_session.execute(text(
             "SELECT t.*, p.meter_serial, p.address, p.meter_model, p.phase, "
-            "c.consumer_name, c.contract_number, c.fl_yul "
+            "c.consumer_name, c.contract_number, c.fl_yul, c.phone "
             "FROM rks_task t "
             "JOIN rks_consumer_point p ON p.id = t.point_id "
             "JOIN rks_consumer c ON c.id = p.consumer_id "
@@ -210,7 +210,7 @@ async def api_m_sync(request: Request, db_session: AsyncSession) -> Response:
         "due_date": r["due_date"], "status": r["status"],
         "subscriber_name": r["consumer_name"], "address": r["address"],
         "meter_serial": r["meter_serial"], "meter_model": r["meter_model"],
-        "contract_number": r["contract_number"], "fl_yul": r["fl_yul"],
+        "contract_number": r["contract_number"], "fl_yul": r["fl_yul"], "phone": r["phone"],
         "letter_number": r["letter_number"], "note": r["note"],
         "norm": base_by_short.get(resolve_short(r["work_type"], r["task_type"], r["phase"]), 0),
     } for r in rows]

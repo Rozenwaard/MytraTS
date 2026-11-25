@@ -27,6 +27,7 @@ export interface MobileTask {
 	meter_model: string | null;
 	contract_number: string | null;
 	fl_yul: string | null;
+	phone: string | null;
 	letter_number: string | null;
 	note: string | null;
 	norm: number;

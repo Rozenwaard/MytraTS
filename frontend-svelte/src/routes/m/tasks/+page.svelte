@@ -99,6 +99,15 @@
 					</div>
 					<div class="mt-1 text-sm">{t.subscriber_name || '—'}</div>
 					<div class="text-xs text-muted-foreground">{t.address || '—'}</div>
+					{#if t.phone}
+						<a
+							href={`tel:${t.phone.split(/[;,\s]+/)[0].replace(/[^\d+]/g, '')}`}
+							onclick={(e) => e.stopPropagation()}
+							class="mt-1 inline-block text-sm text-primary underline underline-offset-2"
+						>
+							{t.phone}
+						</a>
+					{/if}
 					<div class="mt-2 flex items-center justify-between">
 						<span class="text-xs text-muted-foreground">{t.meter_serial ? 'ПУ ' + t.meter_serial : ''}</span>
 						<span class="text-xs text-muted-foreground">{t.task_number}</span>

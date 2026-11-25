@@ -163,6 +163,14 @@
 			<div class="mb-3">
 				<div class="text-sm font-semibold">{task.subscriber_name ?? '—'}</div>
 				<div class="text-xs text-muted-foreground">{task.address ?? '—'}</div>
+				{#if task.phone}
+					<a
+						href={`tel:${task.phone.split(/[;,\s]+/)[0].replace(/[^\d+]/g, '')}`}
+						class="mt-1 inline-block text-sm text-primary underline underline-offset-2"
+					>
+						{task.phone}
+					</a>
+				{/if}
 			</div>
 			<div class="grid grid-cols-2 gap-2">
 				<Tile label="Нет доступа" tone={report.inspection_admitted === 'нет' ? 'red' : 'neutral'} onclick={() => toggle('inspection_admitted')} />
