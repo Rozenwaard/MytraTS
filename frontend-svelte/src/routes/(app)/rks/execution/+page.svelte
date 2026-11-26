@@ -188,7 +188,7 @@
 	// Цель массового назначения: при открытой панели «рядом» — весь зум + опорная строка.
 	const assignTarget = $derived.by(() => {
 		if (nearbyOpen) {
-			const set = new Set(nearbyRows.map((r) => r.task_number).filter(Boolean));
+			const set = new Set(nearbyRows.map((r) => r.task_number).filter((v): v is string => !!v));
 			if (nearbyRef) set.add(nearbyRef);
 			return [...set];
 		}
