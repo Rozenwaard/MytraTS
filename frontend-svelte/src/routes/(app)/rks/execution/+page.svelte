@@ -149,6 +149,7 @@
 		workTypeFilter = '';
 		statusFilter = '';
 		executorFilter = '';
+		selected = new Set();
 	}
 
 	const workTypeOptions = $derived(
