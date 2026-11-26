@@ -10,7 +10,7 @@
 
 | Контекст | Запуск | Офлайн | Нативные возможности |
 |---|---|---|---|
-| Web-PWA (браузер) | HTTPS-туннель (тест) / прод-домен | service worker | нет (getUserMedia — ненадёжно) |
+| Web-PWA (браузер) | прод (HTTP, VPN) / локальный IP | service worker | нет (getUserMedia — ненадёжно) |
 | **Capacitor APK (основной)** | нативный WebView, ассеты из APK | локальная статика + офлайн-очередь | ML Kit (QR), Camera, Geolocation, Preferences |
 
 **Основная цель — Capacitor APK.** Web-PWA оставлен как запасной/отладочный путь.
@@ -27,9 +27,8 @@
 4. **Service worker — только web-PWA.** В Capacitor не регистрируется
    (`Capacitor.isNativePlatform()`). В самом SW API не кэшируется и не перехватывается:
    только `GET`, только same-origin, `/api/*` — мимо.
-5. **Адрес бэка** — `VITE_API_URL` при сборке (тест: URL Cloudflare quick tunnel;
-   прод: `http://10.10.102.214`, HTTP, через VPN). URL туннеля меняется при перезапуске
-   cloudflared → пересобираем APK.
+5. **Адрес бэка** — `VITE_API_URL` при сборке (прод: `http://10.10.102.214`, HTTP, через VPN;
+   dev-тест на телефоне: локальный IP машины). Без HTTPS/туннеля.
    (`PUBLIC_API_URL` не инлайнится в rolldown-vite без `svelte.config.js` → используем `VITE_*`.)
 6. **API-запросы — нативный `CapacitorHttp`** (OkHttp), а не `fetch`:
    `fetch` из WebView давал «Failed to fetch» (CORS/сетка WebView). Нативный HTTP
@@ -108,7 +107,9 @@
 
 ## Подключение мобилок (прод, VPN)
 
+- Без HTTPS/Cloudflare-туннеля: APK ходит по HTTP (`CapacitorHttp` + cleartext).
 - Прод-сервер: `http://10.10.102.214` (HTTP, Apache:80 → uvicorn 8000). Бэкофис по этому же адресу.
+- Dev-тест на телефоне: `VITE_API_URL=http://<локальный-IP-ПК>:5174` (телефон в той же Wi-Fi).
 - Мобилки заходят через VPN (full-tunnel): устройство технически оказывается в локалке, весь трафик через туннель.
 - Сборка прод-APK: `VITE_API_URL=http://10.10.102.214`.
 - **Cleartext разрешён** (`android:usesCleartextTraffic="true"` в манифесте) — JSON API ходит по HTTP через `CapacitorHttp` (нативный OkHttp, без mixed-content).
