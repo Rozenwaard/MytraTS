@@ -16,7 +16,8 @@ export const TOP_NAV: NavItem[] = [
 	{ href: '/admin', label: 'Админ' },
 	{ href: '/help', label: 'Помощь' },
 	{ href: '/ulr', label: 'УЛР' },
-	{ href: '/rks/execution', label: 'РКС' }
+	{ href: '/rks/execution', label: 'РКС' },
+	{ href: '/mytrago', label: 'MytraGo' }
 ];
 
 export const SUB_NAV: Record<string, SubTab[]> = {

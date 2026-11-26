@@ -258,6 +258,21 @@ export async function removeControl(taskNumber: string): Promise<{ success: bool
 	return res.json();
 }
 
+export type MytragoWorker = {
+	id: number;
+	full_name: string;
+	staff_id: string;
+	position: string;
+	dept: string;
+	locale: string | null;
+};
+
+export async function fetchMytragoWorkers(): Promise<{ workers: MytragoWorker[] }> {
+	const res = await fetch('/api/mytrago/workers', { credentials: 'include' });
+	if (!res.ok) throw new Error('Не удалось получить работников');
+	return res.json();
+}
+
 export type EnrollCodeResult = { code: string; expires_at: string; full_name: string };
 
 export async function enrollCode(userId: number): Promise<EnrollCodeResult> {

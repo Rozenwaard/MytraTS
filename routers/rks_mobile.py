@@ -71,7 +71,7 @@ def _now() -> str:
 async def api_rks_enroll_code(request: Request, db_session: AsyncSession,
                               data: dict = Body(media_type=RequestEncodingType.JSON)) -> Response:
     user = await get_current_user(request, db_session)
-    if not user or user.effective_role not in ADMIN_ROLES:
+    if not user:
         raise NotAuthorizedException()
 
     user_id = data.get("user_id")
@@ -80,10 +80,14 @@ async def api_rks_enroll_code(request: Request, db_session: AsyncSession,
                         media_type="application/json", status_code=400)
 
     target = (await db_session.execute(text(
-        "SELECT id, full_name FROM users WHERE id = :uid"), {"uid": user_id})).mappings().first()
+        "SELECT id, full_name, dept FROM users WHERE id = :uid"), {"uid": user_id})).mappings().first()
     if target is None:
         return Response(content=json.dumps({"error": "Сотрудник не найден"}, ensure_ascii=False),
                         media_type="application/json", status_code=404)
+
+    # Право выдачи: админ/специалист (любой отдел) или сотрудник своего отдела.
+    if user.effective_role not in ADMIN_ROLES and target["dept"] != user.dept:
+        raise NotAuthorizedException()
 
     code = secrets.token_hex(3).upper()
     expires_at = (datetime.now() + timedelta(minutes=15)).strftime("%Y-%m-%d %H:%M:%S")
@@ -369,7 +373,20 @@ async def api_m_return(request: Request, db_session: AsyncSession,
                     media_type="application/json")
 
 
+@get("/mytrago/workers", guards=[require_auth])
+async def api_mytrago_workers(request: Request, db_session: AsyncSession) -> Response:
+    user = await get_current_user(request, db_session)
+    if not user:
+        raise NotAuthorizedException()
+    rows = (await db_session.execute(text(
+        "SELECT id, full_name, staff_id, position, dept, locale FROM users "
+        "WHERE dept = :dept ORDER BY full_name"),
+        {"dept": user.dept})).mappings().all()
+    return Response(content=json.dumps({"workers": [dict(r) for r in rows]}, ensure_ascii=False),
+                    media_type="application/json")
+
+
 mobile_router = Router("/api", route_handlers=[
     api_rks_enroll_code, api_m_enroll, api_m_sync, api_m_reports, api_m_photos,
-    api_m_return,
+    api_m_return, api_mytrago_workers,
 ])
