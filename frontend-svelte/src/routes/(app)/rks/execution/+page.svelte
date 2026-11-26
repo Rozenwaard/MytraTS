@@ -167,6 +167,14 @@
 		nearbyOpen = nearbyRef != null;
 	}
 
+	function selectAllNearby() {
+		const next = new Set(selected);
+		for (const r of nearbyRows) {
+			if (r.task_number) next.add(r.task_number);
+		}
+		selected = next;
+	}
+
 	const nearbyH3 = $derived.by(() => {
 		if (!nearbyRef) return new Set<string>();
 		const row = rows.find((r) => r.task_number === nearbyRef);
@@ -551,6 +559,7 @@
 					<Button variant="outline" size="sm" disabled={nearbyZoom <= 1} onclick={() => (nearbyZoom--)}>−</Button>
 					<span class="w-6 text-center text-sm">{nearbyZoom}</span>
 					<Button variant="outline" size="sm" disabled={nearbyZoom >= 9} onclick={() => (nearbyZoom++)}>+</Button>
+					<Button variant="outline" size="sm" onclick={selectAllNearby}>Выбрать все</Button>
 					<Button variant="ghost" size="sm" onclick={() => (nearbyOpen = false)}>Закрыть</Button>
 				</div>
 			</div>
