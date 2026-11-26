@@ -40,6 +40,7 @@ export type RksTask = {
 	service_object_type: string | null;
 	subscriber_name: string | null;
 	address: string | null;
+	admin_district: string | null;
 	h3_res12: string | null;
 	lat: number | null;
 	lng: number | null;

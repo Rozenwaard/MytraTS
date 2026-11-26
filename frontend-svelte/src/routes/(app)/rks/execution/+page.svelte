@@ -137,6 +137,7 @@
 	let workTypeFilter = $state('');
 	let statusFilter = $state('');
 	let executorFilter = $state('');
+	let districtFilter = $state('');
 	let nearbyOpen = $state(false);
 	let nearbyZoom = $state(5);
 	let nearbyRef = $state<string | null>(null);
@@ -149,6 +150,7 @@
 		workTypeFilter = '';
 		statusFilter = '';
 		executorFilter = '';
+		districtFilter = '';
 		selected = new Set();
 	}
 
@@ -164,6 +166,11 @@
 	);
 	const executorOptions = $derived(
 		[...new Set(rows.flatMap((r) => r.assignees ?? []).filter(Boolean))].sort((a, b) =>
+			a.localeCompare(b, 'ru')
+		)
+	);
+	const districtOptions = $derived(
+		[...new Set(rows.map((r) => r.admin_district).filter((v): v is string => !!v))].sort((a, b) =>
 			a.localeCompare(b, 'ru')
 		)
 	);
@@ -246,10 +253,12 @@
 		const wf = workTypeFilter;
 		const sf = statusFilter;
 		const ef = executorFilter;
+		const df = districtFilter;
 		return rows.filter((r) => {
 			if (wf && r.work_type_in_task !== wf) return false;
 			if (sf && r.status !== sf) return false;
 			if (ef && !(r.assignees ?? []).includes(ef)) return false;
+			if (df && r.admin_district !== df) return false;
 			if (!q) return true;
 			const reason = (r.visit_reason ?? '').toLowerCase();
 			const name = (r.subscriber_name ?? '').toLowerCase();
@@ -516,6 +525,12 @@
 				<option value="">Все исполнители</option>
 				{#each executorOptions as e}
 					<option value={e}>{e}</option>
+				{/each}
+			</select>
+			<select bind:value={districtFilter} class="h-8 rounded-md border border-input bg-background px-2 text-sm">
+				<option value="">Все поселения</option>
+				{#each districtOptions as d}
+					<option value={d}>{d}</option>
 				{/each}
 			</select>
 		</div>
