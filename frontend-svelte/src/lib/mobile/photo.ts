@@ -1,5 +1,5 @@
 import { Capacitor } from '@capacitor/core';
-import { getToken } from './auth.svelte';
+import { getToken, mobileAuth } from './auth.svelte';
 import { enqueuePhoto } from './queue';
 import { CameraStream, dataUrlToBlob } from './camera';
 import type { GeoResult } from './geo';
@@ -19,7 +19,8 @@ export async function takePhoto(
 	clientOpId: string,
 	taskNumber: string,
 	ctx: PhotoContext | null,
-	geo: GeoResult | null
+	geo: GeoResult | null,
+	photoType = 'general'
 ): Promise<TakenPhoto | null> {
 	const skirtText = buildSkirtText(taskNumber, ctx, geo);
 	let blob: Blob | null;
@@ -35,10 +36,10 @@ export async function takePhoto(
 
 	const url = URL.createObjectURL(blob);
 	try {
-		const { sha256 } = await uploadPhoto(clientOpId, taskNumber, blob);
+		const { sha256 } = await uploadPhoto(clientOpId, taskNumber, blob, photoType);
 		return { sha256, url };
 	} catch {
-		await enqueuePhoto({ client_op_id: clientOpId, task_number: taskNumber, blob });
+		await enqueuePhoto({ client_op_id: clientOpId, task_number: taskNumber, blob, photo_type: photoType });
 		return { sha256: 'pending', url };
 	}
 }
@@ -50,7 +51,8 @@ export function buildSkirtText(taskNumber: string, ctx: PhotoContext | null, geo
 	const ts = `${pad(now.getDate())}.${pad(now.getMonth() + 1)}.${now.getFullYear()} ${pad(now.getHours())}:${pad(now.getMinutes())}`;
 	const coord = geo ? `${geo.lat.toFixed(6)}, ${geo.lng.toFixed(6)}` : '—';
 	const eo = ctx?.energy_object_code ?? ctx?.contract_number ?? '—';
-	return `${ts} · ${coord} · № ${taskNumber} · ЭО ${eo}`;
+	const name = mobileAuth.fullName ?? '—';
+	return `${name} · ${ts} · ${coord} · № ${taskNumber} · ЭО ${eo}`;
 }
 
 function pickPhoto(): Promise<Blob | null> {
@@ -89,10 +91,11 @@ function compressToWebp(blob: Blob, maxW = 1600, maxH = 1200, quality = 0.75): P
 	});
 }
 
-async function uploadPhoto(clientOpId: string, taskNumber: string, blob: Blob): Promise<{ sha256: string }> {
+async function uploadPhoto(clientOpId: string, taskNumber: string, blob: Blob, photoType: string): Promise<{ sha256: string }> {
 	const form = new FormData();
 	form.append('client_op_id', clientOpId);
 	form.append('task_number', taskNumber);
+	form.append('photo_type', photoType);
 	const ext = blob.type === 'image/webp' ? 'webp' : 'jpg';
 	form.append('file', blob, `photo.${ext}`);
 	const token = getToken();

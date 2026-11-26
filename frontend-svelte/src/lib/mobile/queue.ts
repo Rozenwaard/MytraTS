@@ -82,6 +82,7 @@ interface QueuedPhoto {
 	id?: number;
 	client_op_id: string;
 	task_number: string;
+	photo_type?: string;
 	blob: Blob;
 	queuedAt: string;
 }
@@ -90,7 +91,7 @@ export async function enqueueReport(payload: Record<string, unknown>): Promise<v
 	await txPut('reports', { payload, queuedAt: new Date().toISOString() });
 }
 
-export async function enqueuePhoto(op: { client_op_id: string; task_number: string; blob: Blob }): Promise<void> {
+export async function enqueuePhoto(op: { client_op_id: string; task_number: string; blob: Blob; photo_type?: string }): Promise<void> {
 	await txPut('photos', { ...op, queuedAt: new Date().toISOString() });
 }
 
@@ -130,6 +131,7 @@ export async function flushQueue(): Promise<{ reports: number; photos: number }>
 			const form = new FormData();
 			form.append('client_op_id', p.client_op_id);
 			form.append('task_number', p.task_number);
+			form.append('photo_type', p.photo_type ?? 'general');
 			form.append('file', p.blob, 'photo.webp');
 			const res = await fetch('/api/m/1/photos', {
 				method: 'POST',

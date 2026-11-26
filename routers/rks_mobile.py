@@ -305,6 +305,7 @@ async def api_m_photos(request: Request, db_session: AsyncSession) -> Response:
     form = await request.form()
     client_op_id = (str(form.get("client_op_id") or "")).strip()
     task_number = (str(form.get("task_number") or "")).strip()
+    photo_type = (str(form.get("photo_type") or "")).strip() or "general"
     file = form.get("file")
     if not client_op_id or file is None:
         return Response(content=json.dumps({"error": "client_op_id и file обязательны"}, ensure_ascii=False),
@@ -322,15 +323,18 @@ async def api_m_photos(request: Request, db_session: AsyncSession) -> Response:
         rel_dir = os.path.join(task_number, client_op_id) if task_number else client_op_id
         abs_dir = os.path.join(PHOTOS_DIR, rel_dir)
         os.makedirs(abs_dir, exist_ok=True)
-        filename = f"{sha}.webp"
+        ctype = (file.content_type or "").lower()
+        ext = "webp" if "webp" in ctype else "jpg"
+        filename = f"{sha}.{ext}"
         path = os.path.join(rel_dir, filename)
         with open(os.path.join(abs_dir, filename), "wb") as f:
             f.write(content)
 
         await sand_session.execute(text(
-            "INSERT INTO rks_mobile_photos (report_id, path, sha256, created_at) "
-            "VALUES (:report_id, :path, :sha256, :created_at)"),
-            {"report_id": client_op_id, "path": path, "sha256": sha, "created_at": _now()})
+            "INSERT INTO rks_mobile_photos (report_id, task_number, photo_type, path, sha256, created_at) "
+            "VALUES (:report_id, :task_number, :photo_type, :path, :sha256, :created_at)"),
+            {"report_id": client_op_id, "task_number": task_number, "photo_type": photo_type,
+             "path": path, "sha256": sha, "created_at": _now()})
         await sand_session.commit()
 
     return Response(content=json.dumps({"success": True, "sha256": sha}, ensure_ascii=False),
