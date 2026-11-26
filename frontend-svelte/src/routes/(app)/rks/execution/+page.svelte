@@ -167,14 +167,6 @@
 		nearbyOpen = nearbyRef != null;
 	}
 
-	function selectAllNearby() {
-		const next = new Set(selected);
-		for (const r of nearbyRows) {
-			if (r.task_number) next.add(r.task_number);
-		}
-		selected = next;
-	}
-
 	const nearbyH3 = $derived.by(() => {
 		if (!nearbyRef) return new Set<string>();
 		const row = rows.find((r) => r.task_number === nearbyRef);
@@ -193,6 +185,16 @@
 		);
 	});
 
+	// Цель массового назначения: при открытой панели «рядом» — весь зум + опорная строка.
+	const assignTarget = $derived.by(() => {
+		if (nearbyOpen) {
+			const set = new Set(nearbyRows.map((r) => r.task_number).filter(Boolean));
+			if (nearbyRef) set.add(nearbyRef);
+			return [...set];
+		}
+		return [...selected];
+	});
+
 	const executorList = $derived(rows[0]?.executor_options ?? []);
 
 	function toggleAssignExecutor(name: string) {
@@ -202,14 +204,16 @@
 	}
 
 	async function submitAssign() {
-		if (assignExecutors.length === 0 || selected.size === 0) return;
+		if (assignExecutors.length === 0 || assignTarget.length === 0) return;
 		assignBusy = true;
 		try {
-			await bulkAssign([...selected], assignExecutors);
+			await bulkAssign(assignTarget, assignExecutors);
 			toast('Назначено');
 			selected = new Set();
 			assignOpen = false;
 			assignExecutors = [];
+			nearbyOpen = false;
+			nearbyRef = null;
 			await queryClient.invalidateQueries({ queryKey: ['rks-execution'] });
 		} catch (e) {
 			toast(e instanceof Error ? e.message : 'Ошибка назначения');
@@ -537,7 +541,7 @@
 			<Button variant="outline" size="sm" disabled={selected.size === 0} onclick={openNearby}>
 				Задания рядом
 			</Button>
-			<Button variant="default" size="sm" disabled={selected.size === 0} onclick={() => (assignOpen = true)}>
+			<Button variant="default" size="sm" disabled={assignTarget.length === 0} onclick={() => (assignOpen = true)}>
 				Назначить
 			</Button>
 			<Button variant="outline" size="sm" disabled={selected.size === 0} onclick={openDueDateDialog}>
@@ -559,7 +563,6 @@
 					<Button variant="outline" size="sm" disabled={nearbyZoom <= 1} onclick={() => (nearbyZoom--)}>−</Button>
 					<span class="w-6 text-center text-sm">{nearbyZoom}</span>
 					<Button variant="outline" size="sm" disabled={nearbyZoom >= 9} onclick={() => (nearbyZoom++)}>+</Button>
-					<Button variant="outline" size="sm" onclick={selectAllNearby}>Выбрать все</Button>
 					<Button variant="ghost" size="sm" onclick={() => (nearbyOpen = false)}>Закрыть</Button>
 				</div>
 			</div>
@@ -584,7 +587,7 @@
 	{#if assignOpen}
 		<div class="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
 			<div class="w-full max-w-sm rounded-lg border bg-card p-4 shadow-lg">
-				<div class="mb-3 text-sm font-semibold">Назначить исполнителей ({selected.size})</div>
+				<div class="mb-3 text-sm font-semibold">Назначить исполнителей ({assignTarget.length})</div>
 				<div class="mb-3 max-h-64 space-y-1 overflow-auto">
 					{#each executorList as e}
 						<label class="flex items-center gap-2 py-1 text-sm">
