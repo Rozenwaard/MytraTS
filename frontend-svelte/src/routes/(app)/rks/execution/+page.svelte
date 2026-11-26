@@ -680,7 +680,7 @@
 									<span class="text-muted-foreground">Исполнитель:</span>
 									<span class="text-sm">{(row.assignees ?? []).join(', ') || '—'}</span>
 									<select class="h-8 min-w-44 rounded-md border border-input bg-transparent px-2 text-sm outline-none focus-visible:border-ring" disabled={isLocked(row)} value={row.executor ?? ''} onchange={(e) => save(row, { executor: (e.currentTarget as HTMLSelectElement).value || null })}>
-										<option value="">—</option>
+										<option value="">Добавить</option>
 										{#each row.executor_options ?? [] as n (n)}
 											<option value={n}>{n}</option>
 										{/each}
@@ -742,25 +742,6 @@
 												Удалить из реестра
 											</Button>
 										{/if}
-										{#if isAdmin}
-											<select
-												class="h-8 rounded-md border border-input bg-transparent px-2 text-sm outline-none focus-visible:border-ring"
-												value={reportChoice[id] ?? ''}
-												onchange={(e) => (reportChoice[id] = (e.currentTarget as HTMLSelectElement).value)}
-											>
-												<option value="" disabled>Заменить вид работ</option>
-												{#each workTypesForCustomer(row.customer) as w (w)}
-													<option value={w}>{w}</option>
-												{/each}
-											</select>
-											<Button size="sm" variant="default" disabled={!reportChoice[id]} onclick={() => changeReport(row)}>
-												Заменить
-											</Button>
-										{/if}
-									<Button variant="outline" size="sm" onclick={() => openAddPoint(row)}>
-										<Plus class="size-4" />
-										Добавить точку
-									</Button>
 									{#if row.work_type_in_task === 'КРО'}
 										<Button size="sm" class="bg-brand-brown text-white hover:bg-brand-brown/80" onclick={() => handleRemoveControl(row)}>
 											<Ban class="size-4" />
