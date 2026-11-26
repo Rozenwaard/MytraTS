@@ -20,6 +20,39 @@
 	const workers = $derived(result.current.data?.workers ?? []);
 	const loading = $derived(result.current.isPending);
 
+	type SortKey = 'full_name' | 'staff_id' | 'position' | 'dept' | 'locale';
+
+	let sortKey = $state<SortKey>('full_name');
+	let sortDesc = $state(false);
+
+	function toggleSort(key: SortKey) {
+		if (sortKey === key) {
+			sortDesc = !sortDesc;
+		} else {
+			sortKey = key;
+			sortDesc = false;
+		}
+	}
+
+	function sortIndicator(key: SortKey) {
+		if (sortKey !== key) return '';
+		return sortDesc ? ' ↓' : ' ↑';
+	}
+
+	const sortedWorkers = $derived.by(() => {
+		const key = sortKey;
+		const desc = sortDesc;
+		return [...workers].sort((a, b) => {
+			const av = a[key];
+			const bv = b[key];
+			if (av == null && bv == null) return 0;
+			if (av == null) return 1;
+			if (bv == null) return -1;
+			const c = String(av).localeCompare(String(bv), 'ru', { numeric: true });
+			return desc ? -c : c;
+		});
+	});
+
 	let enroll = $state<{ code: string; expires_at: string; full_name: string; qr: string; url: string } | null>(null);
 	let issuing = $state<number | null>(null);
 
@@ -43,7 +76,7 @@
 </script>
 
 <div class="h-full overflow-auto p-4">
-	<div class="mx-auto max-w-4xl space-y-4">
+	<div class="mx-auto max-w-6xl space-y-4">
 		<Card>
 			<CardHeader>
 				<CardTitle>MytraGo</CardTitle>
@@ -68,23 +101,23 @@
 					<Table>
 						<TableHeader>
 							<TableRow>
-								<TableHead>ФИО</TableHead>
-								<TableHead>Таб. №</TableHead>
-								<TableHead>Должность</TableHead>
-								<TableHead>Отделение</TableHead>
-								<TableHead>Офис</TableHead>
+								<TableHead class="cursor-pointer select-none" onclick={() => toggleSort('full_name')}>ФИО {sortIndicator('full_name')}</TableHead>
+								<TableHead class="cursor-pointer select-none" onclick={() => toggleSort('staff_id')}>Таб. № {sortIndicator('staff_id')}</TableHead>
+								<TableHead class="cursor-pointer select-none" onclick={() => toggleSort('position')}>Должность {sortIndicator('position')}</TableHead>
+								<TableHead class="cursor-pointer select-none" onclick={() => toggleSort('dept')}>Отделение {sortIndicator('dept')}</TableHead>
+								<TableHead class="cursor-pointer select-none" onclick={() => toggleSort('locale')}>Офис {sortIndicator('locale')}</TableHead>
 								<TableHead class="text-right"></TableHead>
 							</TableRow>
 						</TableHeader>
 						<TableBody>
-							{#each workers as w (w.id)}
+							{#each sortedWorkers as w (w.id)}
 								<TableRow>
-									<TableCell class="font-medium">{w.full_name}</TableCell>
-									<TableCell>{w.staff_id}</TableCell>
-									<TableCell>{w.position}</TableCell>
-									<TableCell>{w.dept}</TableCell>
-									<TableCell>{w.locale ?? '—'}</TableCell>
-									<TableCell class="text-right">
+									<TableCell class="max-w-64 truncate font-medium" title={w.full_name}>{w.full_name}</TableCell>
+									<TableCell class="whitespace-nowrap">{w.staff_id}</TableCell>
+									<TableCell class="max-w-64 truncate" title={w.position}>{w.position}</TableCell>
+									<TableCell class="max-w-64 truncate" title={w.dept}>{w.dept}</TableCell>
+									<TableCell class="whitespace-nowrap">{w.locale ?? '—'}</TableCell>
+									<TableCell class="whitespace-nowrap text-right">
 										<Button size="sm" disabled={issuing === w.id} onclick={() => issueCode(w)}>
 											{issuing === w.id ? '…' : 'Выдать код'}
 										</Button>
