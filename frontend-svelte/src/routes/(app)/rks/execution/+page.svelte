@@ -88,11 +88,10 @@
 		{
 			title: 'Исполнение',
 			fields: [
-				{ key: 'done_day', label: 'Дата работ', edit: 'date' },
-				{ key: 'task_report', label: 'Вид работ', edit: 'work' },
-				{ key: 'violations', label: 'Составлен акт БУ', edit: 'checkbox' },
-				{ key: 'executor', label: 'Исполнитель', edit: 'executor' },
-				{ key: 'co_executor', label: 'Соисполнитель', edit: 'co' }
+				{ key: 'done_day', label: 'Дата работ' },
+				{ key: 'task_report', label: 'Вид работ' },
+				{ key: 'violations', label: 'Составлен акт БУ' },
+				{ key: 'co_executor', label: 'Соисполнитель' }
 			]
 		}
 	];
@@ -140,7 +139,7 @@
 	let statusFilter = $state('');
 	let executorFilter = $state('');
 	let nearbyOpen = $state(false);
-	let nearbyZoom = $state(2);
+	let nearbyZoom = $state(5);
 	let nearbyRef = $state<string | null>(null);
 	let assignOpen = $state(false);
 	let assignExecutors = $state<string[]>([]);
@@ -568,17 +567,11 @@
 			</div>
 			<div class="mt-2 max-h-64 space-y-1 overflow-auto">
 				{#each nearbyRows as r (r.task_number)}
-					<label class="flex items-center gap-2 py-1 text-sm">
-						<input
-							type="checkbox"
-							class="size-4 cursor-pointer accent-primary"
-							checked={selected.has(r.task_number ?? '')}
-							onchange={() => toggleSelected(r.task_number ?? '')}
-						/>
+					<div class="flex items-center gap-2 py-1 text-sm">
 						<span class="text-xs text-muted-foreground">{r.task_number}</span>
 						<span class="truncate">{r.subscriber_name ?? ''}</span>
 						<span class="truncate text-xs text-muted-foreground">{r.address ?? ''}</span>
-					</label>
+					</div>
 				{/each}
 			</div>
 		</div>
@@ -683,7 +676,17 @@
 						{#if expanded.has(id)}
 							<TableRow class="bg-muted hover:bg-muted">
 								<TableCell colspan={COLUMNS.length + 1}>
-									<div class="grid grid-cols-1 gap-x-6 gap-y-4 py-2 sm:grid-cols-2 lg:grid-cols-4">
+									<div class="mb-3 flex flex-wrap items-center gap-2 border-b pb-2">
+									<span class="text-muted-foreground">Исполнитель:</span>
+									<span class="text-sm">{(row.assignees ?? []).join(', ') || '—'}</span>
+									<select class="h-8 min-w-44 rounded-md border border-input bg-transparent px-2 text-sm outline-none focus-visible:border-ring" disabled={isLocked(row)} value={row.executor ?? ''} onchange={(e) => save(row, { executor: (e.currentTarget as HTMLSelectElement).value || null })}>
+										<option value="">—</option>
+										{#each row.executor_options ?? [] as n (n)}
+											<option value={n}>{n}</option>
+										{/each}
+									</select>
+								</div>
+								<div class="grid grid-cols-1 gap-x-6 gap-y-4 py-2 sm:grid-cols-2 lg:grid-cols-4">
 										{#each GROUPS as group (group.title)}
 											<div class="space-y-2">
 												{#each group.fields as f (f.label)}
