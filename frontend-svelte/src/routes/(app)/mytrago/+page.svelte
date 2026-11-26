@@ -6,7 +6,7 @@
 	import { toast } from '$lib/store/toast.svelte';
 	import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '$lib/components/ui/table';
 	import { Button } from '$lib/components/ui/button';
-	import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '$lib/components/ui/card';
+	import { Card, CardContent, CardDescription, CardHeader } from '$lib/components/ui/card';
 	import X from '@lucide/svelte/icons/x';
 	import QRCode from 'qrcode';
 
@@ -79,13 +79,6 @@
 	<div class="mx-auto max-w-6xl space-y-4">
 		<Card>
 			<CardHeader>
-				<CardTitle>MytraGo</CardTitle>
-			</CardHeader>
-		</Card>
-
-		<Card>
-			<CardHeader>
-				<CardTitle>Работники {workers[0]?.dept ?? ''}</CardTitle>
 				<CardDescription>Выдайте код привязки устройства сотруднику.</CardDescription>
 			</CardHeader>
 			<CardContent>
