@@ -160,7 +160,7 @@ async def api_m_sync(request: Request, db_session: AsyncSession) -> Response:
 
         rows = (await sand_session.execute(text(
             "SELECT t.*, p.meter_serial, p.address, p.meter_model, p.phase, "
-            "c.consumer_name, c.contract_number, c.fl_yul, c.phone, "
+            "c.consumer_name, c.contract_number, c.energy_object_code, c.fl_yul, c.phone, "
             "(SELECT r.result FROM rks_mobile_reports r WHERE r.task_number = t.task_number "
             " ORDER BY r.id DESC LIMIT 1) AS last_result, "
             "(SELECT COUNT(*) FROM rks_mobile_reports r WHERE r.task_number = t.task_number "
@@ -219,7 +219,7 @@ async def api_m_sync(request: Request, db_session: AsyncSession) -> Response:
         "due_date": r["due_date"], "status": r["status"],
         "subscriber_name": r["consumer_name"], "address": r["address"],
         "meter_serial": r["meter_serial"], "meter_model": r["meter_model"],
-        "contract_number": r["contract_number"], "fl_yul": r["fl_yul"], "phone": r["phone"],
+        "contract_number": r["contract_number"], "energy_object_code": r["energy_object_code"], "fl_yul": r["fl_yul"], "phone": r["phone"],
         "last_result": r["last_result"], "nedopusk_count": r["nedopusk_count"],
         "letter_number": r["letter_number"], "note": r["note"],
         "norm": base_by_short.get(resolve_short(r["work_type"], r["task_type"], r["phase"]), 0),

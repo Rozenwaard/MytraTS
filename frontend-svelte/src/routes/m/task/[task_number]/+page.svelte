@@ -89,7 +89,8 @@
 
 	async function addPhoto() {
 		try {
-			const p = await takePhoto(clientOpId, taskNumber);
+			const geo = await getPosition();
+			const p = await takePhoto(clientOpId, taskNumber, task, geo);
 			if (p) photos = [...photos, p];
 		} catch (err) {
 			error = err instanceof Error ? err.message : 'Ошибка фото';

@@ -26,6 +26,7 @@ export interface MobileTask {
 	meter_serial: string | null;
 	meter_model: string | null;
 	contract_number: string | null;
+	energy_object_code: string | null;
 	fl_yul: string | null;
 	phone: string | null;
 	last_result: string | null;

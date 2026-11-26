@@ -80,7 +80,6 @@
 		<Card>
 			<CardHeader>
 				<CardTitle>MytraGo</CardTitle>
-				<CardDescription>Приложение для полевых работ. Привяжите устройство по коду ниже.</CardDescription>
 			</CardHeader>
 		</Card>
 

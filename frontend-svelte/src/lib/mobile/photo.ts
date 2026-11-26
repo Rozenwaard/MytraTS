@@ -1,24 +1,56 @@
+import { Capacitor } from '@capacitor/core';
 import { getToken } from './auth.svelte';
 import { enqueuePhoto } from './queue';
+import { CameraStream, dataUrlToBlob } from './camera';
+import type { GeoResult } from './geo';
 
 export interface TakenPhoto {
 	sha256: string;
 	url: string; // локальный objectURL для превью
 }
 
-// Захват фото → сжатие в WebP (~1600×1200) → загрузка на бэк.
-export async function takePhoto(clientOpId: string, taskNumber: string): Promise<TakenPhoto | null> {
-	const file = await pickPhoto();
-	if (!file) return null;
-	const webp = await compressToWebp(file);
-	const url = URL.createObjectURL(webp);
+export interface PhotoContext {
+	energy_object_code?: string | null;
+	contract_number?: string | null;
+}
+
+// Захват фото → (нативно уже ресайз 1600px + «юбка» + EXIF) → загрузка на бэк.
+export async function takePhoto(
+	clientOpId: string,
+	taskNumber: string,
+	ctx: PhotoContext | null,
+	geo: GeoResult | null
+): Promise<TakenPhoto | null> {
+	const skirtText = buildSkirtText(taskNumber, ctx, geo);
+	let blob: Blob | null;
+	if (Capacitor.isNativePlatform()) {
+		const res = await CameraStream.start({ skirtText, lat: geo?.lat ?? 0, lng: geo?.lng ?? 0 });
+		if (!res || res.cancelled) return null;
+		blob = dataUrlToBlob(res.dataUrl ?? '');
+	} else {
+		const file = await pickPhoto();
+		if (!file) return null;
+		blob = await compressToWebp(file);
+	}
+
+	const url = URL.createObjectURL(blob);
 	try {
-		const { sha256 } = await uploadPhoto(clientOpId, taskNumber, webp);
+		const { sha256 } = await uploadPhoto(clientOpId, taskNumber, blob);
 		return { sha256, url };
 	} catch {
-		await enqueuePhoto({ client_op_id: clientOpId, task_number: taskNumber, blob: webp });
+		await enqueuePhoto({ client_op_id: clientOpId, task_number: taskNumber, blob });
 		return { sha256: 'pending', url };
 	}
+}
+
+// Текст «юбки»: дата/время · координаты · № задания · ЭО (код энергообъекта).
+export function buildSkirtText(taskNumber: string, ctx: PhotoContext | null, geo: GeoResult | null): string {
+	const now = new Date();
+	const pad = (n: number) => String(n).padStart(2, '0');
+	const ts = `${pad(now.getDate())}.${pad(now.getMonth() + 1)}.${now.getFullYear()} ${pad(now.getHours())}:${pad(now.getMinutes())}`;
+	const coord = geo ? `${geo.lat.toFixed(6)}, ${geo.lng.toFixed(6)}` : '—';
+	const eo = ctx?.energy_object_code ?? ctx?.contract_number ?? '—';
+	return `${ts} · ${coord} · № ${taskNumber} · ЭО ${eo}`;
 }
 
 function pickPhoto(): Promise<Blob | null> {
@@ -61,7 +93,8 @@ async function uploadPhoto(clientOpId: string, taskNumber: string, blob: Blob): 
 	const form = new FormData();
 	form.append('client_op_id', clientOpId);
 	form.append('task_number', taskNumber);
-	form.append('file', blob, 'photo.webp');
+	const ext = blob.type === 'image/webp' ? 'webp' : 'jpg';
+	form.append('file', blob, `photo.${ext}`);
 	const token = getToken();
 	const res = await fetch('/api/m/1/photos', {
 		method: 'POST',
