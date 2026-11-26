@@ -2,7 +2,7 @@
 	import { createQuery } from '@tanstack/svelte-query';
 	import { toStore, fromStore } from 'svelte/store';
 	import { queryClient } from '$lib/query';
-	import { fetchRksExecution, updateRksExecution, bulkAssign, createRksReestr, resetRksReestr, changeRksTaskReport, changeRksDueDate, fetchRksOptions, fetchObjectPoints, addPoint, removeControl, assignmentLabel, type RksTask, type RksOptions, type ObjectPoint } from '$lib/api/rks';
+	import { fetchRksExecution, updateRksExecution, bulkAssign, createRksReestr, resetRksReestr, changeRksTaskReport, fetchRksOptions, fetchObjectPoints, addPoint, removeControl, assignmentLabel, type RksTask, type RksOptions, type ObjectPoint } from '$lib/api/rks';
 	import {
 		Table,
 		TableBody,
@@ -20,7 +20,6 @@
 	import Coins from '@lucide/svelte/icons/coins';
 	import ListChecks from '@lucide/svelte/icons/list-checks';
 	import Trash2 from '@lucide/svelte/icons/trash-2';
-	import CalendarDays from '@lucide/svelte/icons/calendar-days';
 	import ChevronLeft from '@lucide/svelte/icons/chevron-left';
 	import ChevronRight from '@lucide/svelte/icons/chevron-right';
 	import ChevronsLeft from '@lucide/svelte/icons/chevrons-left';
@@ -145,6 +144,13 @@
 	let assignExecutors = $state<string[]>([]);
 	let assignBusy = $state(false);
 
+	function resetFilters() {
+		searchQuery = '';
+		workTypeFilter = '';
+		statusFilter = '';
+		executorFilter = '';
+	}
+
 	const workTypeOptions = $derived(
 		[...new Set(rows.map((r) => r.work_type_in_task).filter((v): v is string => !!v))].sort((a, b) =>
 			a.localeCompare(b, 'ru')
@@ -174,13 +180,15 @@
 
 	const nearbyRows = $derived.by(() => {
 		if (!nearbyOpen) return [];
+		const wf = workTypeFilter;
 		return rows.filter(
 			(r) =>
 				r.h3_res12 &&
 				nearbyH3.has(r.h3_res12) &&
 				r.task_number !== nearbyRef &&
 				r.status !== 'Выполнено' &&
-				r.status !== 'Отправлено'
+				r.status !== 'Отправлено' &&
+				(!wf || r.work_type_in_task === wf)
 		);
 	});
 
@@ -325,12 +333,6 @@
 		return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
 	})();
 
-	const tomorrow = (() => {
-		const d = new Date();
-		d.setDate(d.getDate() + 1);
-		return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
-	})();
-
 	let expanded = $state<Set<string>>(new Set());
 	let selected = $state<Set<string>>(new Set());
 
@@ -423,37 +425,6 @@
 		}
 	}
 
-	let dueDateDialogOpen = $state(false);
-	let dueDateValue = $state('');
-	let dueDateBusy = $state(false);
-
-	function openDueDateDialog() {
-		dueDateValue = '';
-		dueDateDialogOpen = true;
-	}
-
-	async function submitDueDate() {
-		if (!dueDateValue) return;
-		if (dueDateValue < tomorrow) {
-			toast('Дата должна быть в будущем');
-			return;
-		}
-		const tns = rows.filter((r) => selected.has(r.task_number ?? '')).map((r) => r.task_number ?? '');
-		if (tns.length === 0) return;
-		dueDateBusy = true;
-		try {
-			await changeRksDueDate(tns, dueDateValue);
-			toast(`Плановая дата обновлена для ${tns.length} строк`);
-			selected = new Set();
-			dueDateDialogOpen = false;
-			await queryClient.invalidateQueries({ queryKey: ['rks-execution'] });
-		} catch (e) {
-			toast(e instanceof Error ? e.message : 'Ошибка изменения даты');
-		} finally {
-			dueDateBusy = false;
-		}
-	}
-
 	let addPointOpen = $state(false);
 	let addPointTask = $state('');
 	let addPointOptions = $state<ObjectPoint[]>([]);
@@ -525,7 +496,7 @@
 				<Search class="pointer-events-none absolute left-2.5 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
 				<Input bind:value={searchQuery} placeholder="Основание, Потребитель, Адрес, №ЭО" class="bg-background pl-8" />
 			</div>
-			<Button variant="outline" size="sm" disabled={!searchQuery} onclick={() => (searchQuery = '')}>
+			<Button variant="outline" size="sm" disabled={!searchQuery && !workTypeFilter && !statusFilter && !executorFilter} onclick={resetFilters}>
 				Сбросить
 			</Button>
 			<select bind:value={workTypeFilter} class="h-8 rounded-md border border-input bg-background px-2 text-sm">
@@ -553,10 +524,6 @@
 			</Button>
 			<Button variant="default" size="sm" disabled={assignTarget.length === 0} onclick={() => (assignOpen = true)}>
 				Назначить
-			</Button>
-			<Button variant="outline" size="sm" disabled={selected.size === 0} onclick={openDueDateDialog}>
-				<CalendarDays class="size-4" />
-				Изменить плановую дату
 			</Button>
 			<Button variant="default" size="sm" disabled={selected.size === 0} onclick={createReestrs}>
 				<ListChecks class="size-4" />
@@ -801,26 +768,6 @@
 		</div>
 	</div>
 </div>
-
-{#if dueDateDialogOpen}
-	<button type="button" class="fixed inset-0 z-40 bg-black/50" aria-label="Закрыть" onclick={() => (dueDateDialogOpen = false)}></button>
-	<div class="pointer-events-none fixed inset-0 z-50 flex items-center justify-center p-4">
-		<div class="pointer-events-auto w-full max-w-md rounded-lg border bg-card p-6 shadow-lg" role="dialog" aria-modal="true" tabindex="-1">
-			<h2 class="text-lg font-semibold">Изменить плановую дату</h2>
-			<p class="mt-2 text-sm text-muted-foreground">
-				Новая плановая дата будет установлена для выбранных строк ({selected.size}).
-			</p>
-			<div class="mt-4">
-				<label class="text-sm font-medium" for="ulr-due-date-change">Дата</label>
-				<Input id="ulr-due-date-change" type="date" min={tomorrow} bind:value={dueDateValue} class="mt-1" />
-			</div>
-			<div class="mt-6 flex justify-end gap-4">
-				<Button variant="outline" size="sm" onclick={() => (dueDateDialogOpen = false)} disabled={dueDateBusy}>Отмена</Button>
-				<Button size="sm" onclick={submitDueDate} disabled={dueDateBusy || !dueDateValue}>{dueDateBusy ? 'Сохраняем…' : 'Сохранить'}</Button>
-			</div>
-		</div>
-	</div>
-{/if}
 
 {#if addPointOpen}
 	<button type="button" class="fixed inset-0 z-40 bg-black/50" aria-label="Закрыть" onclick={closeAddPoint}></button>
