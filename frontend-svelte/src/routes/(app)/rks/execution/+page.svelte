@@ -157,7 +157,7 @@
 		)
 	);
 	const executorOptions = $derived(
-		[...new Set(rows.map((r) => r.executor).filter((v): v is string => !!v))].sort((a, b) =>
+		[...new Set(rows.flatMap((r) => r.assignees ?? []).filter(Boolean))].sort((a, b) =>
 			a.localeCompare(b, 'ru')
 		)
 	);
@@ -218,7 +218,7 @@
 		return rows.filter((r) => {
 			if (wf && r.work_type_in_task !== wf) return false;
 			if (sf && r.status !== sf) return false;
-			if (ef && r.executor !== ef) return false;
+			if (ef && !(r.assignees ?? []).includes(ef)) return false;
 			if (!q) return true;
 			const reason = (r.visit_reason ?? '').toLowerCase();
 			const name = (r.subscriber_name ?? '').toLowerCase();
@@ -683,6 +683,7 @@
 															</label>
 														{:else if f.edit === 'executor'}
 															<span class="text-muted-foreground">{f.label}:</span>{' '}
+															<span class='text-sm'>{(row.assignees ?? []).join(', ') || '—'}</span>
 															<select class="h-8 min-w-44 rounded-md border border-input bg-transparent px-2 text-sm outline-none focus-visible:border-ring" disabled={isLocked(row)} value={row.executor ?? ''} onchange={(e) => save(row, { executor: (e.currentTarget as HTMLSelectElement).value || null })}>
 																<option value="">—</option>
 																{#each row.executor_options ?? [] as n (n)}

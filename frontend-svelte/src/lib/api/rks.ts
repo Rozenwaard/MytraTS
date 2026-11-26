@@ -51,6 +51,7 @@ export type RksTask = {
 	has_current_transformer: string | null;
 	meter_status: string | null;
 	executor: string | null;
+	assignees: string[];
 	executor_organization: string | null;
 	co_executor: string | null;
 	task_report: string | null;

@@ -171,6 +171,11 @@ async def api_rks_execution(request: Request, db_session: AsyncSession) -> Respo
             "FROM rks_task t "
             "JOIN rks_consumer_point p ON p.id = t.point_id "
             "JOIN rks_consumer c ON c.id = p.consumer_id ORDER BY t.id"))
+        assignees_rows = (await sand_session.execute(text(
+            "SELECT task_number, assignee FROM rks_task_assignees ORDER BY id"))).mappings().all()
+        assignees_map: dict = {}
+        for a in assignees_rows:
+            assignees_map.setdefault(a["task_number"], []).append(a["assignee"])
         rows = []
         for r in result.mappings():
             rows.append({
@@ -185,7 +190,8 @@ async def api_rks_execution(request: Request, db_session: AsyncSession) -> Respo
                 "meter_installation_place": None, "meter_serial_number": r["meter_serial"],
                 "violations": r["violations"], "meter_type": None,
                 "has_current_transformer": None, "meter_status": None,
-                "executor": r["assignee"], "executor_organization": r["executor_organization"],
+                "executor": r["assignee"], "assignees": assignees_map.get(r["task_number"], []),
+                "executor_organization": r["executor_organization"],
                 "co_executor": r["co_executor"], "task_report": r["work_type"],
                 "done_day": r["work_date"], "reestr_number": r["reestr_number"],
                 "status": r["status"], "contract_status": None, "norm": None,
