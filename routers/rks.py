@@ -497,11 +497,11 @@ async def api_rks_bulk_assign(
     async with sand_session_factory() as sand_session:
         for tn in task_numbers:
             cur = (await sand_session.execute(text(
-                "SELECT done_day, work_type, co_executor, reestr_number FROM rks_task WHERE task_number = :tn"),
+                "SELECT work_date, work_type, co_executor, reestr_number FROM rks_task WHERE task_number = :tn"),
                 {"tn": tn})).mappings().first()
             if cur is None:
                 continue
-            status = _compute_status(executors[0], cur["done_day"], cur["work_type"],
+            status = _compute_status(executors[0], cur["work_date"], cur["work_type"],
                                      cur["co_executor"], False, cur["reestr_number"])
             await _set_assignees(sand_session, tn, executors)
             await sand_session.execute(text(
