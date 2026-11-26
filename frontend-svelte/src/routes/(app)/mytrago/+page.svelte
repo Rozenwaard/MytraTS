@@ -65,9 +65,9 @@
 						<TableHeader>
 							<TableRow>
 								<TableHead>ФИО</TableHead>
-								<TableHead>Табельный</TableHead>
+								<TableHead>Таб. №</TableHead>
 								<TableHead>Должность</TableHead>
-								<TableHead>Подразделение</TableHead>
+								<TableHead>Отделение</TableHead>
 								<TableHead>Офис</TableHead>
 								<TableHead class="text-right"></TableHead>
 							</TableRow>
