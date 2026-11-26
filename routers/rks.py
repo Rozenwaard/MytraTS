@@ -192,7 +192,7 @@ async def api_rks_execution(request: Request, db_session: AsyncSession) -> Respo
                 "has_current_transformer": None, "meter_status": None,
                 "executor": r["assignee"], "assignees": assignees_map.get(r["task_number"], []),
                 "executor_organization": r["executor_organization"],
-                "co_executor": r["co_executor"], "task_report": r["work_type"],
+                "co_executor": r["co_executor"], "task_report": r["work_type"] if r["status"] in (STATUS_DONE, STATUS_SENT) else None,
                 "done_day": r["work_date"], "reestr_number": r["reestr_number"],
                 "status": r["status"], "contract_status": None, "norm": None,
                 "work_type_options": work_type_options,

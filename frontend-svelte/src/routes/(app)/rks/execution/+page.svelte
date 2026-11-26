@@ -202,6 +202,17 @@
 			: [...assignExecutors, name];
 	}
 
+	async function addExecutor(row: RksTask, name: string) {
+		if (!name) return;
+		const executors = [...new Set([...(row.assignees ?? []), name])];
+		try {
+			await bulkAssign([row.task_number ?? ''], executors);
+			await queryClient.invalidateQueries({ queryKey: ['rks-execution'] });
+		} catch (e) {
+			toast(e instanceof Error ? e.message : 'Ошибка назначения');
+		}
+	}
+
 	async function submitAssign() {
 		if (assignExecutors.length === 0 || assignTarget.length === 0) return;
 		assignBusy = true;
@@ -679,7 +690,7 @@
 									<div class="mb-3 flex flex-wrap items-center gap-2 border-b pb-2">
 									<span class="text-muted-foreground">Исполнитель:</span>
 									<span class="text-sm">{(row.assignees ?? []).join(', ') || '—'}</span>
-									<select class="h-8 min-w-44 rounded-md border border-input bg-transparent px-2 text-sm outline-none focus-visible:border-ring" disabled={isLocked(row)} value={row.executor ?? ''} onchange={(e) => save(row, { executor: (e.currentTarget as HTMLSelectElement).value || null })}>
+									<select class="h-8 min-w-44 rounded-md border border-input bg-transparent px-2 text-sm outline-none focus-visible:border-ring" disabled={isLocked(row)} onchange={(e) => { addExecutor(row, (e.currentTarget as HTMLSelectElement).value); (e.currentTarget as HTMLSelectElement).value = ''; }}>
 										<option value="">Добавить</option>
 										{#each row.executor_options ?? [] as n (n)}
 											<option value={n}>{n}</option>
