@@ -80,13 +80,8 @@
 		<Card>
 			<CardHeader>
 				<CardTitle>MytraGo</CardTitle>
-				<CardDescription>Приложение для полевых работ: скачайте APK и привяжите устройство по коду.</CardDescription>
+				<CardDescription>Приложение для полевых работ. Привяжите устройство по коду ниже.</CardDescription>
 			</CardHeader>
-			<CardContent class="flex flex-wrap items-center gap-4">
-				<a href="/mytrago.apk" download>
-					<Button>Скачать APK</Button>
-				</a>
-			</CardContent>
 		</Card>
 
 		<Card>

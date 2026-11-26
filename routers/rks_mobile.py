@@ -378,15 +378,17 @@ async def api_mytrago_workers(request: Request, db_session: AsyncSession) -> Res
     user = await get_current_user(request, db_session)
     if not user:
         raise NotAuthorizedException()
+    org_dept = "Отдел организации"
     if user.effective_role in ADMIN_ROLES:
         rows = (await db_session.execute(text(
             "SELECT id, full_name, staff_id, position, dept, locale FROM users "
-            "ORDER BY dept, full_name"))).mappings().all()
+            "WHERE dept != :org ORDER BY dept, full_name"),
+            {"org": org_dept})).mappings().all()
     else:
         rows = (await db_session.execute(text(
             "SELECT id, full_name, staff_id, position, dept, locale FROM users "
-            "WHERE dept = :dept ORDER BY full_name"),
-            {"dept": user.dept})).mappings().all()
+            "WHERE dept = :dept AND dept != :org ORDER BY full_name"),
+            {"dept": user.dept, "org": org_dept})).mappings().all()
     return Response(content=json.dumps({"workers": [dict(r) for r in rows]}, ensure_ascii=False),
                     media_type="application/json")
 

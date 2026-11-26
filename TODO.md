@@ -33,6 +33,8 @@
 
 11. **Снимок ошибок (`errors_seen`) в `main_afl`** — ГОТОВО: колонка `errors_seen` добавлена в `MainAfl` и `StoryAfl` (в архив едет автоматически через `STORY_AFL_COLUMNS`); в `recompute_errors` (services/report_check.py) перед `SET errors=NULL` делается `errors_seen = COALESCE(NULLIF(errors,''), errors_seen)` (обе ветки — по затронутым и по всем строкам). Миграция `_scratch/_migrate_errors_seen.py` (колонки + бэкфил: main_afl 5 908, story_afl 5 386; из них вне фильтра 4 816 — «финализированные», терявшие ошибки). `errors` остаётся «актуальным» (дашборд/реестр), `errors_seen` хранит последнюю посчитанную картину.
 
+12. **УЛР (выведено из меню)** — пункт «УЛР» убран из `TOP_NAV`/`SUB_NAV` (роуты `/ulr` и `/ulr/execution` пока не удалены). Решить судьбу раздела: либо доработать (`routers/ulr.py`, `services/ulr.py`, страница `ulr/execution` — см. п. 8), либо удалить окончательно.
+
 ## SLA (Договор 226-2026)
 
 ### Лист ожидания (не в таблице пока)
