@@ -162,7 +162,7 @@ async def api_m_sync(request: Request, db_session: AsyncSession) -> Response:
             "SELECT t.*, p.meter_serial, p.address, p.meter_model, p.phase, "
             "c.consumer_name, c.contract_number, c.energy_object_code, c.fl_yul, c.phone, "
             "(SELECT r.result FROM rks_mobile_reports r WHERE r.task_number = t.task_number "
-            " ORDER BY r.id DESC LIMIT 1) AS last_result, "
+            " ORDER BY r.submitted_at DESC LIMIT 1) AS last_result, "
             "(SELECT COUNT(*) FROM rks_mobile_reports r WHERE r.task_number = t.task_number "
             " AND r.result = 'недопуск') AS nedopusk_count "
             "FROM rks_task t "
